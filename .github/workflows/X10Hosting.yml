@@ -1,204 +1,118 @@
-# .github/workflows/x10-keepalive.yml
-name: X10 Hosting Keep Alive
+# .github/workflows/x10-debug.yml
+name: X10 Debug
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'  # 每6小时运行一次
-  workflow_dispatch:        # 手动触发
+  workflow_dispatch:
 
 jobs:
-  keepalive:
+  debug:
     runs-on: ubuntu-latest
     
     steps:
-      - name: 下载 Hysteria2
-        run: |
-          wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
-          chmod +x hysteria
-
-      - name: 配置 Hysteria2
+      - name: 启动代理
         env:
           HY2_URL: ${{ secrets.HY2_URL_JP }}
         run: |
-          # 解析 hysteria2:// URL
-          URL_BODY="${HY2_URL#hysteria2://}"
-          URL_BODY="${URL_BODY%%#*}"
-          PASSWORD="${URL_BODY%%@*}"
-          SERVER_PART="${URL_BODY#*@}"
-          SERVER="${SERVER_PART%%\?*}"
-          PARAMS="${SERVER_PART#*\?}"
+          wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+          chmod +x hysteria
           
-          get_param() { 
-            echo "$PARAMS" | tr '&' '\n' | grep "^$1=" | cut -d'=' -f2
-          }
+          URL="${HY2_URL#hysteria2://}"
+          PASSWORD="${URL%%@*}"
+          TEMP="${URL#*@}"
+          SERVER="${TEMP%%\?*}"
+          SNI=$(echo "$TEMP" | grep -oP 'sni=\K[^&]+' || echo "${SERVER%%:*}")
           
-          SNI=$(get_param "sni")
-          INSECURE=$(get_param "insecure")
-          
-          [ -z "$SNI" ] && SNI="${SERVER%%:*}"
-          [ "$INSECURE" = "1" ] && INSECURE="true" || INSECURE="false"
-          
-          cat > hy2-config.yaml << EOF
-          server: ${SERVER}
-          auth: ${PASSWORD}
+          cat > config.yaml << EOF
+          server: $SERVER
+          auth: $PASSWORD
           tls:
-            sni: ${SNI}
-            insecure: ${INSECURE}
-          socks5:
-            listen: 127.0.0.1:1080
+            sni: $SNI
+            insecure: false
           http:
             listen: 127.0.0.1:8080
           EOF
           
-          echo "✅ Hysteria2 配置完成"
-          cat hy2-config.yaml
-
-      - name: 启动代理
-        run: |
-          ./hysteria client -c hy2-config.yaml > hysteria.log 2>&1 &
+          ./hysteria client -c config.yaml > hy.log 2>&1 &
           sleep 5
           
-          # 验证代理是否工作
-          PROXY_IP=$(curl -s --proxy socks5://127.0.0.1:1080 https://api.ipify.org 2>/dev/null || echo "failed")
-          if [ "$PROXY_IP" = "failed" ]; then
-            echo "❌ 代理启动失败"
-            cat hysteria.log
-            exit 1
-          fi
-          echo "✅ 代理已启动，IP: $PROXY_IP"
+          # 显示代理 IP
+          echo "=== 代理 IP ==="
+          curl -s --proxy http://127.0.0.1:8080 https://api.ipify.org
+          echo ""
+          echo "=== 请确认这个 IP 和你登录时的 IP 一致 ==="
 
-      - name: 访问 x10hosting 面板
-        id: visit
+      - name: 测试 Cookie
         env:
           X10_COOKIES: ${{ secrets.X10_COOKIES }}
         run: |
-          # 创建 cookie 文件
-          echo "$X10_COOKIES" | tr ';' '\n' | while read cookie; do
-            cookie=$(echo "$cookie" | xargs)  # trim
-            if [ -n "$cookie" ]; then
-              name="${cookie%%=*}"
-              value="${cookie#*=}"
-              echo -e ".x10hosting.com\tTRUE\t/\tTRUE\t0\t$name\t$value" >> cookies.txt
-            fi
-          done
+          echo "=== Cookie 内容（部分隐藏）==="
+          echo "$X10_COOKIES" | head -c 100
+          echo "..."
+          echo ""
+          echo "=== Cookie 长度 ==="
+          echo "${#X10_COOKIES} 字符"
+          echo ""
           
-          # 通过代理访问面板
-          echo "🔄 正在访问面板..."
+          # 检查 Cookie 格式
+          echo "=== Cookie 检查 ==="
+          if echo "$X10_COOKIES" | grep -q "XSRF-TOKEN"; then
+            echo "✅ 包含 XSRF-TOKEN"
+          else
+            echo "❌ 缺少 XSRF-TOKEN"
+          fi
           
-          RESPONSE=$(curl -s -w "\n%{http_code}" \
-            --proxy socks5://127.0.0.1:1080 \
-            --cookie cookies.txt \
-            --cookie-jar new_cookies.txt \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
-            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
+          if echo "$X10_COOKIES" | grep -q "x10hosting_session"; then
+            echo "✅ 包含 x10hosting_session"
+          else
+            echo "❌ 缺少 x10hosting_session"
+          fi
+
+      - name: 访问面板（详细输出）
+        env:
+          X10_COOKIES: ${{ secrets.X10_COOKIES }}
+        run: |
+          echo "=== 发送请求 ==="
+          
+          # 保存完整响应
+          curl -v --proxy http://127.0.0.1:8080 \
+            -H "Cookie: $X10_COOKIES" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" \
+            -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8" \
             -H "Accept-Language: en-US,en;q=0.5" \
             -L \
-            "https://x10hosting.com/panel/services/175344" \
-            2>&1)
+            -o response.html \
+            "https://x10hosting.com/panel/services/175344" 2>&1 | head -50
           
-          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | head -n -1)
+          echo ""
+          echo "=== 响应页面标题 ==="
+          grep -o '<title>[^<]*</title>' response.html || echo "无标题"
           
-          echo "HTTP 状态码: $HTTP_CODE"
+          echo ""
+          echo "=== 页面关键词检测 ==="
+          echo -n "login/sign in: "; grep -ci 'login\|sign.in' response.html || echo "0"
+          echo -n "captcha: "; grep -ci 'captcha\|recaptcha' response.html || echo "0"
+          echo -n "dashboard: "; grep -ci 'dashboard\|panel\|service' response.html || echo "0"
           
-          # 检查是否成功
-          if [ "$HTTP_CODE" = "200" ]; then
-            if echo "$BODY" | grep -qi "captcha\|recaptcha\|verify"; then
-              echo "⚠️ 遇到验证码，Cookie 可能已失效"
-              echo "needs_recaptcha=true" >> $GITHUB_OUTPUT
-            elif echo "$BODY" | grep -qi "login\|sign.in"; then
-              echo "❌ 需要重新登录，Cookie 已失效"
-              exit 1
-            else
-              echo "✅ 成功访问面板"
-              echo "needs_recaptcha=false" >> $GITHUB_OUTPUT
-            fi
-          elif [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "301" ]; then
-            echo "⚠️ 重定向，可能需要登录"
-          else
-            echo "❌ 访问失败: HTTP $HTTP_CODE"
-            exit 1
-          fi
+          echo ""
+          echo "=== 页面前 2000 字符 ==="
+          head -c 2000 response.html
           
-          # 提取新 Cookie
-          NEW_COOKIES=""
-          if [ -f new_cookies.txt ]; then
-            while read line; do
-              if [[ ! "$line" =~ ^# ]] && [ -n "$line" ]; then
-                name=$(echo "$line" | awk '{print $6}')
-                value=$(echo "$line" | awk '{print $7}')
-                if [ -n "$name" ] && [ -n "$value" ]; then
-                  if [ -n "$NEW_COOKIES" ]; then
-                    NEW_COOKIES="${NEW_COOKIES}; "
-                  fi
-                  NEW_COOKIES="${NEW_COOKIES}${name}=${value}"
-                fi
-              fi
-            done < new_cookies.txt
-          fi
-          
-          if [ -n "$NEW_COOKIES" ]; then
-            echo "📝 获取到新 Cookie"
-            # 使用 base64 编码避免特殊字符问题
-            echo "new_cookies=$(echo -n "$NEW_COOKIES" | base64 -w 0)" >> $GITHUB_OUTPUT
-          fi
+          echo ""
+          echo ""
+          echo "=== 检查是否有表单 ==="
+          grep -o '<form[^>]*>' response.html | head -5
 
-      - name: 更新 Cookie Secrets
-        if: steps.visit.outputs.new_cookies != ''
+      - name: 测试首页
         env:
-          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          NEW_COOKIES_B64: ${{ steps.visit.outputs.new_cookies }}
+          X10_COOKIES: ${{ secrets.X10_COOKIES }}
         run: |
-          # 解码 Cookie
-          NEW_COOKIES=$(echo "$NEW_COOKIES_B64" | base64 -d)
+          echo "=== 测试访问首页 ==="
+          curl -s --proxy http://127.0.0.1:8080 \
+            -H "Cookie: $X10_COOKIES" \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0" \
+            -o home.html \
+            -w "HTTP: %{http_code}, 重定向: %{redirect_url}\n" \
+            "https://x10hosting.com/panel"
           
-          # 获取仓库公钥
-          echo "🔑 获取仓库公钥..."
-          KEY_RESPONSE=$(curl -s \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/secrets/public-key")
-          
-          KEY_ID=$(echo "$KEY_RESPONSE" | jq -r '.key_id')
-          PUBLIC_KEY=$(echo "$KEY_RESPONSE" | jq -r '.key')
-          
-          if [ "$KEY_ID" = "null" ] || [ -z "$KEY_ID" ]; then
-            echo "❌ 获取公钥失败"
-            echo "$KEY_RESPONSE"
-            exit 1
-          fi
-          
-          # 安装加密工具
-          pip install pynacl -q
-          
-          # 加密 Secret
-          ENCRYPTED=$(python3 << EOF
-          import base64
-          from nacl import encoding, public
-          
-          def encrypt(public_key: str, secret_value: str) -> str:
-              public_key = public.PublicKey(public_key.encode("utf-8"), encoding.Base64Encoder())
-              sealed_box = public.SealedBox(public_key)
-              encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
-              return base64.b64encode(encrypted).decode("utf-8")
-          
-          print(encrypt("$PUBLIC_KEY", """$NEW_COOKIES"""))
-          EOF
-          )
-          
-          # 更新 Secret
-          echo "🔄 更新 X10_COOKIES..."
-          UPDATE_RESPONSE=$(curl -s -X PUT \
-            -H "Authorization: token $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/${{ github.repository }}/actions/secrets/X10_COOKIES" \
-            -d "{\"encrypted_value\":\"$ENCRYPTED\",\"key_id\":\"$KEY_ID\"}")
-          
-          echo "✅ Cookie 已更新"
-
-      - name: 清理
-        if: always()
-        run: |
-          pkill -f hysteria || true
-          rm -f cookies.txt new_cookies.txt hy2-config.yaml hysteria.log
-          echo "🧹 清理完成"
+          echo "=== 首页标题 ==="
+          grep -o '<title>[^<]*</title>' home.html || echo "无"
