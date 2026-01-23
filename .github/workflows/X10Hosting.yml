@@ -1,15 +1,13 @@
-name: X10Hosting Keep Alive
+# .github/workflows/x10-keepalive.yml
+name: X10 Hosting Keep Alive
 
 on:
   schedule:
-    - cron: '0 */1 * * *'  # 每小时运行（Cookie 2小时过期，留余量）
-  workflow_dispatch:
-
-env:
-  SERVICE_ID: "175344"
+    - cron: '0 */6 * * *'  # 每6小时运行一次
+  workflow_dispatch:        # 手动触发
 
 jobs:
-  keep-alive:
+  keepalive:
     runs-on: ubuntu-latest
     
     steps:
@@ -18,10 +16,11 @@ jobs:
           wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
           chmod +x hysteria
 
-      - name: 配置并启动代理
+      - name: 配置 Hysteria2
         env:
           HY2_URL: ${{ secrets.HY2_URL_JP }}
         run: |
+          # 解析 hysteria2:// URL
           URL_BODY="${HY2_URL#hysteria2://}"
           URL_BODY="${URL_BODY%%#*}"
           PASSWORD="${URL_BODY%%@*}"
@@ -29,9 +28,13 @@ jobs:
           SERVER="${SERVER_PART%%\?*}"
           PARAMS="${SERVER_PART#*\?}"
           
-          get_param() { echo "$PARAMS" | tr '&' '\n' | grep "^$1=" | cut -d'=' -f2; }
+          get_param() { 
+            echo "$PARAMS" | tr '&' '\n' | grep "^$1=" | cut -d'=' -f2
+          }
+          
           SNI=$(get_param "sni")
           INSECURE=$(get_param "insecure")
+          
           [ -z "$SNI" ] && SNI="${SERVER%%:*}"
           [ "$INSECURE" = "1" ] && INSECURE="true" || INSECURE="false"
           
@@ -47,160 +50,155 @@ jobs:
             listen: 127.0.0.1:8080
           EOF
           
-          ./hysteria client -c hy2-config.yaml &
-          sleep 3
-          
-          echo "🌐 代理 IP: $(curl -s --proxy socks5h://127.0.0.1:1080 https://api.ipify.org)"
+          echo "✅ Hysteria2 配置完成"
+          cat hy2-config.yaml
 
-      - name: 访问面板并刷新 Cookie
+      - name: 启动代理
+        run: |
+          ./hysteria client -c hy2-config.yaml > hysteria.log 2>&1 &
+          sleep 5
+          
+          # 验证代理是否工作
+          PROXY_IP=$(curl -s --proxy socks5://127.0.0.1:1080 https://api.ipify.org 2>/dev/null || echo "failed")
+          if [ "$PROXY_IP" = "failed" ]; then
+            echo "❌ 代理启动失败"
+            cat hysteria.log
+            exit 1
+          fi
+          echo "✅ 代理已启动，IP: $PROXY_IP"
+
+      - name: 访问 x10hosting 面板
+        id: visit
         env:
-          X10_SESSION: ${{ secrets.X10_SESSION }}
-          X10_XSRF: ${{ secrets.X10_XSRF }}
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          GITHUB_REPO: ${{ github.repository }}
-          SERVICE_ID: ${{ env.SERVICE_ID }}
+          X10_COOKIES: ${{ secrets.X10_COOKIES }}
         run: |
           # 创建 cookie 文件
-          COOKIE_FILE=$(mktemp)
+          echo "$X10_COOKIES" | tr ';' '\n' | while read cookie; do
+            cookie=$(echo "$cookie" | xargs)  # trim
+            if [ -n "$cookie" ]; then
+              name="${cookie%%=*}"
+              value="${cookie#*=}"
+              echo -e ".x10hosting.com\tTRUE\t/\tTRUE\t0\t$name\t$value" >> cookies.txt
+            fi
+          done
           
-          # 写入现有 Cookie
-          cat > "$COOKIE_FILE" << EOF
-          x10hosting.com	FALSE	/	TRUE	0	XSRF-TOKEN	${X10_XSRF}
-          x10hosting.com	FALSE	/	TRUE	0	x10hosting_session	${X10_SESSION}
-          EOF
+          # 通过代理访问面板
+          echo "🔄 正在访问面板..."
           
-          echo "📍 访问服务面板..."
-          
-          # 使用 curl 访问并获取新 Cookie
-          RESPONSE=$(curl -sS -w "\n%{http_code}" \
-            --proxy socks5h://127.0.0.1:1080 \
-            -L \
-            -c "$COOKIE_FILE" \
-            -b "$COOKIE_FILE" \
-            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36" \
+          RESPONSE=$(curl -s -w "\n%{http_code}" \
+            --proxy socks5://127.0.0.1:1080 \
+            --cookie cookies.txt \
+            --cookie-jar new_cookies.txt \
+            -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36" \
             -H "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8" \
-            -H "Accept-Language: zh-CN,zh;q=0.9,en;q=0.8" \
-            -H "Referer: https://x10hosting.com/panel" \
-            "https://x10hosting.com/panel/services/${SERVICE_ID}")
+            -H "Accept-Language: en-US,en;q=0.5" \
+            -L \
+            "https://x10hosting.com/panel/services/175344" \
+            2>&1)
           
           HTTP_CODE=$(echo "$RESPONSE" | tail -1)
-          BODY=$(echo "$RESPONSE" | sed '$d')
+          BODY=$(echo "$RESPONSE" | head -n -1)
           
           echo "HTTP 状态码: $HTTP_CODE"
           
-          # 检查是否被重定向到登录页
-          if echo "$BODY" | grep -qiE "(login|sign.?in|recaptcha|Log In)"; then
-            echo "❌ Cookie 已过期，需要手动重新获取"
-            echo ""
-            echo "请使用相同代理在浏览器登录后更新以下 Secrets:"
-            echo "  - X10_SESSION"
-            echo "  - X10_XSRF"
-            exit 1
-          fi
-          
-          # 提取页面标题
-          TITLE=$(echo "$BODY" | grep -oP '(?<=<title>).*?(?=</title>)' | head -1)
-          echo "📄 页面标题: $TITLE"
-          
+          # 检查是否成功
           if [ "$HTTP_CODE" = "200" ]; then
-            echo "✅ 访问成功！"
-            
-            # 读取新 Cookie
-            NEW_SESSION=$(grep "x10hosting_session" "$COOKIE_FILE" | awk '{print $NF}')
-            NEW_XSRF=$(grep "XSRF-TOKEN" "$COOKIE_FILE" | awk '{print $NF}')
-            
-            echo ""
-            echo "🔄 检查 Cookie 更新..."
-            
-            # 检查是否有变化
-            NEED_UPDATE=false
-            
-            if [ -n "$NEW_SESSION" ] && [ "$NEW_SESSION" != "$X10_SESSION" ]; then
-              echo "  X10_SESSION: 需要更新"
-              NEED_UPDATE=true
+            if echo "$BODY" | grep -qi "captcha\|recaptcha\|verify"; then
+              echo "⚠️ 遇到验证码，Cookie 可能已失效"
+              echo "needs_recaptcha=true" >> $GITHUB_OUTPUT
+            elif echo "$BODY" | grep -qi "login\|sign.in"; then
+              echo "❌ 需要重新登录，Cookie 已失效"
+              exit 1
             else
-              echo "  X10_SESSION: 未变化"
+              echo "✅ 成功访问面板"
+              echo "needs_recaptcha=false" >> $GITHUB_OUTPUT
             fi
-            
-            if [ -n "$NEW_XSRF" ] && [ "$NEW_XSRF" != "$X10_XSRF" ]; then
-              echo "  X10_XSRF: 需要更新"
-              NEED_UPDATE=true
-            else
-              echo "  X10_XSRF: 未变化"
-            fi
-            
-            # 更新 GitHub Secrets
-            if [ "$NEED_UPDATE" = true ]; then
-              echo ""
-              echo "📤 更新 GitHub Secrets..."
-              
-              # 获取仓库公钥
-              KEY_RESPONSE=$(curl -s \
-                -H "Authorization: Bearer ${REPO_TOKEN}" \
-                -H "Accept: application/vnd.github+json" \
-                "https://api.github.com/repos/${GITHUB_REPO}/actions/secrets/public-key")
-              
-              PUBLIC_KEY=$(echo "$KEY_RESPONSE" | grep -o '"key":"[^"]*"' | cut -d'"' -f4)
-              KEY_ID=$(echo "$KEY_RESPONSE" | grep -o '"key_id":"[^"]*"' | cut -d'"' -f4)
-              
-              if [ -z "$PUBLIC_KEY" ]; then
-                echo "❌ 获取公钥失败: $KEY_RESPONSE"
-                exit 1
-              fi
-              
-              # 安装加密工具
-              pip install pynacl -q
-              
-              # 更新 X10_SESSION
-              if [ -n "$NEW_SESSION" ] && [ "$NEW_SESSION" != "$X10_SESSION" ]; then
-                ENCRYPTED=$(python3 << PYTHON
-          from base64 import b64encode
-          from nacl import encoding, public
-          
-          public_key = public.PublicKey(b"${PUBLIC_KEY}".encode(), encoding.Base64Encoder)
-          sealed_box = public.SealedBox(public_key)
-          encrypted = sealed_box.encrypt(b"${NEW_SESSION}")
-          print(b64encode(encrypted).decode())
-          PYTHON
-          )
-                
-                curl -s -X PUT \
-                  -H "Authorization: Bearer ${REPO_TOKEN}" \
-                  -H "Accept: application/vnd.github+json" \
-                  -d "{\"encrypted_value\":\"${ENCRYPTED}\",\"key_id\":\"${KEY_ID}\"}" \
-                  "https://api.github.com/repos/${GITHUB_REPO}/actions/secrets/X10_SESSION"
-                
-                echo "  ✅ X10_SESSION 已更新"
-              fi
-              
-              # 更新 X10_XSRF
-              if [ -n "$NEW_XSRF" ] && [ "$NEW_XSRF" != "$X10_XSRF" ]; then
-                ENCRYPTED=$(python3 << PYTHON
-          from base64 import b64encode
-          from nacl import encoding, public
-          
-          public_key = public.PublicKey(b"${PUBLIC_KEY}".encode(), encoding.Base64Encoder)
-          sealed_box = public.SealedBox(public_key)
-          encrypted = sealed_box.encrypt(b"${NEW_XSRF}")
-          print(b64encode(encrypted).decode())
-          PYTHON
-          )
-                
-                curl -s -X PUT \
-                  -H "Authorization: Bearer ${REPO_TOKEN}" \
-                  -H "Accept: application/vnd.github+json" \
-                  -d "{\"encrypted_value\":\"${ENCRYPTED}\",\"key_id\":\"${KEY_ID}\"}" \
-                  "https://api.github.com/repos/${GITHUB_REPO}/actions/secrets/X10_XSRF"
-                
-                echo "  ✅ X10_XSRF 已更新"
-              fi
-            fi
-            
-            echo ""
-            echo "🎉 完成！"
+          elif [ "$HTTP_CODE" = "302" ] || [ "$HTTP_CODE" = "301" ]; then
+            echo "⚠️ 重定向，可能需要登录"
           else
-            echo "❌ 访问失败 (HTTP $HTTP_CODE)"
+            echo "❌ 访问失败: HTTP $HTTP_CODE"
             exit 1
           fi
           
-          rm -f "$COOKIE_FILE"
+          # 提取新 Cookie
+          NEW_COOKIES=""
+          if [ -f new_cookies.txt ]; then
+            while read line; do
+              if [[ ! "$line" =~ ^# ]] && [ -n "$line" ]; then
+                name=$(echo "$line" | awk '{print $6}')
+                value=$(echo "$line" | awk '{print $7}')
+                if [ -n "$name" ] && [ -n "$value" ]; then
+                  if [ -n "$NEW_COOKIES" ]; then
+                    NEW_COOKIES="${NEW_COOKIES}; "
+                  fi
+                  NEW_COOKIES="${NEW_COOKIES}${name}=${value}"
+                fi
+              fi
+            done < new_cookies.txt
+          fi
+          
+          if [ -n "$NEW_COOKIES" ]; then
+            echo "📝 获取到新 Cookie"
+            # 使用 base64 编码避免特殊字符问题
+            echo "new_cookies=$(echo -n "$NEW_COOKIES" | base64 -w 0)" >> $GITHUB_OUTPUT
+          fi
+
+      - name: 更新 Cookie Secrets
+        if: steps.visit.outputs.new_cookies != ''
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          NEW_COOKIES_B64: ${{ steps.visit.outputs.new_cookies }}
+        run: |
+          # 解码 Cookie
+          NEW_COOKIES=$(echo "$NEW_COOKIES_B64" | base64 -d)
+          
+          # 获取仓库公钥
+          echo "🔑 获取仓库公钥..."
+          KEY_RESPONSE=$(curl -s \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/secrets/public-key")
+          
+          KEY_ID=$(echo "$KEY_RESPONSE" | jq -r '.key_id')
+          PUBLIC_KEY=$(echo "$KEY_RESPONSE" | jq -r '.key')
+          
+          if [ "$KEY_ID" = "null" ] || [ -z "$KEY_ID" ]; then
+            echo "❌ 获取公钥失败"
+            echo "$KEY_RESPONSE"
+            exit 1
+          fi
+          
+          # 安装加密工具
+          pip install pynacl -q
+          
+          # 加密 Secret
+          ENCRYPTED=$(python3 << EOF
+          import base64
+          from nacl import encoding, public
+          
+          def encrypt(public_key: str, secret_value: str) -> str:
+              public_key = public.PublicKey(public_key.encode("utf-8"), encoding.Base64Encoder())
+              sealed_box = public.SealedBox(public_key)
+              encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
+              return base64.b64encode(encrypted).decode("utf-8")
+          
+          print(encrypt("$PUBLIC_KEY", """$NEW_COOKIES"""))
+          EOF
+          )
+          
+          # 更新 Secret
+          echo "🔄 更新 X10_COOKIES..."
+          UPDATE_RESPONSE=$(curl -s -X PUT \
+            -H "Authorization: token $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/${{ github.repository }}/actions/secrets/X10_COOKIES" \
+            -d "{\"encrypted_value\":\"$ENCRYPTED\",\"key_id\":\"$KEY_ID\"}")
+          
+          echo "✅ Cookie 已更新"
+
+      - name: 清理
+        if: always()
+        run: |
+          pkill -f hysteria || true
+          rm -f cookies.txt new_cookies.txt hy2-config.yaml hysteria.log
+          echo "🧹 清理完成"
