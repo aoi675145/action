@@ -18,11 +18,9 @@ from selenium.common.exceptions import TimeoutException, WebDriverException
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# 截图目录
 OUTPUT_DIR = Path("output/screenshots")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-# 时区
 CN_TZ = timezone(timedelta(hours=8))
 
 
@@ -40,27 +38,25 @@ def mask_email(email):
     name, domain = email.split('@', 1)
   
     if len(name) <= 1:
-        masked_name = '*'
+        masked_name = name + '***'
     else:
-        masked_name = name[0] + '*' * (len(name) - 1)
+        masked_name = name[0] + '***'
   
     if len(domain) <= 2:
-        masked_domain = '*' * len(domain)
+        masked_domain = '***' + domain
     else:
-        masked_domain = '*' * (len(domain) - 2) + domain[-2:]
+        masked_domain = '***' + domain[-2:]
   
     return f"{masked_name}@{masked_domain}"
 
 
 def get_username_from_email(email):
-    """从邮箱提取用户名"""
     if '@' in email:
         return email.split('@')[0]
     return email
 
 
 def shot_path(idx, name):
-    """生成截图路径"""
     return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
 
@@ -109,7 +105,6 @@ class PellaAutoRenew:
             raise
 
     def take_screenshot(self, name):
-        """截图并返回路径"""
         try:
             path = shot_path(self.idx, name)
             self.driver.save_screenshot(path)
@@ -326,7 +321,6 @@ class PellaAutoRenew:
             raise Exception(f"❌ 获取服务器失败: {e}")
   
     def check_server_status(self):
-        """检查服务器当前状态"""
         if not self.server_url:
             return "unknown"
       
@@ -448,7 +442,6 @@ class PellaAutoRenew:
             raise Exception(f"❌ 续期错误: {e}")
 
     def restart_server(self):
-        """重启服务器（仅在停止时）"""
         if not self.server_url:
             return "skip", "缺少服务器URL"
       
@@ -502,7 +495,6 @@ class PellaAutoRenew:
             self.driver.execute_script("arguments[0].click();", restart_btn)
             logger.info("✅ 已点击 RESTART 按钮")
           
-            # 等待重启完成
             time.sleep(self.RESTART_WAIT_TIME)
             self.take_screenshot("05-restarted")
           
@@ -562,7 +554,6 @@ class MultiAccountManager:
         return accounts
   
     def filter_accounts(self, accounts):
-        """根据完整邮箱过滤账号"""
         if not self.target_account:
             return accounts
       
@@ -576,7 +567,6 @@ class MultiAccountManager:
         return filtered
   
     def format_renew_result(self, renew_result):
-        """格式化续期结果"""
         if renew_result.startswith("success:"):
             change = renew_result.replace("success:", "")
             return f"续期成功 {change}"
@@ -594,7 +584,6 @@ class MultiAccountManager:
             return renew_result
   
     def format_restart_result(self, restart_status, restart_msg):
-        """格式化重启结果"""
         if restart_status == "running":
             return "运行中(无需重启)"
         elif restart_status == "restarted":
@@ -611,7 +600,6 @@ class MultiAccountManager:
             return restart_msg
   
     def get_status_icon(self, renew_result):
-        """获取状态图标"""
         if renew_result.startswith("success:"):
             return "✅"
         elif renew_result == "today_renewed":
@@ -625,13 +613,10 @@ class MultiAccountManager:
             return
       
         try:
-            icon = self.get_status_icon(renew_result)
             renew_display = self.format_renew_result(renew_result)
             restart_display = self.format_restart_result(restart_status, restart_msg)
           
-            text = f"""{icon} Pella Free 续期
-
-账号：{email}
+            text = f"""账号：{email}
 续期：{renew_display}
 重启：{restart_display}
 时间：{cn_time_str()}
@@ -675,7 +660,6 @@ Pella Free Auto Restart"""
         else:
             logger.info(f"📋 全量模式: 运行所有 {len(accounts)} 个账号")
       
-        # 以下代码应在 if/else 外部，两种模式都执行
         results = []
         total = len(accounts)
       
@@ -714,7 +698,6 @@ Pella Free Auto Restart"""
                     'restart': 'skip'
                 })
       
-        # 打印汇总
         ok_count = sum(1 for r in results if r['success'])
         logger.info(f"\n{'=' * 50}")
         logger.info(f"📊 执行汇总: {ok_count}/{len(results)} 成功")
