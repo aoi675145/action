@@ -31,7 +31,7 @@ def mask(s: str, show: int = 1) -> str:
     return s[:show] + "*" * min(3, len(s) - show)
 
 def mask_id(sid: str) -> str:
-    """隐藏服务器ID，只显示前1位"""
+    """隐藏服务器ID"""
     if not sid: return "****"
     return sid[0] + "***"
 
@@ -53,7 +53,7 @@ def setup_display():
 def shot(idx: int, name: str) -> str:
     return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
-def notify_simple(ok: bool, username: str, server_id: str, status: str, img: str = None):
+def notify(ok: bool, username: str, info: str, img: str = None):
     """精简通知 - 单条消息带截图"""
     token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
     if not token or not chat: 
@@ -66,13 +66,12 @@ def notify_simple(ok: bool, username: str, server_id: str, status: str, img: str
         text = f"""{icon} {result}
 
 账号：{username}
-信息：服务器: {server_id}
+信息：{info}
 时间：{cn_time_str()}
 
 Zampto Auto Restart"""
         
         if img and Path(img).exists():
-            # 发送带图片的消息
             with open(img, "rb") as f:
                 requests.post(
                     f"https://api.telegram.org/bot{token}/sendPhoto",
@@ -81,7 +80,6 @@ Zampto Auto Restart"""
                     timeout=60
                 )
         else:
-            # 仅发送文本
             requests.post(
                 f"https://api.telegram.org/bot{token}/sendMessage",
                 json={"chat_id": chat, "text": text},
@@ -200,8 +198,8 @@ def logout(sb):
     except Exception as e:
         print(f"[WARN] 退出时出错: {e}")
 
-def get_servers(sb, idx: int) -> List[Dict[str, str]]:
-    """获取服务器列表"""
+def get_servers(sb, idx: int) -> Tuple[List[Dict[str, str]], str]:
+    """获取服务器列表，返回 (服务器列表, 错误信息)"""
     print("[INFO] 获取服务器列表...")
     servers = []
     seen_ids = set()
@@ -213,7 +211,7 @@ def get_servers(sb, idx: int) -> List[Dict[str, str]]:
     src = sb.get_page_source()
     if "Access Blocked" in src or "VPN or Proxy Detected" in src:
         print("[ERROR] ⚠️ 访问被阻止")
-        return []
+        return [], "⚠️ 访问被阻止"
     
     for page_url in [DASHBOARD_URL, OVERVIEW_URL]:
         if page_url != DASHBOARD_URL:
@@ -234,10 +232,14 @@ def get_servers(sb, idx: int) -> List[Dict[str, str]]:
                     seen_ids.add(sid)
                     servers.append({"id": sid, "name": f"Server {sid}"})
     
+    if not servers:
+        print("[WARN] 未找到服务器")
+        return [], "⚠️ 未找到服务器"
+    
     print(f"[INFO] 找到 {len(servers)} 个服务器")
     for s in servers:
         print(f"  - ID: {mask_id(s['id'])}")
-    return servers
+    return servers, ""
 
 def wait_for_status(sb, timeout: int = 10) -> str:
     """等待状态元素加载并返回状态文本"""
@@ -285,15 +287,12 @@ def restart_server(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
     }
     
     print(f"\n[INFO] 重启服务器 {sid_masked}...")
-    
-    # 进入服务器控制台页面（日志中隐藏真实ID）
-    console_url = CONSOLE_URL.format(sid)
     print(f"[INFO] 服务器页面 URL: https://dash.zampto.net/server-console?id=****")
     
+    console_url = CONSOLE_URL.format(sid)
     sb.open(console_url)
     time.sleep(3)
     
-    # 等待页面加载完成
     print("[INFO] 等待页面加载...")
     for _ in range(10):
         src = sb.get_page_source()
@@ -305,14 +304,13 @@ def restart_server(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
     
     src = sb.get_page_source()
     if "Access Blocked" in src:
-        result["message"] = "访问被阻止"
+        result["message"] = "⚠️ 访问被阻止"
+        notify(False, username, "⚠️ 访问被阻止", None)
         return result
     
-    # 获取重启前状态
     old_status = wait_for_status(sb, 5)
     print(f"[INFO] 重启前状态: {old_status or '加载中...'}")
     
-    # 查找并点击 Restart 按钮
     print("[INFO] 查找 Restart 按钮...")
     
     try:
@@ -345,19 +343,18 @@ def restart_server(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
                 print("[INFO] ✅ 已点击 Restart 按钮 (selenium)")
                 clicked = True
             except:
-                result["message"] = "未找到 Restart 按钮"
-                sb.save_screenshot(shot(idx, f"srv-{sid_masked}-nobtn"))
+                result["message"] = "⚠️ 未找到 Restart 按钮"
+                notify(False, username, f"服务器: {sid} | ⚠️ 未找到按钮", None)
                 return result
         
     except Exception as e:
-        result["message"] = f"点击失败: {e}"
+        result["message"] = f"⚠️ 点击失败: {e}"
+        notify(False, username, f"服务器: {sid} | ⚠️ 点击失败", None)
         return result
     
-    # 等待重启响应
     print("[INFO] 等待重启响应...")
     time.sleep(3)
     
-    # 验证重启状态
     print("[INFO] 验证重启状态...")
     
     max_wait = 60
@@ -394,16 +391,19 @@ def restart_server(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
             if "Running" in final_status or "Starting" in final_status:
                 result["success"] = True
         else:
-            result["message"] = "无法获取服务器状态"
+            result["message"] = "⚠️ 无法获取服务器状态"
     
-    # 保存控制台截图（重启结果页面）
+    # 保存控制台截图
     time.sleep(2)
     sp = shot(idx, f"srv-result")
     sb.save_screenshot(sp)
     result["screenshot"] = sp
     
     # 发送通知
-    notify_simple(result["success"], username, sid, result["status"], sp)
+    if result["success"]:
+        notify(True, username, f"服务器: {sid}", sp)
+    else:
+        notify(False, username, f"服务器: {sid} | {result['message']}", sp)
     
     print(f"[INFO] {'✅' if result['success'] else '⚠️'} {result['message']}")
     return result
@@ -414,13 +414,13 @@ def process(sb, user: str, pwd: str, idx: int) -> Dict[str, Any]:
     
     if not login(sb, user, pwd, idx):
         result["message"] = "登录失败"
-        notify_simple(False, user, "N/A", "登录失败", None)
+        notify(False, user, "⚠️ 登录失败", None)
         return result
     
-    servers = get_servers(sb, idx)
-    if not servers:
-        result["message"] = "无服务器或访问被阻止"
-        notify_simple(False, user, "N/A", "无服务器", None)
+    servers, error = get_servers(sb, idx)
+    if error:
+        result["message"] = error
+        notify(False, user, error, None)
         logout(sb)
         return result
     
@@ -437,7 +437,7 @@ def process(sb, user: str, pwd: str, idx: int) -> Dict[str, Any]:
                 "success": False, 
                 "message": str(e)
             })
-            notify_simple(False, user, srv["id"], str(e), None)
+            notify(False, user, f"服务器: {srv['id']} | ⚠️ {e}", None)
     
     ok = sum(1 for s in result["servers"] if s.get("success"))
     result["success"] = ok > 0
@@ -490,7 +490,7 @@ def main():
                         "message": str(e), 
                         "servers": []
                     })
-                    notify_simple(False, u, "N/A", str(e), None)
+                    notify(False, u, f"⚠️ {e}", None)
             
     except Exception as e:
         print(f"[ERROR] 脚本异常: {e}")
@@ -499,7 +499,6 @@ def main():
         if display:
             display.stop()
     
-    # 打印汇总
     ok_acc = sum(1 for r in results if r.get("success"))
     total_srv = sum(len(r.get("servers", [])) for r in results)
     ok_srv = sum(sum(1 for s in r.get("servers", []) if s.get("success")) for r in results)
