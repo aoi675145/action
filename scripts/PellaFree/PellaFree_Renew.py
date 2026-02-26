@@ -1,14 +1,5 @@
 # scripts/PellaFree/PellaFree_Renew.py
 #!/usr/bin/env python3
-"""
-Pella 自动续期脚本（带截图通知版）
-
-配置变量:
-- PELLA_ACCOUNTS: 格式 邮箱1:密码1,邮箱2:密码2,邮箱3:密码3
-- TG_BOT_TOKEN: Telegram 机器人 Token（可选）
-- TG_CHAT_ID: Telegram 聊天 ID（可选）
-- ACCOUNT_NAME: 指定账号执行（可选）
-"""
 
 import os
 import sys
@@ -45,15 +36,21 @@ def cn_time_str(fmt="%Y-%m-%d %H:%M:%S"):
 
 
 def mask_email(email):
-    """隐藏邮箱地址"""
     if not email or '@' not in email:
         return '***'
     name, domain = email.split('@', 1)
-    if len(name) <= 2:
-        masked = '*' * len(name)
+    
+    if len(name) <= 1:
+        masked_name = '*'
     else:
-        masked = name[0] + '*' * (len(name) - 2) + name[-1]
-    return f"{masked}@{domain}"
+        masked_name = name[0] + '*' * (len(name) - 1)
+    
+    if len(domain) <= 2:
+        masked_domain = '*' * len(domain)
+    else:
+        masked_domain = '*' * (len(domain) - 2) + domain[-2:]
+    
+    return f"{masked_name}@{masked_domain}"
 
 
 def get_username_from_email(email):
@@ -566,18 +563,15 @@ class MultiAccountManager:
         return accounts
     
     def filter_accounts(self, accounts):
-        """根据指定账号过滤"""
+        """根据完整邮箱过滤账号"""
         if not self.target_account:
             return accounts
         
-        target = self.target_account.lower()
+        target = self.target_account.lower().strip()
         filtered = []
         
         for acc in accounts:
-            email_lower = acc['email'].lower()
-            username = get_username_from_email(email_lower)
-            
-            if email_lower == target or username == target:
+            if acc['email'].lower() == target:
                 filtered.append(acc)
         
         return filtered
@@ -669,21 +663,20 @@ Pella Free Auto Restart"""
             logger.error(f"❌ 通知失败: {e}")
     
     def run_all(self):
-        # 过滤账号
         accounts = self.filter_accounts(self.accounts)
         
         if self.target_account:
             if not accounts:
                 logger.error(f"❌ 未找到匹配的账号: {self.target_account}")
-                logger.info("可用账号:")
+                logger.info("可用账号列表:")
                 for acc in self.accounts:
-                    username = get_username_from_email(acc['email'])
-                    logger.info(f"  - {username}")
+                    logger.info(f"  - {acc['email']}")
                 sys.exit(1)
             logger.info(f"🎯 指定账号模式: {mask_email(accounts[0]['email'])}")
         else:
             logger.info(f"📋 全量模式: 运行所有 {len(accounts)} 个账号")
         
+        # 以下代码应在 if/else 外部，两种模式都执行
         results = []
         total = len(accounts)
         
@@ -694,7 +687,6 @@ Pella Free Auto Restart"""
                 renew = PellaAutoRenew(acc['email'], acc['password'], i)
                 success, renew_result, restart_status, restart_msg, screenshot = renew.run()
                 
-                # 发送通知
                 self.send_notification(
                     acc['email'], success, renew_result, 
                     restart_status, restart_msg, screenshot
