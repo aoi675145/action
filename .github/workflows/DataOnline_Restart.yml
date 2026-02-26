@@ -11,11 +11,14 @@ permissions:
   contents: read
   actions: write
 
+
 jobs:
   run_terminal:
     name: 执行终端命令
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: DataOnline_Restart       # 同一时间只允许一个运行
 
     steps:
       - name: 拉取代码仓库
