@@ -1,0 +1,48 @@
+name: Zampto 指定账号执行
+
+on:
+  schedule:
+    - cron: '55 3 * * *'
+  workflow_dispatch:
+    inputs:
+      account_name:
+        description: '指定账号名（留空运行全部）'
+        required: false
+        default: ''
+        type: string
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    concurrency:
+      group: Zampto_Restart
+      cancel-in-progress: false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb unzip
+          pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 requests>=2.31.0
+
+      # ... 代理安装步骤保持不变 ...
+
+      - name: 执行续期
+        env:
+          ZAMPTO_ACCOUNT: ${{ secrets.ZAMPTO_ACCOUNT }}
+          TARGET_ACCOUNT: ${{ github.event.inputs.account_name }}  # 新增
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
+        run: python scripts/Zampto_Restart.py
+
+      # ... 后续步骤保持不变 ...
