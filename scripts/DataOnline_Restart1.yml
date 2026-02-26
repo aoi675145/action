@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Data Online 终端命令执行 - 多账号支持 + 指定账号执行功能"""
+"""Data Online 终端命令执行 - 多账号支持 - 指定账号执行"""
 
 import os, sys, asyncio, httpx
 from datetime import datetime, timezone, timedelta
@@ -17,41 +17,38 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CN_TZ = timezone(timedelta(hours=8))
 
-
 def cn_now() -> datetime:
     return datetime.now(CN_TZ)
-
 
 def cn_time_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
     return cn_now().strftime(fmt)
 
-
 def mask(s: str, show: int = 3) -> str:
     """隐藏敏感信息（仅用于日志）"""
-    if not s:
-        return "***"
+    if not s: return "***"
     s = str(s)
-    if len(s) <= show:
-        return s[0] + "***"
+    if len(s) <= show: return s[0] + "***"
     return s[:show] + "*" * min(3, len(s) - show)
-
 
 def mask_command(cmd: str) -> str:
     """隐藏命令详情 - 只用于工作流日志"""
-    if not cmd:
-        return "***"
+    if not cmd: return "***"
     first_word = cmd.split()[0] if cmd.split() else "cmd"
     cmd_name = first_word.split('/')[-1]
     return f"{cmd_name} ..."
-
 
 def shot(idx: int, name: str) -> str:
     """生成截图路径"""
     return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
+def get_username_from_email(email: str) -> str:
+    """从邮箱中提取用户名部分（@前面的部分）"""
+    if '@' in email:
+        return email.split('@')[0]
+    return email
 
 def parse_accounts(s: str) -> List[Tuple[str, str, str]]:
-    """解析账号配置，返回 [(用户名, 密码, 命令), ...]"""
+    """解析账号配置，返回 [(邮箱, 密码, 命令), ...]"""
     accounts = []
     for line in s.strip().split('\n'):
         line = line.strip()
@@ -59,43 +56,40 @@ def parse_accounts(s: str) -> List[Tuple[str, str, str]]:
             continue
         parts = line.split('----')
         if len(parts) >= 3:
-            username = parts[0].strip()
+            email = parts[0].strip()
             password = parts[1].strip()
             command = '----'.join(parts[2:]).strip()
-            if username and password and command:
-                accounts.append((username, password, command))
+            if email and password and command:
+                accounts.append((email, password, command))
     return accounts
-
 
 def filter_accounts(accounts: List[Tuple[str, str, str]], target: str) -> List[Tuple[str, str, str]]:
     """
-    根据用户名精确匹配账号
-    
-    Args:
-        accounts: 所有账号列表 [(用户名, 密码, 命令), ...]
-        target: 目标用户名
-    
-    Returns:
-        匹配的账号列表
+    根据账号名过滤账号列表
+    支持：
+    - 完整邮箱匹配: imgzzcdc@example.com
+    - 用户名匹配: imgzzcdc
     """
-    if not target or not target.strip():
-        return accounts  # 未指定则返回全部
+    if not target:
+        return accounts
     
-    target = target.strip()
+    target = target.strip().lower()
+    filtered = []
     
-    # 精确匹配（不区分大小写）
-    for acc in accounts:
-        if acc[0].lower() == target.lower():
-            print(f"[INFO] 🎯 匹配账号: {acc[0]}")
-            return [acc]
+    for email, password, command in accounts:
+        email_lower = email.lower()
+        username = get_username_from_email(email_lower)
+        
+        # 精确匹配：完整邮箱 或 用户名部分
+        if email_lower == target or username == target:
+            filtered.append((email, password, command))
     
-    # 未匹配到
-    print(f"[ERROR] ❌ 未找到账号: {target}")
-    return []
+    return filtered
 
+# ============ 以下函数保持不变 ============
 
 async def notify(ok: bool, username: str, info: str, img: str = None, command: str = None):
-    """发送 Telegram 通知"""
+    """发送 Telegram 通知（完整显示，不隐藏）"""
     token = os.environ.get("TG_BOT_TOKEN")
     chat = os.environ.get("TG_CHAT_ID")
     if not token or not chat:
@@ -132,7 +126,6 @@ Data Online Auto Restart"""
     except Exception as e:
         print(f"[WARN] 通知发送失败: {e}")
 
-
 async def wait_for_page_ready(page, timeout: int = 30) -> bool:
     """等待页面完全加载"""
     for i in range(timeout):
@@ -149,7 +142,6 @@ async def wait_for_page_ready(page, timeout: int = 30) -> bool:
             pass
         await asyncio.sleep(1)
     return False
-
 
 async def try_connect(page, url: str, max_retries: int = 3, retry_delay: int = 30) -> Tuple[bool, str]:
     """尝试连接，带重试机制"""
@@ -182,7 +174,6 @@ async def try_connect(page, url: str, max_retries: int = 3, retry_delay: int = 3
     
     return False, f"连接失败 (重试{max_retries}次)"
 
-
 async def check_login_status(page) -> Tuple[str, str]:
     """检查登录状态"""
     current_url = page.url
@@ -207,11 +198,10 @@ async def check_login_status(page) -> Tuple[str, str]:
     
     return 'pending', '等待中'
 
-
 async def login(page, username: str, password: str, idx: int) -> Tuple[bool, str, Optional[str]]:
     """登录，返回 (成功, 状态, 截图路径)"""
     print(f"\n{'='*50}")
-    print(f"[INFO] 账号 {idx}: 登录 {username}")
+    print(f"[INFO] 账号 {idx}: 登录 {mask(username)}")
     print(f"{'='*50}")
     
     last_shot = None
@@ -351,7 +341,6 @@ async def login(page, username: str, password: str, idx: int) -> Tuple[bool, str
     await page.screenshot(path=last_shot)
     return False, "timeout", last_shot
 
-
 async def execute_command(page, command: str, idx: int) -> Tuple[bool, str, Optional[str]]:
     """执行终端命令，返回 (成功, 消息, 截图路径)"""
     print(f"\n[INFO] 访问终端页面...")
@@ -403,7 +392,6 @@ async def execute_command(page, command: str, idx: int) -> Tuple[bool, str, Opti
     
     return True, "命令执行成功", last_shot
 
-
 async def logout(context):
     """退出登录"""
     try:
@@ -412,11 +400,10 @@ async def logout(context):
     except Exception as e:
         print(f"[WARN] 退出时出错: {e}")
 
-
 async def process_account(browser, username: str, password: str, command: str, idx: int) -> dict:
     """处理单个账号"""
     result = {
-        "username": username,
+        "username": mask(username),
         "success": False,
         "message": "",
         "screenshot": None
@@ -470,7 +457,6 @@ async def process_account(browser, username: str, password: str, command: str, i
     
     return result
 
-
 async def main():
     # 获取账号配置
     account_str = os.environ.get('DATA_ACCOUNT', '')
@@ -478,31 +464,38 @@ async def main():
         print("[ERROR] 缺少 DATA_ACCOUNT")
         sys.exit(1)
     
-    # 解析所有账号
-    all_accounts = parse_accounts(account_str)
-    if not all_accounts:
+    accounts = parse_accounts(account_str)
+    if not accounts:
         print("[ERROR] 无有效账号配置")
-        print("[INFO] 格式: 用户名----密码----命令")
+        print("[INFO] 格式: 邮箱----密码----命令")
         sys.exit(1)
     
-    print(f"[INFO] 配置中共 {len(all_accounts)} 个账号")
-    
-    # 获取目标账号参数
-    target_account = os.environ.get('TARGET_ACCOUNT', '').strip()
+    # ========== 新增：账号过滤逻辑 ==========
+    target_account = os.environ.get('ACCOUNT_NAME', '').strip()
     
     if target_account:
-        print(f"[INFO] 🔍 指定运行账号: {target_account}")
-        accounts = filter_accounts(all_accounts, target_account)
+        print(f"\n[INFO] 🎯 指定账号模式: {target_account}")
+        original_count = len(accounts)
+        accounts = filter_accounts(accounts, target_account)
+        
         if not accounts:
-            print("[ERROR] 未找到匹配的账号，退出")
+            print(f"[ERROR] ❌ 未找到匹配的账号: {target_account}")
+            print(f"[INFO] 可用账号列表:")
+            # 重新解析显示可用账号
+            all_accounts = parse_accounts(account_str)
+            for email, _, _ in all_accounts:
+                username = get_username_from_email(email)
+                print(f"  - {username} ({mask(email)})")
             sys.exit(1)
+        
+        print(f"[INFO] ✅ 已匹配 {len(accounts)}/{original_count} 个账号")
     else:
-        print("[INFO] 📋 运行全部账号")
-        accounts = all_accounts
+        print(f"\n[INFO] 📋 全量模式: 运行所有 {len(accounts)} 个账号")
+    # ========================================
     
-    print(f"\n[INFO] 本次执行 {len(accounts)} 个账号:")
-    for i, (username, _, cmd) in enumerate(accounts, 1):
-        print(f"  {i}. {username} | 命令: {mask_command(cmd)}")
+    print(f"\n[INFO] 待处理账号:")
+    for i, (email, _, cmd) in enumerate(accounts, 1):
+        print(f"  {i}. {mask(email)} | 命令: {mask_command(cmd)}")
     
     results = []
     
@@ -510,26 +503,20 @@ async def main():
         print("\n[INFO] 启动浏览器...")
         browser = await p.chromium.launch(
             headless=True,
-            args=[
-                '--ignore-certificate-errors',
-                '--no-sandbox',
-                '--disable-blink-features=AutomationControlled'
-            ]
+            args=['--ignore-certificate-errors', '--no-sandbox', '--disable-blink-features=AutomationControlled']
         )
         
         try:
-            for i, (username, password, command) in enumerate(accounts, 1):
-                result = await process_account(browser, username, password, command, i)
+            for i, (email, password, command) in enumerate(accounts, 1):
+                result = await process_account(browser, email, password, command, i)
                 results.append(result)
                 
-                # 多账号间隔
                 if i < len(accounts):
                     print(f"\n[INFO] 等待 3 秒处理下一个账号...")
                     await asyncio.sleep(3)
         finally:
             await browser.close()
     
-    # 汇总结果
     ok_count = sum(1 for r in results if r["success"])
     
     print(f"\n{'='*50}")
@@ -541,7 +528,6 @@ async def main():
     print(f"{'='*50}")
     
     sys.exit(0 if ok_count > 0 else 1)
-
 
 if __name__ == '__main__':
     asyncio.run(main())
