@@ -470,28 +470,25 @@ async def main():
         print("[INFO] 格式: 邮箱----密码----命令")
         sys.exit(1)
     
-    # ========== 新增：账号过滤逻辑 ==========
     target_account = os.environ.get('ACCOUNT_NAME', '').strip()
     
     if target_account:
-        print(f"\n[INFO] 🎯 指定账号模式: {target_account}")
+        print(f"\n[INFO] 🎯 指定账号模式: {mask(target_account)}")
         original_count = len(accounts)
         accounts = filter_accounts(accounts, target_account)
         
         if not accounts:
-            print(f"[ERROR] ❌ 未找到匹配的账号: {target_account}")
+            print(f"[ERROR] ❌ 未找到匹配的账号: {mask(target_account)}")
             print(f"[INFO] 可用账号列表:")
-            # 重新解析显示可用账号
             all_accounts = parse_accounts(account_str)
             for email, _, _ in all_accounts:
                 username = get_username_from_email(email)
-                print(f"  - {username} ({mask(email)})")
+                print(f"  - {mask(username)}")
             sys.exit(1)
         
         print(f"[INFO] ✅ 已匹配 {len(accounts)}/{original_count} 个账号")
     else:
         print(f"\n[INFO] 📋 全量模式: 运行所有 {len(accounts)} 个账号")
-    # ========================================
     
     print(f"\n[INFO] 待处理账号:")
     for i, (email, _, cmd) in enumerate(accounts, 1):
