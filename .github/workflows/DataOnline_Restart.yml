@@ -40,7 +40,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          python scripts/DataOnline_Restart.py
+          python scripts/DataOnline/DataOnline_Restart.py
 
 #      - name: 上传截图
 #        if: always()
