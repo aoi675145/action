@@ -1,8 +1,6 @@
-name: Zampto 指定账号执行
+name: Data Online 指定账号执行
 
 on:
-  schedule:
-    - cron: '55 3 * * *'
   workflow_dispatch:
     inputs:
       account_name:
@@ -11,38 +9,58 @@ on:
         default: ''
         type: string
 
+concurrency:
+  group: DataOnline_Restart
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
 jobs:
-  renew:
+  run_terminal:
+    name: 执行终端命令
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
-    concurrency:
-      group: Zampto_Restart
-      cancel-in-progress: false
+    timeout-minutes: 15
 
     steps:
-      - uses: actions/checkout@v4
+      - name: 拉取代码仓库
+        uses: actions/checkout@v4
 
-      - name: 设置 Python
+      - name: 配置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: 安装依赖
         run: |
-          sudo apt-get update && sudo apt-get install -y xvfb unzip
-          pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 requests>=2.31.0
+          pip install --upgrade pip
+          pip install playwright httpx
+          playwright install chromium
 
-      # ... 代理安装步骤保持不变 ...
-
-      - name: 执行续期
+      - name: 执行终端脚本
         env:
-          ZAMPTO_ACCOUNT: ${{ secrets.ZAMPTO_ACCOUNT }}
-          TARGET_ACCOUNT: ${{ github.event.inputs.account_name }}  # 新增
+          DATA_ACCOUNT: ${{ secrets.DATA_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-        run: python scripts/Zampto_Restart.py
+          ACCOUNT_NAME: ${{ github.event.inputs.account_name }}
+        run: |
+          python scripts/DataOnline_Restart1.py
 
-      # ... 后续步骤保持不变 ...
+#      - name: 上传截图
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: screenshots-${{ github.run_number }}
+#          path: output/screenshots/
+#          retention-days: 3
+
+      - name: 清理工作流记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
