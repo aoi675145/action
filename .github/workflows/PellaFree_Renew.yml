@@ -1,4 +1,4 @@
-name: Pella Free 续期
+name: Pella Free 指定账号执行
 
 on:
   schedule:
