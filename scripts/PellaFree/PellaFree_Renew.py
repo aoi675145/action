@@ -1,4 +1,3 @@
-# scripts/PellaFree/PellaFree_Renew.py
 #!/usr/bin/env python3
 
 import os
@@ -327,7 +326,7 @@ class PellaAutoRenew:
             raise Exception(f"❌ 获取服务器失败: {e}")
     
     def check_server_status(self):
-        """检查服务器当前状态"""
+        """检查服务器状态 - 同时检测 RUNNING 状态和错误提示"""
         if not self.server_url:
             return "unknown"
         
@@ -335,11 +334,43 @@ class PellaAutoRenew:
             self.driver.get(self.server_url)
             time.sleep(3)
         
+        # 先检查是否有 "Failed to fetch logs" 错误提示（服务器掉线标志）
+        try:
+            error_selectors = [
+                "//*[contains(text(), 'Failed to fetch logs')]",
+                "//*[contains(text(), 'failed to fetch')]",
+                "//div[contains(@class, 'Toastify')]//div[contains(text(), 'Failed')]",
+                "//div[contains(@class, 'toast')]//div[contains(text(), 'Failed')]",
+            ]
+            
+            for selector in error_selectors:
+                try:
+                    elements = self.driver.find_elements(By.XPATH, selector)
+                    for elem in elements:
+                        if elem.is_displayed():
+                            logger.info("⚠️ 检测到 'Failed to fetch logs' 错误，服务器已掉线")
+                            self.server_status = "offline"
+                            return "offline"
+                except:
+                    continue
+            
+            # 也检查页面文本
+            page_text = self.driver.find_element(By.TAG_NAME, "body").text
+            if "Failed to fetch logs" in page_text or "failed to fetch" in page_text.lower():
+                logger.info("⚠️ 检测到获取日志失败，服务器已掉线")
+                self.server_status = "offline"
+                return "offline"
+                
+        except Exception as e:
+            logger.warning(f"检查错误提示时出错: {e}")
+        
+        # 检查状态文本
         page_text = self.driver.find_element(By.TAG_NAME, "body").text.upper()
         
         running_indicators = ["STATUS: RUNNING", "RUNNING", "ONLINE", "ACTIVE"]
         stopped_indicators = ["STATUS: STOPPED", "STOPPED", "OFFLINE", "INACTIVE", "NOT RUNNING"]
         
+        # 检查状态元素
         try:
             status_elements = self.driver.find_elements(By.XPATH, 
                 "//*[contains(text(), 'Status') or contains(text(), 'status')]")
@@ -363,6 +394,7 @@ class PellaAutoRenew:
         except:
             pass
         
+        # 检查 START 按钮
         try:
             start_buttons = self.driver.find_elements(By.XPATH, 
                 "//button[contains(text(), 'START') and not(contains(text(), 'RESTART'))]")
@@ -376,6 +408,7 @@ class PellaAutoRenew:
         except:
             pass
         
+        # 文本匹配
         for indicator in running_indicators:
             if indicator in page_text:
                 self.server_status = "running"
@@ -449,20 +482,24 @@ class PellaAutoRenew:
             raise Exception(f"❌ 续期错误: {e}")
 
     def restart_server(self):
-        """重启服务器（仅在停止时）"""
+        """重启服务器 - 支持检测掉线状态"""
         if not self.server_url:
             return "skip", "缺少服务器URL"
         
         status = self.check_server_status()
         
         if status == "running":
-            logger.info("✅ 服务器正在运行，无需重启")
+            logger.info("✅ 服务器正常运行，无需重启")
             return "running", "运行中(无需重启)"
         
         if status == "unknown":
             return "unknown", "无法确定状态"
         
-        logger.info("🔄 服务器已停止，开始重启...")
+        # offline 或 stopped 都需要重启
+        if status == "offline":
+            logger.info("🔄 服务器已掉线，开始重启...")
+        else:
+            logger.info("🔄 服务器已停止，开始重启...")
         
         if '/server/' not in self.driver.current_url:
             self.driver.get(self.server_url)
@@ -507,7 +544,8 @@ class PellaAutoRenew:
             time.sleep(self.RESTART_WAIT_TIME)
             self.take_screenshot("05-restarted")
             
-            return "restarted", "重启完成"
+            reason = "掉线重启" if status == "offline" else "停止重启"
+            return "restarted", reason
                 
         except Exception as e:
             logger.error(f"❌ 重启失败: {e}")
@@ -597,17 +635,17 @@ class MultiAccountManager:
     def format_restart_result(self, restart_status, restart_msg):
         """格式化重启结果"""
         if restart_status == "running":
-            return "运行中(无需重启)"
+            return "✅ 运行中(无需重启)"
         elif restart_status == "restarted":
-            return "重启完成"
+            return f"🔄 {restart_msg}"
         elif restart_status == "skip":
-            return f"跳过({restart_msg})"
+            return f"⏭️ 跳过({restart_msg})"
         elif restart_status == "unknown":
-            return "无法确定状态"
+            return "❓ 无法确定状态"
         elif restart_status == "no_button":
-            return "未找到重启按钮"
+            return "⚠️ 未找到重启按钮"
         elif restart_status == "error":
-            return restart_msg
+            return f"❌ {restart_msg}"
         else:
             return restart_msg
     
@@ -632,7 +670,7 @@ class MultiAccountManager:
             
             text = f"""{icon} Pella Free 续期
 
-账号：{email}
+账号：{mask_email(email)}
 续期：{renew_display}
 重启：{restart_display}
 时间：{cn_time_str()}
@@ -676,7 +714,6 @@ Pella Free Auto Restart"""
         else:
             logger.info(f"📋 全量模式: 运行所有 {len(accounts)} 个账号")
         
-        # 以下代码应在 if/else 外部，两种模式都执行
         results = []
         total = len(accounts)
         
