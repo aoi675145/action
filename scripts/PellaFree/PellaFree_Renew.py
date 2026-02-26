@@ -1,33 +1,47 @@
+# scripts/PellaFree/PellaFree_Renew.py
 #!/usr/bin/env python3
 """
-Pella 自动续期脚本 增加重启功能（智能检测版）
+Pella 自动续期脚本（带截图通知版）
 
-配置变量说明:
-- 单账号变量:
-    - PELLA_EMAIL / LEAFLOW_EMAIL=登录邮箱
-    - PELLA_PASSWORD / LEAFLOW_PASSWORD=登录密码
-- 多账号变量:
-    - PELLA_ACCOUNTS / LEAFLOW_ACCOUNTS: 格式：邮箱1:密码1,邮箱2:密码2,邮箱3:密码3
-- 通知变量 (可选):
-    - TG_BOT_TOKEN=Telegram 机器人 Token
-    - TG_CHAT_ID=Telegram 聊天 ID
+配置变量:
+- PELLA_ACCOUNTS: 格式 邮箱1:密码1,邮箱2:密码2,邮箱3:密码3
+- TG_BOT_TOKEN: Telegram 机器人 Token（可选）
+- TG_CHAT_ID: Telegram 聊天 ID（可选）
+- ACCOUNT_NAME: 指定账号执行（可选）
 """
 
 import os
+import sys
 import time
 import logging
 import re
 import requests
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import TimeoutException, NoSuchElementException, WebDriverException
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+# 截图目录
+OUTPUT_DIR = Path("output/screenshots")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# 时区
+CN_TZ = timezone(timedelta(hours=8))
+
+
+def cn_now():
+    return datetime.now(CN_TZ)
+
+
+def cn_time_str(fmt="%Y-%m-%d %H:%M:%S"):
+    return cn_now().strftime(fmt)
 
 
 def mask_email(email):
@@ -42,16 +56,16 @@ def mask_email(email):
     return f"{masked}@{domain}"
 
 
-def mask_url(url):
-    """隐藏URL中的敏感ID"""
-    if not url:
-        return '***'
-    match = re.search(r'/server/([a-f0-9]+)', url)
-    if match:
-        sid = match.group(1)
-        if len(sid) > 8:
-            return url.replace(sid, sid[:4] + '***' + sid[-4:])
-    return url
+def get_username_from_email(email):
+    """从邮箱提取用户名"""
+    if '@' in email:
+        return email.split('@')[0]
+    return email
+
+
+def shot_path(idx, name):
+    """生成截图路径"""
+    return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
 
 class PellaAutoRenew:
@@ -61,14 +75,15 @@ class PellaAutoRenew:
     WAIT_TIME_AFTER_LOGIN = 20
     RESTART_WAIT_TIME = 60
 
-    def __init__(self, email, password):
+    def __init__(self, email, password, idx=1):
         self.email = email
         self.password = password
+        self.idx = idx
         self.initial_expiry_details = "N/A"
         self.initial_expiry_value = -1.0
         self.server_url = None
-        self.restart_output = ""
         self.server_status = "unknown"
+        self.last_screenshot = None
         
         if not self.email or not self.password:
             raise ValueError("邮箱和密码不能为空")
@@ -96,6 +111,17 @@ class PellaAutoRenew:
         except WebDriverException as e:
             logger.error(f"❌ 驱动初始化失败: {e}")
             raise
+
+    def take_screenshot(self, name):
+        """截图并返回路径"""
+        try:
+            path = shot_path(self.idx, name)
+            self.driver.save_screenshot(path)
+            self.last_screenshot = path
+            return path
+        except Exception as e:
+            logger.warning(f"截图失败: {e}")
+            return None
 
     def wait_for_element_clickable(self, by, value, timeout=10):
         return WebDriverWait(self.driver, timeout).until(
@@ -185,9 +211,11 @@ class PellaAutoRenew:
         return None
 
     def login(self):
-        logger.info("开始登录")
+        logger.info(f"开始登录: {mask_email(self.email)}")
         self.driver.get(self.LOGIN_URL)
         time.sleep(4)
+        
+        self.take_screenshot("01-login-page")
         
         def js_set_value(element, value):
             element.clear()
@@ -209,23 +237,28 @@ class PellaAutoRenew:
                 email_input.send_keys(self.email)
             logger.info("✅ 邮箱输入完成")
         except Exception as e:
+            self.take_screenshot("error-email")
             raise Exception(f"❌ 输入邮箱失败: {e}")
             
         try:
             time.sleep(1)
             if not self.find_and_click_button():
+                self.take_screenshot("error-continue")
                 raise Exception("❌ 无法点击Continue按钮")
             
             password_input = self.wait_for_password_field(timeout=15)
             if not password_input:
                 error = self.check_for_error()
                 if error:
+                    self.take_screenshot("error-login")
                     raise Exception(f"❌ 登录错误: {error}")
+                self.take_screenshot("error-password-field")
                 raise Exception("❌ 密码框未出现")
             
             logger.info("✅ 进入密码步骤")
             time.sleep(1)
         except Exception as e:
+            self.take_screenshot("error-step1")
             raise Exception(f"❌ 第一步失败: {e}")
 
         try:
@@ -233,11 +266,13 @@ class PellaAutoRenew:
             js_set_value(password_input, self.password)
             logger.info("✅ 密码输入完成")
         except Exception as e:
+            self.take_screenshot("error-password")
             raise Exception(f"❌ 输入密码失败: {e}")
 
         try:
             time.sleep(2)
             if not self.find_and_click_button():
+                self.take_screenshot("error-submit")
                 raise Exception("❌ 无法点击登录按钮")
         except Exception as e:
             raise Exception(f"❌ 点击登录失败: {e}")
@@ -249,10 +284,12 @@ class PellaAutoRenew:
                 
                 if '/home' in url or '/dashboard' in url:
                     logger.info("✅ 登录成功")
+                    self.take_screenshot("02-logged-in")
                     return True
                 
                 error = self.check_for_error()
                 if error:
+                    self.take_screenshot("error-auth")
                     raise Exception(f"❌ 登录失败: {error}")
                 
                 if '/login' not in url and '/sign-in' not in url:
@@ -260,14 +297,17 @@ class PellaAutoRenew:
                     time.sleep(2)
                     if '/home' in self.driver.current_url:
                         logger.info("✅ 登录成功")
+                        self.take_screenshot("02-logged-in")
                         return True
             
             self.driver.get(self.HOME_URL)
             time.sleep(3)
             if '/home' in self.driver.current_url:
                 logger.info("✅ 登录成功")
+                self.take_screenshot("02-logged-in")
                 return True
             
+            self.take_screenshot("error-timeout")
             raise Exception("❌ 登录超时")
         except Exception as e:
             raise Exception(f"❌ 登录验证失败: {e}")
@@ -282,9 +322,11 @@ class PellaAutoRenew:
             link.click()
             WebDriverWait(self.driver, 10).until(EC.url_contains("/server/"))
             self.server_url = self.driver.current_url
-            logger.info(f"✅ 服务器: {mask_url(self.server_url)}")
+            logger.info(f"✅ 获取服务器URL成功")
+            self.take_screenshot("03-server-page")
             return True
         except Exception as e:
+            self.take_screenshot("error-server")
             raise Exception(f"❌ 获取服务器失败: {e}")
     
     def check_server_status(self):
@@ -298,11 +340,9 @@ class PellaAutoRenew:
         
         page_text = self.driver.find_element(By.TAG_NAME, "body").text.upper()
         
-        # 检查运行状态指示
         running_indicators = ["STATUS: RUNNING", "RUNNING", "ONLINE", "ACTIVE"]
         stopped_indicators = ["STATUS: STOPPED", "STOPPED", "OFFLINE", "INACTIVE", "NOT RUNNING"]
         
-        # 检查页面状态元素
         try:
             status_elements = self.driver.find_elements(By.XPATH, 
                 "//*[contains(text(), 'Status') or contains(text(), 'status')]")
@@ -314,13 +354,11 @@ class PellaAutoRenew:
                     
                     for indicator in running_indicators:
                         if indicator in parent_text:
-                            logger.info("✅ 服务器状态: 运行中")
                             self.server_status = "running"
                             return "running"
                     
                     for indicator in stopped_indicators:
                         if indicator in parent_text:
-                            logger.info("⚠️ 服务器状态: 已停止")
                             self.server_status = "stopped"
                             return "stopped"
                 except:
@@ -328,7 +366,6 @@ class PellaAutoRenew:
         except:
             pass
         
-        # 检查是否有 START 按钮（有则说明服务器已停止）
         try:
             start_buttons = self.driver.find_elements(By.XPATH, 
                 "//button[contains(text(), 'START') and not(contains(text(), 'RESTART'))]")
@@ -337,26 +374,21 @@ class PellaAutoRenew:
                 if btn.is_displayed() and btn.is_enabled():
                     btn_text = btn.text.upper().strip()
                     if btn_text == "START" or btn_text == "START SERVER":
-                        logger.info("⚠️ 服务器状态: 已停止 (发现START按钮)")
                         self.server_status = "stopped"
                         return "stopped"
         except:
             pass
         
-        # 通过页面文本检查
         for indicator in running_indicators:
             if indicator in page_text:
-                logger.info("✅ 服务器状态: 运行中")
                 self.server_status = "running"
                 return "running"
         
         for indicator in stopped_indicators:
             if indicator in page_text:
-                logger.info("⚠️ 服务器状态: 已停止")
                 self.server_status = "stopped"
                 return "stopped"
         
-        logger.info("❓ 服务器状态: 无法确定")
         self.server_status = "unknown"
         return "unknown"
     
@@ -371,6 +403,7 @@ class PellaAutoRenew:
         logger.info(f"📅 当前过期: {self.initial_expiry_details}")
 
         if self.initial_expiry_value == -1.0:
+            self.take_screenshot("error-expiry")
             raise Exception("❌ 无法提取过期时间")
 
         try:
@@ -399,7 +432,8 @@ class PellaAutoRenew:
 
             if count == 0:
                 disabled = self.driver.find_elements(By.CSS_SELECTOR, "a[href*='/renew/'].opacity-50")
-                return "📅 今日已续期" if disabled else "❌ 未找到续期按钮"
+                self.take_screenshot("04-already-renewed")
+                return "today_renewed" if disabled else "no_button"
 
             self.driver.get(self.server_url)
             time.sleep(5)
@@ -407,29 +441,29 @@ class PellaAutoRenew:
             final, final_val = self.extract_expiry_days(self.driver.page_source)
             logger.info(f"📅 续期后: {final}")
             
+            self.take_screenshot("04-renewed")
+            
             if final_val > self.initial_expiry_value:
-                return f"✅ 续期成功 {self.initial_expiry_details} -> {final}"
-            return f"❌ 天数未变化 ({final})"
+                return f"success:{self.initial_expiry_details}->{final}"
+            return f"unchanged:{final}"
 
         except Exception as e:
+            self.take_screenshot("error-renew")
             raise Exception(f"❌ 续期错误: {e}")
 
     def restart_server(self):
-        """点击重启按钮（仅在服务器停止时执行）"""
+        """重启服务器（仅在停止时）"""
         if not self.server_url:
-            logger.warning("⚠️ 缺少服务器URL，跳过重启")
-            return False, "跳过: 缺少服务器URL"
+            return "skip", "缺少服务器URL"
         
-        # 先检查服务器状态
         status = self.check_server_status()
         
         if status == "running":
             logger.info("✅ 服务器正在运行，无需重启")
-            return True, "跳过: 服务器正在运行"
+            return "running", "运行中(无需重启)"
         
         if status == "unknown":
-            logger.info("❓ 无法确定服务器状态，跳过重启")
-            return False, "跳过: 无法确定服务器状态"
+            return "unknown", "无法确定状态"
         
         logger.info("🔄 服务器已停止，开始重启...")
         
@@ -465,119 +499,41 @@ class PellaAutoRenew:
                         continue
             
             if not restart_btn:
-                logger.warning("⚠️ 未找到 RESTART 按钮")
-                return False, "未找到 RESTART 按钮"
+                return "no_button", "未找到RESTART按钮"
             
             self.driver.execute_script("arguments[0].scrollIntoView(true);", restart_btn)
             time.sleep(0.5)
             self.driver.execute_script("arguments[0].click();", restart_btn)
             logger.info("✅ 已点击 RESTART 按钮")
             
-            output = self._wait_for_restart_output()
-            self.restart_output = output
+            # 等待重启完成
+            time.sleep(self.RESTART_WAIT_TIME)
+            self.take_screenshot("05-restarted")
             
-            if output:
-                logger.info(f"✅ 重启完成，获取到 {len(output)} 字符的输出")
-                return True, output
-            else:
-                logger.warning("⚠️ 未获取到重启输出")
-                return False, "未获取到重启输出"
+            return "restarted", "重启完成"
                 
         except Exception as e:
             logger.error(f"❌ 重启失败: {e}")
-            return False, f"重启失败: {e}"
-
-    def _wait_for_restart_output(self):
-        """等待重启输出完成并返回输出内容"""
-        logger.info("⏳ 等待重启输出...")
-        
-        start_time = time.time()
-        last_output = ""
-        stable_count = 0
-        
-        while time.time() - start_time < self.RESTART_WAIT_TIME:
-            try:
-                pre_elements = self.driver.find_elements(By.CSS_SELECTOR, "pre.bg-black, pre[class*='bg-black']")
-                
-                if not pre_elements:
-                    pre_elements = self.driver.find_elements(By.TAG_NAME, "pre")
-                
-                current_output = ""
-                for pre in pre_elements:
-                    try:
-                        divs = pre.find_elements(By.TAG_NAME, "div")
-                        for div in divs:
-                            text = div.text.strip()
-                            if text and text != "Copy":
-                                current_output += text + "\n"
-                        
-                        if not current_output:
-                            current_output = pre.text
-                    except:
-                        continue
-                
-                if current_output:
-                    completion_markers = [
-                        "App is running",
-                        "Thank you for using this script",
-                        "enjoy!"
-                    ]
-                    
-                    is_complete = any(marker in current_output for marker in completion_markers)
-                    
-                    if current_output == last_output:
-                        stable_count += 1
-                    else:
-                        stable_count = 0
-                        last_output = current_output
-                    
-                    if is_complete and stable_count >= 2:
-                        return self._clean_output(current_output)
-                
-                time.sleep(2)
-                
-            except Exception as e:
-                logger.debug(f"获取输出时出错: {e}")
-                time.sleep(2)
-        
-        if last_output:
-            return self._clean_output(last_output)
-        return ""
-
-    def _clean_output(self, output):
-        """清理输出内容"""
-        if not output:
-            return ""
-        
-        lines = output.split('\n')
-        cleaned_lines = []
-        
-        for line in lines:
-            line = line.strip()
-            if not line or line == "Copy":
-                continue
-            line = re.sub(r'\[\d+;\d+H|\[\d+J|\[0J', '', line)
-            cleaned_lines.append(line)
-        
-        return '\n'.join(cleaned_lines)
+            self.take_screenshot("error-restart")
+            return "error", f"重启失败: {e}"
             
     def run(self):
         try:
             logger.info(f"处理账号: {mask_email(self.email)}")
             
             if self.login() and self.get_server_url():
-                result = self.renew_server()
-                logger.info(f"续期结果: {result}")
+                renew_result = self.renew_server()
+                logger.info(f"续期结果: {renew_result}")
                 
-                restart_success, restart_output = self.restart_server()
+                restart_status, restart_msg = self.restart_server()
                 
-                return True, result, restart_output
+                return True, renew_result, restart_status, restart_msg, self.last_screenshot
                 
-            return False, "❌ 登录或获取服务器失败", ""
+            return False, "login_failed", "skip", "登录失败", self.last_screenshot
                 
         except Exception as e:
             logger.error(f"❌ 失败: {e}")
-            return False, f"❌ 失败: {e}", ""
+            return False, f"error:{e}", "skip", "异常", self.last_screenshot
         finally:
             if self.driver:
                 self.driver.quit()
@@ -588,163 +544,206 @@ class MultiAccountManager:
         self.tg_token = os.getenv('TG_BOT_TOKEN', '')
         self.tg_chat = os.getenv('TG_CHAT_ID', '')
         self.accounts = self.load_accounts()
+        self.target_account = os.getenv('ACCOUNT_NAME', '').strip()
     
     def load_accounts(self):
         accounts = []
         
-        accounts_str = os.getenv('PELLA_ACCOUNTS', os.getenv('LEAFLOW_ACCOUNTS', '')).strip()
-        if accounts_str:
-            for pair in [p.strip() for p in re.split(r'[;,]', accounts_str) if p.strip()]:
-                if ':' in pair:
-                    email, pwd = pair.split(':', 1)
-                    if email.strip() and pwd.strip():
-                        accounts.append({'email': email.strip(), 'password': pwd.strip()})
-            if accounts:
-                logger.info(f"加载 {len(accounts)} 个账号")
-                return accounts
+        accounts_str = os.getenv('PELLA_ACCOUNTS', '').strip()
+        if not accounts_str:
+            raise ValueError("❌ 未找到 PELLA_ACCOUNTS 配置")
         
-        email = os.getenv('PELLA_EMAIL', os.getenv('LEAFLOW_EMAIL', '')).strip()
-        pwd = os.getenv('PELLA_PASSWORD', os.getenv('LEAFLOW_PASSWORD', '')).strip()
+        for pair in [p.strip() for p in re.split(r'[;,]', accounts_str) if p.strip()]:
+            if ':' in pair:
+                email, pwd = pair.split(':', 1)
+                if email.strip() and pwd.strip():
+                    accounts.append({'email': email.strip(), 'password': pwd.strip()})
         
-        if email and pwd:
-            accounts.append({'email': email, 'password': pwd})
-            logger.info("加载单账号")
+        if not accounts:
+            raise ValueError("❌ PELLA_ACCOUNTS 格式错误，正确格式: 邮箱1:密码1,邮箱2:密码2")
+        
+        logger.info(f"加载 {len(accounts)} 个账号")
+        return accounts
+    
+    def filter_accounts(self, accounts):
+        """根据指定账号过滤"""
+        if not self.target_account:
             return accounts
         
-        raise ValueError("❌ 未找到账号配置")
+        target = self.target_account.lower()
+        filtered = []
+        
+        for acc in accounts:
+            email_lower = acc['email'].lower()
+            username = get_username_from_email(email_lower)
+            
+            if email_lower == target or username == target:
+                filtered.append(acc)
+        
+        return filtered
     
-    def send_notification(self, results):
-        """发送通知 - 每个账号单独一条消息"""
+    def format_renew_result(self, renew_result):
+        """格式化续期结果"""
+        if renew_result.startswith("success:"):
+            change = renew_result.replace("success:", "")
+            return f"续期成功 {change}"
+        elif renew_result == "today_renewed":
+            return "今日已续期"
+        elif renew_result == "no_button":
+            return "未找到续期按钮"
+        elif renew_result.startswith("unchanged:"):
+            return f"天数未变化 ({renew_result.replace('unchanged:', '')})"
+        elif renew_result.startswith("error:"):
+            return renew_result.replace("error:", "失败: ")
+        elif renew_result == "login_failed":
+            return "登录失败"
+        else:
+            return renew_result
+    
+    def format_restart_result(self, restart_status, restart_msg):
+        """格式化重启结果"""
+        if restart_status == "running":
+            return "运行中(无需重启)"
+        elif restart_status == "restarted":
+            return "重启完成"
+        elif restart_status == "skip":
+            return f"跳过({restart_msg})"
+        elif restart_status == "unknown":
+            return "无法确定状态"
+        elif restart_status == "no_button":
+            return "未找到重启按钮"
+        elif restart_status == "error":
+            return restart_msg
+        else:
+            return restart_msg
+    
+    def get_status_icon(self, renew_result):
+        """获取状态图标"""
+        if renew_result.startswith("success:"):
+            return "✅"
+        elif renew_result == "today_renewed":
+            return "📅"
+        else:
+            return "❌"
+    
+    def send_notification(self, email, success, renew_result, restart_status, restart_msg, screenshot):
+        """发送单个账号的通知（带截图）"""
         if not self.tg_token or not self.tg_chat:
             return
         
-        for email, success, result, restart_output in results:
-            try:
-                self._send_single_notification(email, success, result, restart_output)
-                time.sleep(0.5)
-            except Exception as e:
-                logger.error(f"❌ 发送 {mask_email(email)} 通知失败: {e}")
-    
-    def _send_single_notification(self, email, success, result, restart_output):
-        """发送单个账号的通知"""
         try:
-            # 确定状态图标
-            if "成功" in result:
-                status = "✅"
-            elif "已续期" in result:
-                status = "📅"
+            icon = self.get_status_icon(renew_result)
+            renew_display = self.format_renew_result(renew_result)
+            restart_display = self.format_restart_result(restart_status, restart_msg)
+            
+            text = f"""{icon} Pella Free 续期
+
+账号：{email}
+续期：{renew_display}
+重启：{restart_display}
+时间：{cn_time_str()}
+
+Pella Free Auto Restart"""
+
+            if screenshot and Path(screenshot).exists():
+                with open(screenshot, "rb") as f:
+                    response = requests.post(
+                        f"https://api.telegram.org/bot{self.tg_token}/sendPhoto",
+                        data={"chat_id": self.tg_chat, "caption": text},
+                        files={"photo": f},
+                        timeout=60
+                    )
             else:
-                status = "❌"
-            
-            # 确定重启状态
-            if "跳过: 服务器正在运行" in restart_output:
-                restart_status = "✅ 运行中(无需重启)"
-            elif "跳过" in restart_output:
-                restart_status = f"⏭️ {restart_output}"
-            elif restart_output and ("App is running" in restart_output or "running" in restart_output.lower()):
-                restart_status = "✅ 重启完成"
-            elif restart_output:
-                restart_status = "⚠️ 未确认"
-            else:
-                restart_status = "⚠️ 无输出"
-            
-            # 构建简洁消息
-            msg = f"🎁 Pella 续期报告\n"
-            msg += f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M')}\n"
-            msg += "━" * 18 + "\n\n"
-            msg += f"{status} {email}\n"
-            msg += f"├ 续期: {result}\n"
-            msg += f"└ 重启: {restart_status}"
-            
-            # 发送主消息
-            response = requests.post(
-                f"https://api.telegram.org/bot{self.tg_token}/sendMessage",
-                data={"chat_id": self.tg_chat, "text": msg},
-                timeout=10
-            )
+                response = requests.post(
+                    f"https://api.telegram.org/bot{self.tg_token}/sendMessage",
+                    json={"chat_id": self.tg_chat, "text": text},
+                    timeout=30
+                )
             
             if response.status_code == 200:
-                logger.info(f"✅ {mask_email(email)} 消息已发送")
-                message_id = response.json().get('result', {}).get('message_id')
-                
-                # 如果有实际的重启日志（不是跳过消息），作为文件发送
-                if restart_output and len(restart_output) > 50 and "跳过" not in restart_output:
-                    self._send_log_file(email, restart_output, message_id)
+                logger.info(f"✅ {mask_email(email)} 通知已发送")
             else:
-                logger.warning(f"⚠️ 发送失败: {response.text}")
+                logger.warning(f"⚠️ 通知发送失败: {response.text}")
                 
         except Exception as e:
             logger.error(f"❌ 通知失败: {e}")
     
-    def _send_log_file(self, email, log_content, reply_to_message_id=None):
-        """将日志作为文件发送"""
-        try:
-            import io
-            
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"restart_log_{timestamp}.txt"
-            
-            file_content = f"Pella 重启日志\n"
-            file_content += f"账号: {email}\n"
-            file_content += f"时间: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
-            file_content += "=" * 50 + "\n\n"
-            file_content += log_content
-            
-            file_obj = io.BytesIO(file_content.encode('utf-8'))
-            file_obj.name = filename
-            
-            data = {
-                "chat_id": self.tg_chat,
-                "caption": "📜 重启日志",
-                "disable_notification": True
-            }
-            
-            if reply_to_message_id:
-                data["reply_to_message_id"] = reply_to_message_id
-            
-            response = requests.post(
-                f"https://api.telegram.org/bot{self.tg_token}/sendDocument",
-                data=data,
-                files={"document": (filename, file_obj, "text/plain")},
-                timeout=30
-            )
-            
-            if response.status_code == 200:
-                logger.info(f"✅ {mask_email(email)} 日志文件已发送")
-            else:
-                logger.warning(f"⚠️ 日志文件发送失败: {response.text}")
-                
-        except Exception as e:
-            logger.error(f"❌ 发送日志文件失败: {e}")
-    
     def run_all(self):
-        results = []
-        total = len(self.accounts)
+        # 过滤账号
+        accounts = self.filter_accounts(self.accounts)
         
-        for i, acc in enumerate(self.accounts, 1):
-            logger.info(f"[{i}/{total}] {mask_email(acc['email'])}")
+        if self.target_account:
+            if not accounts:
+                logger.error(f"❌ 未找到匹配的账号: {self.target_account}")
+                logger.info("可用账号:")
+                for acc in self.accounts:
+                    username = get_username_from_email(acc['email'])
+                    logger.info(f"  - {username}")
+                sys.exit(1)
+            logger.info(f"🎯 指定账号模式: {mask_email(accounts[0]['email'])}")
+        else:
+            logger.info(f"📋 全量模式: 运行所有 {len(accounts)} 个账号")
+        
+        results = []
+        total = len(accounts)
+        
+        for i, acc in enumerate(accounts, 1):
+            logger.info(f"\n[{i}/{total}] {mask_email(acc['email'])}")
             
             try:
-                renew = PellaAutoRenew(acc['email'], acc['password'])
-                success, result, restart_output = renew.run()
+                renew = PellaAutoRenew(acc['email'], acc['password'], i)
+                success, renew_result, restart_status, restart_msg, screenshot = renew.run()
+                
+                # 发送通知
+                self.send_notification(
+                    acc['email'], success, renew_result, 
+                    restart_status, restart_msg, screenshot
+                )
+                
+                results.append({
+                    'email': acc['email'],
+                    'success': success,
+                    'renew': renew_result,
+                    'restart': restart_status
+                })
+                
                 if i < total:
                     time.sleep(5)
+                    
             except Exception as e:
-                success, result, restart_output = False, f"❌ 异常: {e}", ""
-            
-            results.append((acc['email'], success, result, restart_output))
+                logger.error(f"❌ 异常: {e}")
+                self.send_notification(
+                    acc['email'], False, f"error:{e}", 
+                    "skip", "异常", None
+                )
+                results.append({
+                    'email': acc['email'],
+                    'success': False,
+                    'renew': f"error:{e}",
+                    'restart': 'skip'
+                })
         
-        self.send_notification(results)
-        return all(s for _, s, _, _ in results), results
+        # 打印汇总
+        ok_count = sum(1 for r in results if r['success'])
+        logger.info(f"\n{'=' * 50}")
+        logger.info(f"📊 执行汇总: {ok_count}/{len(results)} 成功")
+        logger.info(f"{'─' * 50}")
+        for r in results:
+            icon = "✅" if r['success'] else "❌"
+            logger.info(f"{icon} {mask_email(r['email'])}: {self.format_renew_result(r['renew'])}")
+        logger.info(f"{'=' * 50}")
+        
+        return ok_count > 0, results
 
 
 def main():
     try:
         manager = MultiAccountManager()
-        manager.run_all()
+        success, _ = manager.run_all()
+        sys.exit(0 if success else 1)
     except Exception as e:
         logger.error(f"❌ 错误: {e}")
-        exit(1)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
