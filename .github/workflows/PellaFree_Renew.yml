@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       account_name:
-        description: '指定账号名（留空运行全部）'
+        description: '指定账号邮箱（留空运行全部）'
         required: false
         default: ''
         type: string
