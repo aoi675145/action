@@ -5,13 +5,12 @@
 import os, sys, time, platform, requests, re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from seleniumbase import SB
 
 AUTH_URL = "https://auth.zampto.net/sign-in?app_id=bmhk6c8qdqxphlyscztgl"
 DASHBOARD_URL = "https://dash.zampto.net/homepage"
 OVERVIEW_URL = "https://dash.zampto.net/overview"
-SERVER_URL = "https://dash.zampto.net/server?id={}"
 CONSOLE_URL = "https://dash.zampto.net/server-console?id={}"
 OUTPUT_DIR = Path("output/screenshots")
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
@@ -31,7 +30,6 @@ def mask(s: str, show: int = 1) -> str:
     return s[:show] + "*" * min(3, len(s) - show)
 
 def mask_id(sid: str) -> str:
-    """隐藏服务器ID"""
     if not sid: return "****"
     return sid[0] + "***"
 
@@ -54,7 +52,7 @@ def shot(idx: int, name: str) -> str:
     return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
 def notify(ok: bool, username: str, info: str, img: str = None):
-    """精简通知 - 单条消息带截图"""
+    """发送通知 - 带截图"""
     token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
     if not token or not chat: 
         return
@@ -92,9 +90,12 @@ def parse_accounts(s: str) -> List[Tuple[str, str]]:
     return [(p[0].strip(), p[1].strip()) for line in s.strip().split('\n') 
             if '----' in line and len(p := line.strip().split('----', 1)) == 2 and p[0].strip() and p[1].strip()]
 
-def login(sb, user: str, pwd: str, idx: int) -> bool:
+def login(sb, user: str, pwd: str, idx: int) -> Tuple[bool, Optional[str]]:
+    """登录，返回 (成功, 截图路径)"""
     user_masked = mask(user)
     print(f"\n{'='*50}\n[INFO] 账号 {idx}: 登录 {user_masked}\n{'='*50}")
+    
+    last_shot = None
     
     for attempt in range(3):
         try:
@@ -105,9 +106,10 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
             current_url = sb.get_current_url()
             if "dash.zampto.net" in current_url:
                 print("[INFO] ✅ 已登录")
-                return True
+                return True, None
             
-            sb.save_screenshot(shot(idx, f"01-login-{attempt}"))
+            last_shot = shot(idx, f"01-login-{attempt}")
+            sb.save_screenshot(last_shot)
             
             for _ in range(10):
                 src = sb.get_page_source()
@@ -133,7 +135,7 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
                 if attempt < 2:
                     time.sleep(5)
                     continue
-                return False
+                return False, last_shot
             
             time.sleep(1)
             try:
@@ -162,7 +164,7 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
                 print("[WARN] 密码页面未加载")
                 if attempt < 2:
                     continue
-                return False
+                return False, last_shot
             
             time.sleep(1)
             try:
@@ -171,12 +173,13 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
                 sb.click('button')
             
             time.sleep(6)
-            sb.save_screenshot(shot(idx, "02-result"))
+            last_shot = shot(idx, "02-result")
+            sb.save_screenshot(last_shot)
             
             current_url = sb.get_current_url()
             if "dash.zampto.net" in current_url or "sign-in" not in current_url:
                 print("[INFO] ✅ 登录成功")
-                return True
+                return True, last_shot
             
             print(f"[WARN] 尝试 {attempt + 1}: 登录未成功")
             
@@ -187,7 +190,7 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
                 continue
     
     print("[ERROR] 登录失败")
-    return False
+    return False, last_shot
 
 def logout(sb):
     try:
@@ -198,20 +201,23 @@ def logout(sb):
     except Exception as e:
         print(f"[WARN] 退出时出错: {e}")
 
-def get_servers(sb, idx: int) -> Tuple[List[Dict[str, str]], str]:
-    """获取服务器列表，返回 (服务器列表, 错误信息)"""
+def get_servers(sb, idx: int) -> Tuple[List[Dict[str, str]], str, Optional[str]]:
+    """获取服务器列表，返回 (服务器列表, 错误信息, 截图路径)"""
     print("[INFO] 获取服务器列表...")
     servers = []
     seen_ids = set()
     
     sb.open(DASHBOARD_URL)
     time.sleep(5)
-    sb.save_screenshot(shot(idx, "03-dashboard"))
+    
+    # 保存截图
+    screenshot = shot(idx, "03-dashboard")
+    sb.save_screenshot(screenshot)
     
     src = sb.get_page_source()
     if "Access Blocked" in src or "VPN or Proxy Detected" in src:
         print("[ERROR] ⚠️ 访问被阻止")
-        return [], "⚠️ 访问被阻止"
+        return [], "⚠️ 访问被阻止", screenshot
     
     for page_url in [DASHBOARD_URL, OVERVIEW_URL]:
         if page_url != DASHBOARD_URL:
@@ -234,15 +240,14 @@ def get_servers(sb, idx: int) -> Tuple[List[Dict[str, str]], str]:
     
     if not servers:
         print("[WARN] 未找到服务器")
-        return [], "⚠️ 未找到服务器"
+        return [], "⚠️ 未找到服务器", screenshot
     
     print(f"[INFO] 找到 {len(servers)} 个服务器")
     for s in servers:
         print(f"  - ID: {mask_id(s['id'])}")
-    return servers, ""
+    return servers, "", screenshot
 
 def wait_for_status(sb, timeout: int = 10) -> str:
-    """等待状态元素加载并返回状态文本"""
     for i in range(timeout):
         try:
             status = sb.execute_script('''
@@ -267,12 +272,9 @@ def wait_for_status(sb, timeout: int = 10) -> str:
             
             if status:
                 return status
-                
         except:
             pass
-        
         time.sleep(1)
-    
     return ""
 
 def restart_server(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
@@ -302,10 +304,15 @@ def restart_server(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
     
     time.sleep(2)
     
+    # 保存控制台截图
+    console_shot = shot(idx, f"srv-console")
+    sb.save_screenshot(console_shot)
+    result["screenshot"] = console_shot
+    
     src = sb.get_page_source()
     if "Access Blocked" in src:
         result["message"] = "⚠️ 访问被阻止"
-        notify(False, username, "⚠️ 访问被阻止", None)
+        notify(False, username, "⚠️ 访问被阻止", console_shot)
         return result
     
     old_status = wait_for_status(sb, 5)
@@ -344,12 +351,12 @@ def restart_server(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
                 clicked = True
             except:
                 result["message"] = "⚠️ 未找到 Restart 按钮"
-                notify(False, username, f"服务器: {sid} | ⚠️ 未找到按钮", None)
+                notify(False, username, f"服务器: {sid} | ⚠️ 未找到按钮", console_shot)
                 return result
         
     except Exception as e:
         result["message"] = f"⚠️ 点击失败: {e}"
-        notify(False, username, f"服务器: {sid} | ⚠️ 点击失败", None)
+        notify(False, username, f"服务器: {sid} | ⚠️ 点击失败", console_shot)
         return result
     
     print("[INFO] 等待重启响应...")
@@ -393,17 +400,17 @@ def restart_server(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
         else:
             result["message"] = "⚠️ 无法获取服务器状态"
     
-    # 保存控制台截图
+    # 保存最终截图
     time.sleep(2)
-    sp = shot(idx, f"srv-result")
-    sb.save_screenshot(sp)
-    result["screenshot"] = sp
+    final_shot = shot(idx, f"srv-result")
+    sb.save_screenshot(final_shot)
+    result["screenshot"] = final_shot
     
     # 发送通知
     if result["success"]:
-        notify(True, username, f"服务器: {sid}", sp)
+        notify(True, username, f"服务器: {sid}", final_shot)
     else:
-        notify(False, username, f"服务器: {sid} | {result['message']}", sp)
+        notify(False, username, f"服务器: {sid} | {result['message']}", final_shot)
     
     print(f"[INFO] {'✅' if result['success'] else '⚠️'} {result['message']}")
     return result
@@ -412,15 +419,16 @@ def process(sb, user: str, pwd: str, idx: int) -> Dict[str, Any]:
     """处理单个账号"""
     result = {"username": user, "success": False, "message": "", "servers": []}
     
-    if not login(sb, user, pwd, idx):
+    login_ok, login_shot = login(sb, user, pwd, idx)
+    if not login_ok:
         result["message"] = "登录失败"
-        notify(False, user, "⚠️ 登录失败", None)
+        notify(False, user, "⚠️ 登录失败", login_shot)
         return result
     
-    servers, error = get_servers(sb, idx)
+    servers, error, dashboard_shot = get_servers(sb, idx)
     if error:
         result["message"] = error
-        notify(False, user, error, None)
+        notify(False, user, error, dashboard_shot)
         logout(sb)
         return result
     
@@ -431,13 +439,15 @@ def process(sb, user: str, pwd: str, idx: int) -> Dict[str, Any]:
             result["servers"].append(r)
             time.sleep(3)
         except Exception as e:
+            err_shot = shot(idx, "error")
+            sb.save_screenshot(err_shot)
             print(f"[ERROR] 服务器 {mask_id(srv['id'])} 重启异常: {e}")
             result["servers"].append({
                 "server_id": srv["id"], 
                 "success": False, 
                 "message": str(e)
             })
-            notify(False, user, f"服务器: {srv['id']} | ⚠️ {e}", None)
+            notify(False, user, f"服务器: {srv['id']} | ⚠️ {e}", err_shot)
     
     ok = sum(1 for s in result["servers"] if s.get("success"))
     result["success"] = ok > 0
@@ -483,6 +493,11 @@ def main():
                     results.append(r)
                     time.sleep(3)
                 except Exception as e:
+                    err_shot = shot(i, "fatal")
+                    try:
+                        sb.save_screenshot(err_shot)
+                    except:
+                        err_shot = None
                     print(f"[ERROR] 账号 {mask(u)} 异常: {e}")
                     results.append({
                         "username": u, 
@@ -490,7 +505,7 @@ def main():
                         "message": str(e), 
                         "servers": []
                     })
-                    notify(False, u, f"⚠️ {e}", None)
+                    notify(False, u, f"⚠️ {e}", err_shot)
             
     except Exception as e:
         print(f"[ERROR] 脚本异常: {e}")
