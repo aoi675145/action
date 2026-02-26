@@ -1,4 +1,4 @@
-name: Zampto 续期
+name: Zampto 重启
 
 on:
   schedule:
