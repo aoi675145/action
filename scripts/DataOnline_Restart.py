@@ -1,12 +1,12 @@
 # scripts/data-online_renew.py
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Data Online 终端命令执行"""
+"""Data Online 终端命令执行 - 多账号支持"""
 
 import os, sys, asyncio, httpx
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Tuple, Optional
+from typing import Tuple, Optional, List
 from playwright.async_api import async_playwright
 
 # 配置
@@ -31,9 +31,25 @@ def mask(s: str, show: int = 3) -> str:
     if len(s) <= show: return s[0] + "***"
     return s[:show] + "*" * min(3, len(s) - show)
 
-def shot(name: str) -> str:
+def shot(idx: int, name: str) -> str:
     """生成截图路径"""
-    return str(OUTPUT_DIR / f"{cn_now().strftime('%H%M%S')}-{name}.png")
+    return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
+
+def parse_accounts(s: str) -> List[Tuple[str, str, str]]:
+    """解析账号配置，返回 [(邮箱, 密码, 命令), ...]"""
+    accounts = []
+    for line in s.strip().split('\n'):
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        parts = line.split('----')
+        if len(parts) >= 3:
+            email = parts[0].strip()
+            password = parts[1].strip()
+            command = '----'.join(parts[2:]).strip()  # 命令中可能包含 ----
+            if email and password and command:
+                accounts.append((email, password, command))
+    return accounts
 
 async def notify(ok: bool, username: str, info: str, img: str = None, command: str = None):
     """发送 Telegram 通知"""
@@ -119,7 +135,7 @@ async def try_connect(page, url: str, max_retries: int = 3, retry_delay: int = 3
                 print(f"[INFO] {retry_delay}秒后重试...")
                 await asyncio.sleep(retry_delay)
     
-    return False, f"连接失败 (重试{max_retries}次): {last_error[:100]}"
+    return False, f"连接失败 (重试{max_retries}次)"
 
 async def check_login_status(page) -> Tuple[str, str]:
     """检查登录状态"""
@@ -145,10 +161,10 @@ async def check_login_status(page) -> Tuple[str, str]:
     
     return 'pending', '等待中'
 
-async def login(page, username: str, password: str) -> Tuple[bool, str, Optional[str]]:
+async def login(page, username: str, password: str, idx: int) -> Tuple[bool, str, Optional[str]]:
     """登录，返回 (成功, 状态, 截图路径)"""
     print(f"\n{'='*50}")
-    print(f"[INFO] 登录账号: {mask(username)}")
+    print(f"[INFO] 账号 {idx}: 登录 {mask(username)}")
     print(f"{'='*50}")
     
     last_shot = None
@@ -156,7 +172,7 @@ async def login(page, username: str, password: str) -> Tuple[bool, str, Optional
     print(f"[INFO] 打开登录页...")
     ok, err = await try_connect(page, LOGIN_URL)
     if not ok:
-        last_shot = shot("connect-error")
+        last_shot = shot(idx, "connect-error")
         await page.set_content(f'''
             <html><body style="background:#1a1a2e;color:#fff;font-family:monospace;padding:50px;">
             <h1>🌐 网络连接失败</h1>
@@ -170,7 +186,7 @@ async def login(page, username: str, password: str) -> Tuple[bool, str, Optional
     print("[INFO] 等待页面加载...")
     await wait_for_page_ready(page, timeout=30)
     
-    last_shot = shot("01-login")
+    last_shot = shot(idx, "01-login")
     await page.screenshot(path=last_shot)
     
     print("[INFO] 查找登录表单...")
@@ -186,7 +202,7 @@ async def login(page, username: str, password: str) -> Tuple[bool, str, Optional
             await asyncio.sleep(3)
     
     if not input_found:
-        last_shot = shot("no-form")
+        last_shot = shot(idx, "no-form")
         await page.screenshot(path=last_shot)
         return False, "form_error", last_shot
     
@@ -215,7 +231,7 @@ async def login(page, username: str, password: str) -> Tuple[bool, str, Optional
             continue
     
     if not username_filled:
-        last_shot = shot("username-error")
+        last_shot = shot(idx, "username-error")
         await page.screenshot(path=last_shot)
         return False, "username_error", last_shot
     
@@ -242,7 +258,7 @@ async def login(page, username: str, password: str) -> Tuple[bool, str, Optional
             continue
     
     if not password_filled:
-        last_shot = shot("password-error")
+        last_shot = shot(idx, "password-error")
         await page.screenshot(path=last_shot)
         return False, "password_error", last_shot
     
@@ -270,25 +286,25 @@ async def login(page, username: str, password: str) -> Tuple[bool, str, Optional
         
         if status == 'disabled':
             print("[ERROR] 🚫 账户已禁用")
-            last_shot = shot("disabled")
+            last_shot = shot(idx, "disabled")
             await page.screenshot(path=last_shot)
             return False, "disabled", last_shot
         elif status == 'wrong_password':
             print("[ERROR] 🔑 密码错误")
-            last_shot = shot("wrong-password")
+            last_shot = shot(idx, "wrong-password")
             await page.screenshot(path=last_shot)
             return False, "wrong_password", last_shot
         elif status == 'success':
             print("[INFO] ✅ 登录成功")
-            last_shot = shot("02-loggedin")
+            last_shot = shot(idx, "02-loggedin")
             await page.screenshot(path=last_shot)
             return True, "success", last_shot
     
-    last_shot = shot("timeout")
+    last_shot = shot(idx, "timeout")
     await page.screenshot(path=last_shot)
     return False, "timeout", last_shot
 
-async def execute_command(page, command: str) -> Tuple[bool, str, Optional[str]]:
+async def execute_command(page, command: str, idx: int) -> Tuple[bool, str, Optional[str]]:
     """执行终端命令，返回 (成功, 消息, 截图路径)"""
     print(f"\n[INFO] 访问终端页面...")
     
@@ -297,22 +313,22 @@ async def execute_command(page, command: str) -> Tuple[bool, str, Optional[str]]
         await page.wait_for_load_state('networkidle')
     except Exception as e:
         print(f"[ERROR] 终端页面加载失败: {e}")
-        last_shot = shot("terminal-error")
+        last_shot = shot(idx, "terminal-error")
         await page.screenshot(path=last_shot)
-        return False, f"终端加载失败", last_shot
+        return False, "终端加载失败", last_shot
     
     await asyncio.sleep(2)
     
     if '/login' in page.url:
         print("[ERROR] 会话已失效")
-        last_shot = shot("session-expired")
+        last_shot = shot(idx, "session-expired")
         await page.screenshot(path=last_shot)
         return False, "会话失效", last_shot
     
     print("[INFO] ✅ 进入终端页面")
     await asyncio.sleep(5)
     
-    last_shot = shot("03-terminal")
+    last_shot = shot(idx, "03-terminal")
     await page.screenshot(path=last_shot)
     
     print("[INFO] 执行命令...")
@@ -334,101 +350,126 @@ async def execute_command(page, command: str) -> Tuple[bool, str, Optional[str]]
     print("[INFO] ✅ 命令已发送")
     
     await asyncio.sleep(5)
-    last_shot = shot("04-result")
+    last_shot = shot(idx, "04-result")
     await page.screenshot(path=last_shot)
     
     return True, "命令执行成功", last_shot
 
+async def logout(context):
+    """退出登录"""
+    try:
+        await context.clear_cookies()
+        print("[INFO] 已退出登录")
+    except Exception as e:
+        print(f"[WARN] 退出时出错: {e}")
+
+async def process_account(browser, username: str, password: str, command: str, idx: int) -> dict:
+    """处理单个账号"""
+    result = {
+        "username": username,
+        "success": False,
+        "message": "",
+        "screenshot": None
+    }
+    
+    context = await browser.new_context(
+        ignore_https_errors=True,
+        user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+    )
+    page = await context.new_page()
+    
+    try:
+        # 登录
+        login_ok, status, login_shot = await login(page, username, password, idx)
+        result["screenshot"] = login_shot
+        
+        if not login_ok:
+            result["message"] = {
+                "disabled": "账户已禁用",
+                "wrong_password": "密码错误",
+                "network_error": "网络连接失败",
+                "form_error": "登录表单未加载",
+                "username_error": "用户名填写失败",
+                "password_error": "密码填写失败",
+                "timeout": "登录超时"
+            }.get(status, f"登录失败: {status}")
+            
+            await notify(False, username, result["message"], login_shot, command)
+            return result
+        
+        # 执行命令
+        exec_ok, exec_msg, exec_shot = await execute_command(page, command, idx)
+        result["screenshot"] = exec_shot
+        result["success"] = exec_ok
+        result["message"] = exec_msg
+        
+        await notify(exec_ok, username, exec_msg, exec_shot, command)
+        
+    except Exception as e:
+        print(f"[ERROR] 异常: {e}")
+        result["message"] = str(e)[:100]
+        try:
+            result["screenshot"] = shot(idx, "error")
+            await page.screenshot(path=result["screenshot"])
+        except:
+            pass
+        await notify(False, username, result["message"], result["screenshot"], command)
+    finally:
+        await logout(context)
+        await context.close()
+    
+    return result
+
 async def main():
-    username = os.environ.get('DATA_USERNAME')
-    password = os.environ.get('DATA_PASSWORD')
-    command = os.environ.get('DATA_COMMAND', '')
+    # 获取账号配置
+    account_str = os.environ.get('DATA_ACCOUNT', '')
+    if not account_str:
+        print("[ERROR] 缺少 DATA_ACCOUNT")
+        sys.exit(1)
     
-    if not username:
-        print("[ERROR] 缺少 DATA_USERNAME"); sys.exit(1)
-    if not password:
-        print("[ERROR] 缺少 DATA_PASSWORD"); sys.exit(1)
-    if not command:
-        print("[ERROR] 缺少 DATA_COMMAND"); sys.exit(1)
+    accounts = parse_accounts(account_str)
+    if not accounts:
+        print("[ERROR] 无有效账号配置")
+        print("[INFO] 格式: 邮箱----密码----命令")
+        sys.exit(1)
     
-    print(f"[INFO] 账号: {mask(username)}")
-    print(f"[INFO] 命令: {command[:50]}...")
+    print(f"[INFO] 共 {len(accounts)} 个账号")
+    for i, (email, _, cmd) in enumerate(accounts, 1):
+        print(f"  {i}. {mask(email)} | 命令: {cmd[:30]}...")
     
-    final_status = "failed"
-    error_message = ""
-    screenshot_file = None
+    results = []
     
     async with async_playwright() as p:
-        print("[INFO] 启动浏览器...")
+        print("\n[INFO] 启动浏览器...")
         browser = await p.chromium.launch(
             headless=True,
             args=['--ignore-certificate-errors', '--no-sandbox', '--disable-blink-features=AutomationControlled']
         )
         
-        context = await browser.new_context(
-            ignore_https_errors=True,
-            user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        )
-        page = await context.new_page()
-        
         try:
-            login_ok, status, login_shot = await login(page, username, password)
-            screenshot_file = login_shot
-            
-            if not login_ok:
-                final_status = status
-                error_message = {
-                    "disabled": "账户已禁用",
-                    "wrong_password": "密码错误", 
-                    "network_error": "网络连接失败",
-                    "form_error": "登录表单未加载",
-                    "username_error": "用户名填写失败",
-                    "password_error": "密码填写失败",
-                    "timeout": "登录超时"
-                }.get(status, f"登录失败: {status}")
-            else:
-                exec_ok, exec_msg, exec_shot = await execute_command(page, command)
-                screenshot_file = exec_shot
+            for i, (email, password, command) in enumerate(accounts, 1):
+                result = await process_account(browser, email, password, command, i)
+                results.append(result)
                 
-                if exec_ok:
-                    final_status = "success"
-                    error_message = exec_msg
-                else:
-                    final_status = "failed"
-                    error_message = exec_msg
-            
-        except Exception as e:
-            print(f"[ERROR] 异常: {e}")
-            error_message = str(e)[:100]
-            try:
-                screenshot_file = shot("error")
-                await page.screenshot(path=screenshot_file)
-            except:
-                pass
+                # 多账号间隔
+                if i < len(accounts):
+                    print(f"\n[INFO] 等待 3 秒处理下一个账号...")
+                    await asyncio.sleep(3)
         finally:
             await browser.close()
     
-    # 输出结果
+    # 输出汇总
+    ok_count = sum(1 for r in results if r["success"])
+    
     print(f"\n{'='*50}")
-    print(f"[INFO] 执行结果: {'✅ 成功' if final_status == 'success' else '❌ 失败'}")
-    print(f"[INFO] 信息: {error_message}")
+    print(f"📊 执行汇总: {ok_count}/{len(results)} 成功")
+    print(f"{'─'*50}")
+    for r in results:
+        icon = "✅" if r["success"] else "❌"
+        print(f"{icon} {r['username']}: {r['message']}")
     print(f"{'='*50}")
     
-    # 发送通知 - 账号不隐藏
-    await notify(
-        ok=(final_status == "success"),
-        username=username,
-        info=error_message,
-        img=screenshot_file,
-        command=command
-    )
-    
-    if final_status in ['disabled', 'wrong_password', 'network_error']:
-        sys.exit(0)
-    elif final_status != 'success':
-        sys.exit(1)
-    else:
-        sys.exit(0)
+    sys.exit(0 if ok_count > 0 else 1)
 
 if __name__ == '__main__':
     asyncio.run(main())
