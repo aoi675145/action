@@ -3,14 +3,25 @@ name: Pella Free 续期
 on:
   schedule:
     - cron: '18 4 * * *'  # 每天北京时间 12:18 运行
-  workflow_dispatch:  # 允许手动触发
+  workflow_dispatch:
+    inputs:
+      account_name:
+        description: '指定账号名（留空运行全部）'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: PellaFree_Renew
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
 
 jobs:
   renew:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: write
     
     steps:
       - name: 检出代码
