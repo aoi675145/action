@@ -1,4 +1,4 @@
-name: Zampto 自动续期
+name: Zampto 重启
 
 on:
   schedule:
@@ -355,7 +355,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-        run: python scripts/zampto_renew.py
+        run: python scripts/Zampto_Restart.py
 
 #      - name: 上传截图
 #        uses: actions/upload-artifact@v4
