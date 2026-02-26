@@ -1,519 +1,375 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""Zampto 自动重启脚本 - 精简通知版"""
+name: Zampto 续期
 
-import os, sys, time, platform, requests, re
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
-from typing import Dict, Any, List, Tuple
-from seleniumbase import SB
+on:
+  schedule:
+    - cron: '55 3 * * *'  # 每天北京时间 11:55 运行
+  workflow_dispatch:
 
-AUTH_URL = "https://auth.zampto.net/sign-in?app_id=bmhk6c8qdqxphlyscztgl"
-DASHBOARD_URL = "https://dash.zampto.net/homepage"
-OVERVIEW_URL = "https://dash.zampto.net/overview"
-SERVER_URL = "https://dash.zampto.net/server?id={}"
-CONSOLE_URL = "https://dash.zampto.net/server-console?id={}"
-OUTPUT_DIR = Path("output/screenshots")
-OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    concurrency:
+      group: Zampto_Restart       # 同一时间只允许一个运行
+      cancel-in-progress: false
 
-CN_TZ = timezone(timedelta(hours=8))
+    steps:
+      - uses: actions/checkout@v4
 
-def cn_now() -> datetime:
-    return datetime.now(CN_TZ)
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-def cn_time_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
-    return cn_now().strftime(fmt)
+      - name: 安装依赖
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb unzip
+          pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 requests>=2.31.0
 
-def mask(s: str, show: int = 1) -> str:
-    if not s: return "***"
-    s = str(s)
-    if len(s) <= show: return s[0] + "***"
-    return s[:show] + "*" * min(3, len(s) - show)
+      - name: 安装并启动代理
+        env:
+        # 这里我改外部变量名了 ZAMPTO_PROXY_NOD
+          PROXY_NODE: ${{ secrets.ZAMPTO_PROXY_NODE }}
+        run: |
+          if [ -z "$PROXY_NODE" ]; then
+            echo "[INFO] 未配置代理，直连模式"
+            exit 0
+          fi
+          
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
+          
+          python3 << 'PYEOF'
+          import os, sys, json, base64
+          from urllib.parse import parse_qs, unquote, urlparse
 
-def mask_id(sid: str) -> str:
-    """隐藏服务器ID，只显示前1位"""
-    if not sid: return "****"
-    return sid[0] + "***"
+          def mask(s):
+              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
 
-def is_linux(): return platform.system().lower() == "linux"
+          url = os.environ.get("PROXY_NODE", "").strip()
+          if not url:
+              print("[ERROR] PROXY_NODE 为空")
+              sys.exit(1)
 
-def setup_display():
-    if is_linux() and not os.environ.get("DISPLAY"):
-        try:
-            from pyvirtualdisplay import Display
-            d = Display(visible=False, size=(1920, 1080))
-            d.start()
-            os.environ["DISPLAY"] = d.new_display_var
-            print("[INFO] 虚拟显示已启动")
-            return d
-        except Exception as e:
-            print(f"[ERROR] 虚拟显示失败: {e}"); sys.exit(1)
-    return None
+          # 解析协议
+          if url.startswith("vless://"):
+              protocol = "vless"
+              content = url[8:]
+          elif url.startswith("vmess://"):
+              protocol = "vmess"
+              content = url[8:]
+          elif url.startswith("trojan://"):
+              protocol = "trojan"
+              content = url[9:]
+          elif url.startswith("ss://"):
+              protocol = "ss"
+              content = url[5:]
+          elif url.startswith("socks5://") or url.startswith("socks://"):
+              protocol = "socks5"
+              # 直接使用外部 SOCKS5
+              content = url.split("://")[1].split("#")[0]
+              if "@" in content:
+                  server = content.split("@")[1].split(":")[0]
+              else:
+                  server = content.split(":")[0]
+              print(f"[INFO] SOCKS5 -> {mask(server)}")
+              with open("use_external_socks.txt", "w") as f:
+                  f.write(url.split("#")[0])
+              sys.exit(0)
+          else:
+              print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
+              sys.exit(1)
 
-def shot(idx: int, name: str) -> str:
-    return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
+          # 去除备注
+          if "#" in content:
+              content = content.rsplit("#", 1)[0]
 
-def notify_simple(ok: bool, username: str, server_id: str, status: str, img: str = None):
-    """精简通知 - 单条消息带截图"""
-    token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
-    if not token or not chat: 
-        return
-    
-    try:
-        icon = "✅" if ok else "❌"
-        result = "重启成功" if ok else "重启失败"
-        
-        text = f"""{icon} {result}
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [
+                  {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                  {"port": 10809, "listen": "127.0.0.1", "protocol": "http"}
+              ],
+              "outbounds": []
+          }
 
-账号：{username}
-信息：服务器: {server_id}
-时间：{cn_time_str()}
+          if protocol == "vless":
+              # vless://uuid@server:port?params
+              uuid, rest = content.split("@", 1)
+              if "?" in rest:
+                  host_port, params_str = rest.split("?", 1)
+              else:
+                  host_port, params_str = rest, ""
+              
+              if ":" in host_port:
+                  address, port = host_port.rsplit(":", 1)
+              else:
+                  address, port = host_port, "443"
+              
+              params = parse_qs(params_str)
+              security = params.get("security", ["none"])[0]
+              network = params.get("type", ["tcp"])[0]
+              sni = params.get("sni", [address])[0]
+              fp = params.get("fp", ["chrome"])[0]
+              flow = params.get("flow", [""])[0]
+              pbk = params.get("pbk", [""])[0]
+              host = params.get("host", [sni])[0]
+              path = unquote(params.get("path", ["/"])[0])
+              
+              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
+              
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": address,
+                          "port": int(port),
+                          "users": [{"id": uuid, "encryption": "none"}]
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": security
+                  }
+              }
+              
+              # 添加 flow
+              if flow:
+                  outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
+              
+              # Reality 设置
+              if security == "reality":
+                  outbound["streamSettings"]["realitySettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "publicKey": pbk
+                  }
+              # TLS 设置
+              elif security == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "allowInsecure": False
+                  }
+              
+              # WebSocket 设置
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+              # gRPC 设置
+              elif network == "grpc":
+                  service_name = params.get("serviceName", [""])[0]
+                  outbound["streamSettings"]["grpcSettings"] = {
+                      "serviceName": service_name
+                  }
+              
+              config["outbounds"].append(outbound)
 
-Zampto Auto Restart"""
-        
-        if img and Path(img).exists():
-            # 发送带图片的消息
-            with open(img, "rb") as f:
-                requests.post(
-                    f"https://api.telegram.org/bot{token}/sendPhoto",
-                    data={"chat_id": chat, "caption": text},
-                    files={"photo": f},
-                    timeout=60
-                )
-        else:
-            # 仅发送文本
-            requests.post(
-                f"https://api.telegram.org/bot{token}/sendMessage",
-                json={"chat_id": chat, "text": text},
-                timeout=30
-            )
-    except Exception as e:
-        print(f"[WARN] 通知发送失败: {e}")
+          elif protocol == "vmess":
+              # vmess://base64
+              try:
+                  # 处理 URL 安全的 base64
+                  padding = 4 - len(content) % 4
+                  if padding != 4:
+                      content += "=" * padding
+                  decoded = base64.b64decode(content).decode("utf-8")
+                  vm = json.loads(decoded)
+              except Exception as e:
+                  print(f"[ERROR] VMess 解析失败: {e}")
+                  sys.exit(1)
+              
+              address = vm.get("add", "")
+              port = int(vm.get("port", 443))
+              uuid = vm.get("id", "")
+              aid = int(vm.get("aid", 0))
+              network = vm.get("net", "tcp")
+              tls = vm.get("tls", "")
+              sni = vm.get("sni", "") or vm.get("host", address)
+              host = vm.get("host", address)
+              path = vm.get("path", "/")
+              fp = vm.get("fp", "chrome")
+              
+              print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
+              
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": address,
+                          "port": port,
+                          "users": [{"id": uuid, "alterId": aid, "security": "auto"}]
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": "tls" if tls == "tls" else "none"
+                  }
+              }
+              
+              if tls == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "allowInsecure": False
+                  }
+              
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+              
+              config["outbounds"].append(outbound)
 
-def parse_accounts(s: str) -> List[Tuple[str, str]]:
-    return [(p[0].strip(), p[1].strip()) for line in s.strip().split('\n') 
-            if '----' in line and len(p := line.strip().split('----', 1)) == 2 and p[0].strip() and p[1].strip()]
+          elif protocol == "trojan":
+              # trojan://password@server:port?params
+              password, rest = content.split("@", 1)
+              if "?" in rest:
+                  host_port, params_str = rest.split("?", 1)
+              else:
+                  host_port, params_str = rest, ""
+              
+              if ":" in host_port:
+                  address, port = host_port.rsplit(":", 1)
+              else:
+                  address, port = host_port, "443"
+              
+              params = parse_qs(params_str)
+              sni = params.get("sni", [address])[0]
+              network = params.get("type", ["tcp"])[0]
+              host = params.get("host", [sni])[0]
+              path = unquote(params.get("path", ["/"])[0])
+              fp = params.get("fp", ["chrome"])[0]
+              
+              print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
+              
+              outbound = {
+                  "protocol": "trojan",
+                  "settings": {
+                      "servers": [{
+                          "address": address,
+                          "port": int(port),
+                          "password": password
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": "tls",
+                      "tlsSettings": {
+                          "serverName": sni,
+                          "fingerprint": fp,
+                          "allowInsecure": False
+                      }
+                  }
+              }
+              
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+              
+              config["outbounds"].append(outbound)
 
-def login(sb, user: str, pwd: str, idx: int) -> bool:
-    user_masked = mask(user)
-    print(f"\n{'='*50}\n[INFO] 账号 {idx}: 登录 {user_masked}\n{'='*50}")
-    
-    for attempt in range(3):
-        try:
-            print(f"[INFO] 打开登录页 (尝试 {attempt + 1}/3)...")
-            sb.uc_open_with_reconnect(AUTH_URL, reconnect_time=10.0)
-            time.sleep(5)
-            
-            current_url = sb.get_current_url()
-            if "dash.zampto.net" in current_url:
-                print("[INFO] ✅ 已登录")
-                return True
-            
-            sb.save_screenshot(shot(idx, f"01-login-{attempt}"))
-            
-            for _ in range(10):
-                src = sb.get_page_source()
-                if 'identifier' in src or 'email' in src:
-                    break
-                time.sleep(2)
-            
-            selectors = ['input[name="identifier"]', 'input[type="email"]', 'input[type="text"]']
-            
-            input_found = False
-            for sel in selectors:
-                try:
-                    sb.wait_for_element(sel, timeout=5)
-                    print(f"[INFO] 找到输入框: {sel}")
-                    sb.type(sel, user)
-                    input_found = True
-                    break
-                except:
-                    continue
-            
-            if not input_found:
-                print(f"[WARN] 尝试 {attempt + 1}: 未找到输入框")
-                if attempt < 2:
-                    time.sleep(5)
-                    continue
-                return False
-            
-            time.sleep(1)
-            try:
-                sb.click('button[type="submit"]')
-            except:
-                sb.click('button')
-            
-            time.sleep(4)
-            
-            pwd_found = False
-            for _ in range(15):
-                for sel in ['input[name="password"]', 'input[type="password"]']:
-                    try:
-                        if sb.is_element_visible(sel):
-                            sb.type(sel, pwd)
-                            pwd_found = True
-                            print("[INFO] 已输入密码")
-                            break
-                    except:
-                        continue
-                if pwd_found:
-                    break
-                time.sleep(1)
-            
-            if not pwd_found:
-                print("[WARN] 密码页面未加载")
-                if attempt < 2:
-                    continue
-                return False
-            
-            time.sleep(1)
-            try:
-                sb.click('button[type="submit"]')
-            except:
-                sb.click('button')
-            
-            time.sleep(6)
-            sb.save_screenshot(shot(idx, "02-result"))
-            
-            current_url = sb.get_current_url()
-            if "dash.zampto.net" in current_url or "sign-in" not in current_url:
-                print("[INFO] ✅ 登录成功")
-                return True
-            
-            print(f"[WARN] 尝试 {attempt + 1}: 登录未成功")
-            
-        except Exception as e:
-            print(f"[WARN] 尝试 {attempt + 1} 异常: {e}")
-            if attempt < 2:
-                time.sleep(5)
-                continue
-    
-    print("[ERROR] 登录失败")
-    return False
+          elif protocol == "ss":
+              # ss://base64@server:port 或 ss://base64#name
+              try:
+                  if "@" in content:
+                      # 新格式: base64(method:password)@server:port
+                      encoded, server_part = content.split("@", 1)
+                      decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                      method, password = decoded.split(":", 1)
+                      address, port = server_part.split(":", 1)
+                  else:
+                      # 旧格式: base64(method:password@server:port)
+                      decoded = base64.b64decode(content + "==").decode("utf-8")
+                      if "@" in decoded:
+                          user_part, server_part = decoded.split("@", 1)
+                          method, password = user_part.split(":", 1)
+                          address, port = server_part.split(":", 1)
+                      else:
+                          raise ValueError("无法解析")
+              except Exception as e:
+                  print(f"[ERROR] Shadowsocks 解析失败: {e}")
+                  sys.exit(1)
+              
+              print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
+              
+              outbound = {
+                  "protocol": "shadowsocks",
+                  "settings": {
+                      "servers": [{
+                          "address": address,
+                          "port": int(port),
+                          "method": method,
+                          "password": password
+                      }]
+                  }
+              }
+              
+              config["outbounds"].append(outbound)
 
-def logout(sb):
-    try:
-        sb.delete_all_cookies()
-        sb.open("about:blank")
-        time.sleep(1)
-        print("[INFO] 已退出登录")
-    except Exception as e:
-        print(f"[WARN] 退出时出错: {e}")
+          # 保存配置
+          with open("xray_config.json", "w") as f:
+              json.dump(config, f, indent=2)
+          
+          print("[INFO] ✅ 代理配置已生成")
+          PYEOF
+          
+          # 检查是否使用外部 SOCKS5
+          if [ -f "use_external_socks.txt" ]; then
+            EXTERNAL_SOCKS=$(cat use_external_socks.txt)
+            echo "PROXY_SOCKS5=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "[INFO] ✅ 使用外部 SOCKS5 代理"
+            exit 0
+          fi
+          
+          # 启动 Xray
+          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          sleep 5
+          
+          # 测试代理
+          echo "[INFO] 测试代理连接..."
+          for i in 1 2 3 4 5; do
+            if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "[INFO] ✅ 代理连接成功"
+              echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+              exit 0
+            fi
+            echo "[WARN] 尝试 $i/5..."
+            sleep 3
+          done
+          
+          echo "[ERROR] ❌ 代理连接失败"
+          echo "--- Xray 日志 ---"
+          cat xray.log
+          exit 1
 
-def get_servers(sb, idx: int) -> List[Dict[str, str]]:
-    """获取服务器列表"""
-    print("[INFO] 获取服务器列表...")
-    servers = []
-    seen_ids = set()
-    
-    sb.open(DASHBOARD_URL)
-    time.sleep(5)
-    sb.save_screenshot(shot(idx, "03-dashboard"))
-    
-    src = sb.get_page_source()
-    if "Access Blocked" in src or "VPN or Proxy Detected" in src:
-        print("[ERROR] ⚠️ 访问被阻止")
-        return []
-    
-    for page_url in [DASHBOARD_URL, OVERVIEW_URL]:
-        if page_url != DASHBOARD_URL:
-            sb.open(page_url)
-            time.sleep(3)
-        
-        src = sb.get_page_source()
-        matches = re.findall(r'href="[^"]*?/server-console\?id=(\d+)"', src)
-        for sid in matches:
-            if sid not in seen_ids:
-                seen_ids.add(sid)
-                servers.append({"id": sid, "name": f"Server {sid}"})
-        
-        if not servers:
-            matches = re.findall(r'href="[^"]*?/server\?id=(\d+)"', src)
-            for sid in matches:
-                if sid not in seen_ids:
-                    seen_ids.add(sid)
-                    servers.append({"id": sid, "name": f"Server {sid}"})
-    
-    print(f"[INFO] 找到 {len(servers)} 个服务器")
-    for s in servers:
-        print(f"  - ID: {mask_id(s['id'])}")
-    return servers
+      - name: 执行续期
+        env:
+          ZAMPTO_ACCOUNT: ${{ secrets.ZAMPTO_ACCOUNT }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
+        run: python scripts/Zampto_Restart.py
 
-def wait_for_status(sb, timeout: int = 10) -> str:
-    """等待状态元素加载并返回状态文本"""
-    for i in range(timeout):
-        try:
-            status = sb.execute_script('''
-                (function() {
-                    var cards = document.querySelector('.info-cards');
-                    if (!cards) return "";
-                    
-                    var statusEl = document.getElementById('serverStatus');
-                    if (statusEl && statusEl.textContent) {
-                        return statusEl.textContent.trim();
-                    }
-                    
-                    var statusRunning = document.querySelector('.status-running');
-                    if (statusRunning) return statusRunning.textContent.trim();
-                    
-                    var statusStopped = document.querySelector('.status-stopped');
-                    if (statusStopped) return statusStopped.textContent.trim();
-                    
-                    return "";
-                })()
-            ''')
-            
-            if status:
-                return status
-                
-        except:
-            pass
-        
-        time.sleep(1)
-    
-    return ""
+#      - name: 上传截图
+#        uses: actions/upload-artifact@v4
+#        if: always()
+#        with:
+#          name: screenshots-${{ github.run_number }}
+#          path: output/screenshots/
+#          retention-days: 3
 
-def restart_server(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
-    """重启服务器"""
-    sid_masked = mask_id(sid)
-    result = {
-        "server_id": sid, 
-        "success": False, 
-        "message": "", 
-        "screenshot": None,
-        "status": ""
-    }
-    
-    print(f"\n[INFO] 重启服务器 {sid_masked}...")
-    
-    # 进入服务器控制台页面（日志中隐藏真实ID）
-    console_url = CONSOLE_URL.format(sid)
-    print(f"[INFO] 服务器页面 URL: https://dash.zampto.net/server-console?id=****")
-    
-    sb.open(console_url)
-    time.sleep(3)
-    
-    # 等待页面加载完成
-    print("[INFO] 等待页面加载...")
-    for _ in range(10):
-        src = sb.get_page_source()
-        if 'serverStatus' in src or 'restartBtn' in src:
-            break
-        time.sleep(1)
-    
-    time.sleep(2)
-    
-    src = sb.get_page_source()
-    if "Access Blocked" in src:
-        result["message"] = "访问被阻止"
-        return result
-    
-    # 获取重启前状态
-    old_status = wait_for_status(sb, 5)
-    print(f"[INFO] 重启前状态: {old_status or '加载中...'}")
-    
-    # 查找并点击 Restart 按钮
-    print("[INFO] 查找 Restart 按钮...")
-    
-    try:
-        clicked = sb.execute_script('''
-            (function() {
-                var restartBtn = document.getElementById('restartBtn');
-                if (restartBtn) {
-                    restartBtn.click();
-                    return "id";
-                }
-                
-                var buttons = document.querySelectorAll('button');
-                for (var i = 0; i < buttons.length; i++) {
-                    var text = buttons[i].textContent.toLowerCase();
-                    if (text.includes('restart')) {
-                        buttons[i].click();
-                        return "text";
-                    }
-                }
-                
-                return null;
-            })()
-        ''')
-        
-        if clicked:
-            print(f"[INFO] ✅ 已点击 Restart 按钮 (方式: {clicked})")
-        else:
-            try:
-                sb.click('#restartBtn')
-                print("[INFO] ✅ 已点击 Restart 按钮 (selenium)")
-                clicked = True
-            except:
-                result["message"] = "未找到 Restart 按钮"
-                sb.save_screenshot(shot(idx, f"srv-{sid_masked}-nobtn"))
-                return result
-        
-    except Exception as e:
-        result["message"] = f"点击失败: {e}"
-        return result
-    
-    # 等待重启响应
-    print("[INFO] 等待重启响应...")
-    time.sleep(3)
-    
-    # 验证重启状态
-    print("[INFO] 验证重启状态...")
-    
-    max_wait = 60
-    check_interval = 5
-    final_status = ""
-    
-    for attempt in range(max_wait // check_interval):
-        sb.refresh()
-        time.sleep(3)
-        
-        status = wait_for_status(sb, 8)
-        print(f"[INFO] 状态检查 ({(attempt + 1) * check_interval}s): {status or '加载中...'}")
-        
-        if status:
-            final_status = status
-            
-            if "Running" in status:
-                result["success"] = True
-                result["status"] = status
-                result["message"] = f"重启成功！状态: {status}"
-                print(f"[INFO] ✅ 服务器已运行: {status}")
-                break
-            elif "Starting" in status:
-                print(f"[INFO] 服务器启动中...")
-            elif "Offline" in status or "Stopped" in status:
-                print(f"[INFO] 服务器重启中...")
-        
-        time.sleep(check_interval - 3)
-    
-    if not result["success"]:
-        if final_status:
-            result["message"] = f"重启命令已发送，当前状态: {final_status}"
-            result["status"] = final_status
-            if "Running" in final_status or "Starting" in final_status:
-                result["success"] = True
-        else:
-            result["message"] = "无法获取服务器状态"
-    
-    # 保存控制台截图（重启结果页面）
-    time.sleep(2)
-    sp = shot(idx, f"srv-result")
-    sb.save_screenshot(sp)
-    result["screenshot"] = sp
-    
-    # 发送通知
-    notify_simple(result["success"], username, sid, result["status"], sp)
-    
-    print(f"[INFO] {'✅' if result['success'] else '⚠️'} {result['message']}")
-    return result
-
-def process(sb, user: str, pwd: str, idx: int) -> Dict[str, Any]:
-    """处理单个账号"""
-    result = {"username": user, "success": False, "message": "", "servers": []}
-    
-    if not login(sb, user, pwd, idx):
-        result["message"] = "登录失败"
-        notify_simple(False, user, "N/A", "登录失败", None)
-        return result
-    
-    servers = get_servers(sb, idx)
-    if not servers:
-        result["message"] = "无服务器或访问被阻止"
-        notify_simple(False, user, "N/A", "无服务器", None)
-        logout(sb)
-        return result
-    
-    for srv in servers:
-        try:
-            r = restart_server(sb, srv["id"], idx, user)
-            r["name"] = srv.get("name", srv["id"])
-            result["servers"].append(r)
-            time.sleep(3)
-        except Exception as e:
-            print(f"[ERROR] 服务器 {mask_id(srv['id'])} 重启异常: {e}")
-            result["servers"].append({
-                "server_id": srv["id"], 
-                "success": False, 
-                "message": str(e)
-            })
-            notify_simple(False, user, srv["id"], str(e), None)
-    
-    ok = sum(1 for s in result["servers"] if s.get("success"))
-    result["success"] = ok > 0
-    result["message"] = f"{ok}/{len(result['servers'])} 成功"
-    
-    logout(sb)
-    return result
-
-def main():
-    acc_str = os.environ.get("ZAMPTO_ACCOUNT", "")
-    if not acc_str:
-        print("[ERROR] 缺少 ZAMPTO_ACCOUNT")
-        sys.exit(1)
-    
-    accounts = parse_accounts(acc_str)
-    if not accounts:
-        print("[ERROR] 无有效账号")
-        sys.exit(1)
-    
-    print(f"[INFO] {len(accounts)} 个账号")
-    
-    proxy = os.environ.get("PROXY_SOCKS5", "")
-    if proxy:
-        try:
-            requests.get("https://api.ipify.org", proxies={"http": proxy, "https": proxy}, timeout=10)
-            print("[INFO] 代理连接正常")
-        except Exception as e:
-            print(f"[WARN] 代理测试失败: {e}")
-    
-    display = setup_display()
-    results = []
-    
-    try:
-        opts = {"uc": True, "test": True, "locale": "en", "headed": not is_linux()}
-        if proxy:
-            opts["proxy"] = proxy
-            print("[INFO] 使用代理模式")
-        
-        with SB(**opts) as sb:
-            for i, (u, p) in enumerate(accounts, 1):
-                try:
-                    r = process(sb, u, p, i)
-                    results.append(r)
-                    time.sleep(3)
-                except Exception as e:
-                    print(f"[ERROR] 账号 {mask(u)} 异常: {e}")
-                    results.append({
-                        "username": u, 
-                        "success": False, 
-                        "message": str(e), 
-                        "servers": []
-                    })
-                    notify_simple(False, u, "N/A", str(e), None)
-            
-    except Exception as e:
-        print(f"[ERROR] 脚本异常: {e}")
-        sys.exit(1)
-    finally:
-        if display:
-            display.stop()
-    
-    # 打印汇总
-    ok_acc = sum(1 for r in results if r.get("success"))
-    total_srv = sum(len(r.get("servers", [])) for r in results)
-    ok_srv = sum(sum(1 for s in r.get("servers", []) if s.get("success")) for r in results)
-    
-    log_summary = f"📊 账号: {ok_acc}/{len(results)} | 服务器: {ok_srv}/{total_srv}\n{'─'*30}\n"
-    for r in results:
-        log_summary += f"{'✅' if r.get('success') else '❌'} {mask(r['username'])}: {r.get('message','')}\n"
-        for s in r.get("servers", []):
-            status = s.get('status', '')
-            log_summary += f"  {'✓' if s.get('success') else '✗'} Server {mask_id(s['server_id'])}: {s.get('message','')} [{status}]\n"
-    
-    print(f"\n{'='*50}\n{log_summary}{'='*50}")
-    
-    sys.exit(0 if ok_srv > 0 else 1)
-
-if __name__ == "__main__":
-    main()
+      - name: 清理旧运行
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
