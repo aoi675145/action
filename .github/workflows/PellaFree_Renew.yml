@@ -8,6 +8,12 @@ on:
 jobs:
   renew:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    concurrency:
+      group: PellaFree_Renew       # 同一时间只允许一个运行
+      cancel-in-progress: false
     
     steps:
       - name: 检出代码
