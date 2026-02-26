@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""Zampto 自动重启脚本"""
 
 import os, sys, time, platform, requests, re
 from datetime import datetime, timezone, timedelta
@@ -169,7 +170,7 @@ def logout(sb):
         print(f"[WARN] 退出时出错: {e}")
 
 def get_servers(sb, idx: int) -> List[Dict[str, str]]:
-    """获取服务器列表，返回 server-console 链接"""
+    """获取服务器列表"""
     print("[INFO] 获取服务器列表...")
     servers = []
     seen_ids = set()
@@ -209,6 +210,44 @@ def get_servers(sb, idx: int) -> List[Dict[str, str]]:
         print(f"  - ID: {mask(s['id'])}")
     return servers
 
+def wait_for_status(sb, timeout: int = 10) -> str:
+    """等待状态元素加载并返回状态文本"""
+    for i in range(timeout):
+        try:
+            # 等待 info-cards 容器加载
+            status = sb.execute_script('''
+                (function() {
+                    // 等待 info-cards 加载
+                    var cards = document.querySelector('.info-cards');
+                    if (!cards) return "";
+                    
+                    // 获取状态元素
+                    var statusEl = document.getElementById('serverStatus');
+                    if (statusEl && statusEl.textContent) {
+                        return statusEl.textContent.trim();
+                    }
+                    
+                    // 备用: 通过 class 查找
+                    var statusRunning = document.querySelector('.status-running');
+                    if (statusRunning) return statusRunning.textContent.trim();
+                    
+                    var statusStopped = document.querySelector('.status-stopped');
+                    if (statusStopped) return statusStopped.textContent.trim();
+                    
+                    return "";
+                })()
+            ''')
+            
+            if status:
+                return status
+                
+        except Exception as e:
+            pass
+        
+        time.sleep(1)
+    
+    return ""
+
 def restart_server(sb, sid: str, idx: int) -> Dict[str, Any]:
     """重启服务器"""
     sid_masked = mask(sid)
@@ -227,8 +266,17 @@ def restart_server(sb, sid: str, idx: int) -> Dict[str, Any]:
     print(f"[INFO] 服务器页面 URL: {console_url}")
     
     sb.open(console_url)
-    time.sleep(5)
+    time.sleep(3)
     
+    # 等待页面加载完成
+    print("[INFO] 等待页面加载...")
+    for _ in range(10):
+        src = sb.get_page_source()
+        if 'serverStatus' in src or 'restartBtn' in src:
+            break
+        time.sleep(1)
+    
+    time.sleep(2)
     sb.save_screenshot(shot(idx, f"srv-{sid}-console"))
     
     src = sb.get_page_source()
@@ -236,11 +284,14 @@ def restart_server(sb, sid: str, idx: int) -> Dict[str, Any]:
         result["message"] = "访问被阻止"
         return result
     
-    # 查找 Restart 按钮
+    # 获取重启前状态
+    old_status = wait_for_status(sb, 5)
+    print(f"[INFO] 重启前状态: {old_status or '加载中...'}")
+    
+    # 查找并点击 Restart 按钮
     print("[INFO] 查找 Restart 按钮...")
     
     try:
-        # 尝试多种方式查找和点击 Restart 按钮
         clicked = sb.execute_script('''
             (function() {
                 // 方式1: 通过 ID 查找
@@ -270,16 +321,6 @@ def restart_server(sb, sid: str, idx: int) -> Dict[str, Any]:
                     }
                 }
                 
-                // 方式4: 通过图标查找
-                var icons = document.querySelectorAll('i.fa-sync-alt, i.fas.fa-sync-alt');
-                for (var i = 0; i < icons.length; i++) {
-                    var parent = icons[i].closest('button');
-                    if (parent && parent.textContent.toLowerCase().includes('restart')) {
-                        parent.click();
-                        return "icon";
-                    }
-                }
-                
                 return null;
             })()
         ''')
@@ -287,20 +328,15 @@ def restart_server(sb, sid: str, idx: int) -> Dict[str, Any]:
         if clicked:
             print(f"[INFO] ✅ 已点击 Restart 按钮 (方式: {clicked})")
         else:
-            # 备用方案: 使用 Selenium 直接点击
+            # 备用方案
             try:
                 sb.click('#restartBtn')
                 print("[INFO] ✅ 已点击 Restart 按钮 (selenium)")
                 clicked = True
             except:
-                try:
-                    sb.click('button:contains("Restart")')
-                    print("[INFO] ✅ 已点击 Restart 按钮 (contains)")
-                    clicked = True
-                except:
-                    result["message"] = "未找到 Restart 按钮"
-                    sb.save_screenshot(shot(idx, f"srv-{sid}-nobtn"))
-                    return result
+                result["message"] = "未找到 Restart 按钮"
+                sb.save_screenshot(shot(idx, f"srv-{sid}-nobtn"))
+                return result
         
     except Exception as e:
         result["message"] = f"点击失败: {e}"
@@ -310,64 +346,55 @@ def restart_server(sb, sid: str, idx: int) -> Dict[str, Any]:
     # 等待重启响应
     print("[INFO] 等待重启响应...")
     time.sleep(3)
-    
     sb.save_screenshot(shot(idx, f"srv-{sid}-afterclick"))
     
-    # 等待并验证重启成功
+    # 等待服务器重启完成
     print("[INFO] 验证重启状态...")
-    time.sleep(5)
     
-    # 刷新页面检查状态
-    sb.refresh()
-    time.sleep(5)
+    # 轮询检查状态，最多等待 60 秒
+    max_wait = 60
+    check_interval = 5
+    running_found = False
+    final_status = ""
     
-    # 检查服务器状态
-    status = ""
-    for attempt in range(6):  # 最多等待 30 秒
-        try:
-            status = sb.execute_script('''
-                (function() {
-                    var statusEl = document.getElementById('serverStatus');
-                    if (statusEl) {
-                        return statusEl.textContent.trim();
-                    }
-                    
-                    // 备用查找
-                    var statusDiv = document.querySelector('.status-running, .info-card-value');
-                    if (statusDiv) {
-                        return statusDiv.textContent.trim();
-                    }
-                    
-                    return "";
-                })()
-            ''') or ""
+    for attempt in range(max_wait // check_interval):
+        # 刷新页面
+        sb.refresh()
+        time.sleep(3)
+        
+        # 等待状态加载
+        status = wait_for_status(sb, 8)
+        print(f"[INFO] 状态检查 ({(attempt + 1) * check_interval}s): {status or '加载中...'}")
+        
+        if status:
+            final_status = status
             
-            print(f"[INFO] 当前状态: {status}")
-            
-            if "Running" in status or "Starting" in status:
+            # 检查是否运行中
+            if "Running" in status:
+                running_found = True
                 result["success"] = True
                 result["status"] = status
                 result["message"] = f"重启成功！状态: {status}"
+                print(f"[INFO] ✅ 服务器已运行: {status}")
                 break
+            elif "Starting" in status:
+                print(f"[INFO] 服务器启动中...")
+                # 继续等待
             elif "Offline" in status or "Stopped" in status:
-                # 服务器正在重启中，继续等待
-                print(f"[INFO] 服务器重启中... ({attempt + 1}/6)")
-                time.sleep(5)
-                sb.refresh()
-                time.sleep(3)
-            else:
-                time.sleep(5)
-                sb.refresh()
-                time.sleep(3)
-                
-        except Exception as e:
-            print(f"[WARN] 检查状态出错: {e}")
-            time.sleep(5)
+                print(f"[INFO] 服务器重启中...")
+                # 继续等待
+        
+        time.sleep(check_interval - 3)  # 已经等了3秒
     
     if not result["success"]:
-        # 即使无法确认状态，如果点击成功了也算部分成功
-        result["message"] = f"已发送重启命令，当前状态: {status or '未知'}"
-        result["status"] = status
+        if final_status:
+            result["message"] = f"重启命令已发送，当前状态: {final_status}"
+            result["status"] = final_status
+            # 如果有最终状态，也算部分成功
+            if "Running" in final_status or "Starting" in final_status:
+                result["success"] = True
+        else:
+            result["message"] = "无法获取服务器状态"
     
     # 保存最终截图
     sp = shot(idx, f"srv-{sid}-result")
