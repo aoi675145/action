@@ -31,8 +31,6 @@ jobs:
       
       - name: 运行续期脚本
         env:
-          PELLA_ACCOUNTS: ${{ secrets.PELLA_ACCOUNTS }}
-          PELLA_EMAIL: ${{ secrets.PELLA_EMAIL }}
           PELLA_PASSWORD: ${{ secrets.PELLA_PASSWORD }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
