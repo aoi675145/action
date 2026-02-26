@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Zampto 自动续期脚本 - 修复 Turnstile 检测"""
+"""Zampto 续期"""
 
 import os, sys, time, platform, requests, re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, Any, List, Tuple
+from typing import Dict, Any, List, Tuple, Optional
 from seleniumbase import SB
 
 AUTH_URL = "https://auth.zampto.net/sign-in?app_id=bmhk6c8qdqxphlyscztgl"
@@ -52,6 +52,10 @@ def mask(s: str, show: int = 1) -> str:
     if len(s) <= show: return s[0] + "***"
     return s[:show] + "*" * min(3, len(s) - show)
 
+def mask_id(sid: str) -> str:
+    if not sid: return "****"
+    return sid[0] + "***"
+
 def is_linux(): return platform.system().lower() == "linux"
 
 def setup_display():
@@ -70,73 +74,80 @@ def setup_display():
 def shot(idx: int, name: str) -> str:
     return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
-def notify(ok: bool, stage: str, msg: str = "", img: str = None):
+def notify(ok: bool, username: str, info: str, img: str = None):
+    """发送通知 - 带截图"""
     token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
-    if not token or not chat: return
+    if not token or not chat: 
+        return
+    
     try:
-        text = f"🔔 Zampto: {'✅' if ok else '❌'} {stage}\n{msg}\n⏰ {cn_time_str()}"
-        requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={"chat_id": chat, "text": text}, timeout=30)
+        icon = "✅" if ok else "❌"
+        result = "续期成功" if ok else "续期失败"
+        
+        text = f"""{icon} {result}
+
+账号：{username}
+信息：{info}
+时间：{cn_time_str()}
+
+Zampto Auto Renew"""
+        
         if img and Path(img).exists():
             with open(img, "rb") as f:
-                requests.post(f"https://api.telegram.org/bot{token}/sendPhoto", data={"chat_id": chat}, files={"photo": f}, timeout=60)
-    except: pass
+                requests.post(
+                    f"https://api.telegram.org/bot{token}/sendPhoto",
+                    data={"chat_id": chat, "caption": text},
+                    files={"photo": f},
+                    timeout=60
+                )
+        else:
+            requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat, "text": text},
+                timeout=30
+            )
+    except Exception as e:
+        print(f"[WARN] 通知发送失败: {e}")
 
 def parse_accounts(s: str) -> List[Tuple[str, str]]:
     return [(p[0].strip(), p[1].strip()) for line in s.strip().split('\n') 
             if '----' in line and len(p := line.strip().split('----', 1)) == 2 and p[0].strip() and p[1].strip()]
 
 def detect_turnstile_type(sb) -> str:
-    """检测 Turnstile 类型: visible, invisible, none"""
+    """检测 Turnstile 类型"""
     try:
         result = sb.execute_script('''
             (function() {
-                // 检查是否有 turnstile 容器
                 var container = document.getElementById('turnstileContainer');
                 var cfInput = document.querySelector("input[name='cf-turnstile-response']");
                 
-                if (!container && !cfInput) {
-                    return "none";
-                }
+                if (!container && !cfInput) return "none";
                 
-                // 检查所有 iframe
                 var iframes = document.querySelectorAll('iframe');
                 for (var i = 0; i < iframes.length; i++) {
                     var iframe = iframes[i];
                     var src = iframe.src || "";
                     
-                    // Cloudflare Turnstile iframe 特征
-                    if (src.includes("challenges.cloudflare.com") || 
-                        src.includes("turnstile")) {
-                        
+                    if (src.includes("challenges.cloudflare.com") || src.includes("turnstile")) {
                         var rect = iframe.getBoundingClientRect();
                         var style = window.getComputedStyle(iframe);
                         var visible = style.display !== 'none' && 
                                      style.visibility !== 'hidden' &&
                                      rect.width > 0 && rect.height > 0;
                         
-                        // 如果 iframe 可见且有一定尺寸，是 visible 类型
-                        if (visible && rect.width > 100 && rect.height > 50) {
-                            return "visible";
-                        }
+                        if (visible && rect.width > 100 && rect.height > 50) return "visible";
                     }
                 }
                 
-                // 检查 cf-turnstile div
                 var cfDiv = document.querySelector('.cf-turnstile, [data-sitekey]');
                 if (cfDiv) {
                     var rect = cfDiv.getBoundingClientRect();
-                    if (rect.width > 100 && rect.height > 50) {
-                        return "visible";
-                    }
+                    if (rect.width > 100 && rect.height > 50) return "visible";
                 }
                 
-                // 有 container 或 input 但没有可见的 iframe，可能是 invisible 或正在加载
-                // 默认当作 visible 处理（更安全）
                 if (container) {
                     var rect = container.getBoundingClientRect();
-                    if (rect.height > 50) {
-                        return "visible";
-                    }
+                    if (rect.height > 50) return "visible";
                 }
                 
                 return "invisible";
@@ -145,33 +156,23 @@ def detect_turnstile_type(sb) -> str:
         return result or "unknown"
     except Exception as e:
         print(f"[WARN] 检测类型出错: {e}")
-        return "visible"  # 出错时默认 visible，更安全
+        return "visible"
 
 def wait_turnstile_complete(sb, timeout: int = 60) -> str:
-    """
-    等待 Turnstile 完成
-    返回: "token", "closed", "timeout"
-    """
     print(f"[INFO] 等待验证完成 (最多 {timeout}s)...")
     
     for i in range(timeout):
         try:
             result = sb.execute_script('''
                 (function() {
-                    // 检查 modal 是否还存在
                     var modal = document.querySelector('.confirmation-modal-content');
                     var container = document.getElementById('turnstileContainer');
                     
-                    if (!modal && !container) {
-                        return "closed";
-                    }
+                    if (!modal && !container) return "closed";
                     
-                    // 检查 token
                     var inputs = document.querySelectorAll("input[name='cf-turnstile-response']");
                     for (var j = 0; j < inputs.length; j++) {
-                        if (inputs[j].value && inputs[j].value.length > 20) {
-                            return "token";
-                        }
+                        if (inputs[j].value && inputs[j].value.length > 20) return "token";
                     }
                     
                     return "waiting";
@@ -197,8 +198,7 @@ def wait_turnstile_complete(sb, timeout: int = 60) -> str:
     return "timeout"
 
 def handle_turnstile(sb, idx: int) -> bool:
-    """智能处理 Turnstile"""
-    time.sleep(3)  # 等待 turnstile 完全加载
+    time.sleep(3)
     
     turnstile_type = detect_turnstile_type(sb)
     print(f"[INFO] Turnstile 类型: {turnstile_type}")
@@ -207,7 +207,6 @@ def handle_turnstile(sb, idx: int) -> bool:
         print("[INFO] 未检测到 Turnstile")
         return True
     
-    # 对于 visible 或 unknown，都尝试点击
     if turnstile_type in ("visible", "unknown"):
         print("[INFO] 尝试 uc_gui_click_captcha...")
         try:
@@ -219,13 +218,15 @@ def handle_turnstile(sb, idx: int) -> bool:
     else:
         print("[INFO] Invisible Turnstile - 等待自动验证...")
     
-    # 等待验证完成
     result = wait_turnstile_complete(sb, 45)
     return result in ("token", "closed")
 
-def login(sb, user: str, pwd: str, idx: int) -> bool:
+def login(sb, user: str, pwd: str, idx: int) -> Tuple[bool, Optional[str]]:
+    """登录，返回 (成功, 截图路径)"""
     user_masked = mask(user)
     print(f"\n{'='*50}\n[INFO] 账号 {idx}: 登录 {user_masked}\n{'='*50}")
+    
+    last_shot = None
     
     for attempt in range(3):
         try:
@@ -236,9 +237,10 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
             current_url = sb.get_current_url()
             if "dash.zampto.net" in current_url:
                 print("[INFO] ✅ 已登录")
-                return True
+                return True, None
             
-            sb.save_screenshot(shot(idx, f"01-login-{attempt}"))
+            last_shot = shot(idx, f"01-login-{attempt}")
+            sb.save_screenshot(last_shot)
             
             for _ in range(10):
                 src = sb.get_page_source()
@@ -264,7 +266,7 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
                 if attempt < 2:
                     time.sleep(5)
                     continue
-                return False
+                return False, last_shot
             
             time.sleep(1)
             try:
@@ -293,7 +295,7 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
                 print("[WARN] 密码页面未加载")
                 if attempt < 2:
                     continue
-                return False
+                return False, last_shot
             
             time.sleep(1)
             try:
@@ -302,12 +304,13 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
                 sb.click('button')
             
             time.sleep(6)
-            sb.save_screenshot(shot(idx, "02-result"))
+            last_shot = shot(idx, "02-result")
+            sb.save_screenshot(last_shot)
             
             current_url = sb.get_current_url()
             if "dash.zampto.net" in current_url or "sign-in" not in current_url:
                 print("[INFO] ✅ 登录成功")
-                return True
+                return True, last_shot
             
             print(f"[WARN] 尝试 {attempt + 1}: 登录未成功")
             
@@ -318,7 +321,7 @@ def login(sb, user: str, pwd: str, idx: int) -> bool:
                 continue
     
     print("[ERROR] 登录失败")
-    return False
+    return False, last_shot
 
 def logout(sb):
     try:
@@ -329,19 +332,22 @@ def logout(sb):
     except Exception as e:
         print(f"[WARN] 退出时出错: {e}")
 
-def get_servers(sb, idx: int) -> List[Dict[str, str]]:
+def get_servers(sb, idx: int) -> Tuple[List[Dict[str, str]], str, Optional[str]]:
+    """获取服务器列表，返回 (服务器列表, 错误信息, 截图路径)"""
     print("[INFO] 获取服务器列表...")
     servers = []
     seen_ids = set()
     
     sb.open(DASHBOARD_URL)
     time.sleep(5)
-    sb.save_screenshot(shot(idx, "03-dashboard"))
+    
+    screenshot = shot(idx, "03-dashboard")
+    sb.save_screenshot(screenshot)
     
     src = sb.get_page_source()
     if "Access Blocked" in src or "VPN or Proxy Detected" in src:
         print("[ERROR] ⚠️ 访问被阻止")
-        return []
+        return [], "⚠️ 访问被阻止", screenshot
     
     for page_url in [DASHBOARD_URL, OVERVIEW_URL]:
         if page_url != DASHBOARD_URL:
@@ -355,23 +361,36 @@ def get_servers(sb, idx: int) -> List[Dict[str, str]]:
                 seen_ids.add(sid)
                 servers.append({"id": sid, "name": f"Server {sid}"})
     
+    if not servers:
+        print("[WARN] 未找到服务器")
+        return [], "⚠️ 未找到服务器", screenshot
+    
     print(f"[INFO] 找到 {len(servers)} 个服务器")
     for s in servers:
-        print(f"  - ID: {mask(s['id'])}")
-    return servers
+        print(f"  - ID: {mask_id(s['id'])}")
+    return servers, "", screenshot
 
-def renew(sb, sid: str, idx: int) -> Dict[str, Any]:
-    sid_masked = mask(sid)
+def renew(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
+    """续期服务器"""
+    sid_masked = mask_id(sid)
     result = {"server_id": sid, "success": False, "message": "", "screenshot": None, 
               "old_time": "", "new_time": "", "old_time_cn": "", "new_time_cn": "", "expiry_cn": ""}
-    print(f"[INFO] 续期服务器 {sid_masked}...")
+    
+    print(f"\n[INFO] 续期服务器 {sid_masked}...")
+    print(f"[INFO] 服务器页面 URL: https://dash.zampto.net/server?id=****")
     
     sb.open(SERVER_URL.format(sid))
     time.sleep(4)
     
+    # 保存截图
+    console_shot = shot(idx, f"srv-console")
+    sb.save_screenshot(console_shot)
+    result["screenshot"] = console_shot
+    
     src = sb.get_page_source()
     if "Access Blocked" in src:
-        result["message"] = "访问被阻止"
+        result["message"] = "⚠️ 访问被阻止"
+        notify(False, username, "⚠️ 访问被阻止", console_shot)
         return result
     
     old_renewal = ""
@@ -409,26 +428,23 @@ def renew(sb, sid: str, idx: int) -> Dict[str, Any]:
         ''')
         
         if not clicked:
-            result["message"] = "未找到续期按钮"
-            sb.save_screenshot(shot(idx, f"srv-{sid}-nobtn"))
+            result["message"] = "⚠️ 未找到续期按钮"
+            notify(False, username, f"服务器: {sid} | ⚠️ 未找到按钮", console_shot)
             return result
             
     except Exception as e:
-        result["message"] = f"点击失败: {e}"
+        result["message"] = f"⚠️ 点击失败: {e}"
+        notify(False, username, f"服务器: {sid} | ⚠️ 点击失败", console_shot)
         return result
     
     print("[INFO] 已点击续期按钮，等待验证...")
     time.sleep(2)
-    sb.save_screenshot(shot(idx, f"srv-{sid}-modal"))
+    sb.save_screenshot(shot(idx, f"srv-modal"))
     
     # 处理 Turnstile
     handle_turnstile(sb, idx)
     
     time.sleep(3)
-    
-    sp = shot(idx, f"srv-{sid}")
-    sb.save_screenshot(sp)
-    result["screenshot"] = sp
     
     sb.open(SERVER_URL.format(sid))
     time.sleep(3)
@@ -455,55 +471,64 @@ def renew(sb, sid: str, idx: int) -> Dict[str, Any]:
     today = datetime.now().strftime('%b %d, %Y')
     if new_renewal and new_renewal != old_renewal:
         result["success"] = True
-        result["message"] = f"{result['old_time_cn']} -> {result['expiry_cn']}"
+        result["message"] = f"续期成功！到期: {result['expiry_cn']}"
     elif today in str(new_renewal):
         result["success"] = True
-        result["message"] = f"今日已续期 | {result['new_time_cn']} -> {result['expiry_cn']}"
+        result["message"] = f"今日已续期，到期: {result['expiry_cn']}"
     elif remain and ("1 day" in remain or "2 day" in remain or "hour" in remain):
         result["success"] = True
-        result["message"] = f"{result['new_time_cn']} -> {result['expiry_cn']}"
+        result["message"] = f"续期成功！到期: {result['expiry_cn']}"
     else:
-        result["message"] = f"状态未知 | {result['new_time_cn']}"
+        result["message"] = f"⚠️ 状态未知 | {result['new_time_cn']}"
     
-    result_shot = shot(idx, f"srv-{sid}-result")
-    sb.save_screenshot(result_shot)
-    result["screenshot"] = result_shot
+    # 保存最终截图
+    time.sleep(2)
+    final_shot = shot(idx, f"srv-result")
+    sb.save_screenshot(final_shot)
+    result["screenshot"] = final_shot
+    
+    # 发送通知
+    if result["success"]:
+        notify(True, username, f"服务器: {sid} | 到期: {result['expiry_cn']}", final_shot)
+    else:
+        notify(False, username, f"服务器: {sid} | {result['message']}", final_shot)
     
     print(f"[INFO] {'✅' if result['success'] else '⚠️'} {result['message']}")
     return result
 
 def process(sb, user: str, pwd: str, idx: int) -> Dict[str, Any]:
+    """处理单个账号"""
     result = {"username": user, "success": False, "message": "", "servers": []}
     
-    if not login(sb, user, pwd, idx):
+    login_ok, login_shot = login(sb, user, pwd, idx)
+    if not login_ok:
         result["message"] = "登录失败"
+        notify(False, user, "⚠️ 登录失败", login_shot)
         return result
     
-    servers = get_servers(sb, idx)
-    if not servers:
-        result["message"] = "无服务器或访问被阻止"
+    servers, error, dashboard_shot = get_servers(sb, idx)
+    if error:
+        result["message"] = error
+        notify(False, user, error, dashboard_shot)
         logout(sb)
         return result
     
     for srv in servers:
         try:
-            r = renew(sb, srv["id"], idx)
+            r = renew(sb, srv["id"], idx, user)
             r["name"] = srv.get("name", srv["id"])
             result["servers"].append(r)
             time.sleep(3)
         except Exception as e:
-            print(f"[ERROR] 服务器 {mask(srv['id'])} 续期异常: {e}")
+            err_shot = shot(idx, "error")
+            sb.save_screenshot(err_shot)
+            print(f"[ERROR] 服务器 {mask_id(srv['id'])} 续期异常: {e}")
             result["servers"].append({"server_id": srv["id"], "success": False, "message": str(e)})
+            notify(False, user, f"服务器: {srv['id']} | ⚠️ {e}", err_shot)
     
     ok = sum(1 for s in result["servers"] if s.get("success"))
     result["success"] = ok > 0
     result["message"] = f"{ok}/{len(result['servers'])} 成功"
-    
-    sb.open(DASHBOARD_URL)
-    time.sleep(2)
-    final_shot = shot(idx, "05-final")
-    sb.save_screenshot(final_shot)
-    result["final_screenshot"] = final_shot
     
     logout(sb)
     return result
@@ -530,7 +555,7 @@ def main():
             print(f"[WARN] 代理测试失败: {e}")
     
     display = setup_display()
-    results, last_shot = [], None
+    results = []
     
     try:
         opts = {"uc": True, "test": True, "locale": "en", "headed": not is_linux()}
@@ -543,16 +568,19 @@ def main():
                 try:
                     r = process(sb, u, p, i)
                     results.append(r)
-                    if r.get("final_screenshot"):
-                        last_shot = r["final_screenshot"]
                     time.sleep(3)
                 except Exception as e:
+                    err_shot = shot(i, "fatal")
+                    try:
+                        sb.save_screenshot(err_shot)
+                    except:
+                        err_shot = None
                     print(f"[ERROR] 账号 {mask(u)} 异常: {e}")
                     results.append({"username": u, "success": False, "message": str(e), "servers": []})
+                    notify(False, u, f"⚠️ {e}", err_shot)
             
     except Exception as e:
         print(f"[ERROR] 脚本异常: {e}")
-        notify(False, "错误", str(e))
         sys.exit(1)
     finally:
         if display:
@@ -566,18 +594,10 @@ def main():
     for r in results:
         log_summary += f"{'✅' if r.get('success') else '❌'} {mask(r['username'])}: {r.get('message','')}\n"
         for s in r.get("servers", []):
-            log_summary += f"  {'✓' if s.get('success') else '✗'} Server {mask(s['server_id'])}: {s.get('message','')}\n"
+            log_summary += f"  {'✓' if s.get('success') else '✗'} Server {mask_id(s['server_id'])}: {s.get('message','')}\n"
     
     print(f"\n{'='*50}\n{log_summary}{'='*50}")
     
-    notify_summary = f"📊 账号: {ok_acc}/{len(results)} | 服务器: {ok_srv}/{total_srv}\n{'─'*30}\n"
-    for r in results:
-        notify_summary += f"{'✅' if r.get('success') else '❌'} {r['username']}: {r.get('message','')}\n"
-        for s in r.get("servers", []):
-            status = '✓' if s.get('success') else '✗'
-            notify_summary += f"  {status} Server {s['server_id']}: {s.get('message','')}\n"
-    
-    notify(ok_acc == len(results) and ok_srv == total_srv, "完成", notify_summary, last_shot)
     sys.exit(0 if ok_srv > 0 else 1)
 
 if __name__ == "__main__":
