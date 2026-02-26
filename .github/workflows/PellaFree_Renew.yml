@@ -2,7 +2,7 @@ name: Pella Free 续期
 
 on:
   schedule:
-    - cron: '18 4 * * *'  # 每天北京时间 12:18 运行
+    - cron: '18 4 * * *'
   workflow_dispatch:
     inputs:
       account_name:
@@ -42,18 +42,19 @@ jobs:
       
       - name: 运行续期脚本
         env:
-          PELLA_PASSWORD: ${{ secrets.PELLA_PASSWORD }}
+          PELLA_ACCOUNTS: ${{ secrets.PELLA_ACCOUNTS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          ACCOUNT_NAME: ${{ github.event.inputs.account_name }}
         run: python scripts/PellaFree/PellaFree_Renew.py
 
-#      - name: 上传截图
-#        uses: actions/upload-artifact@v4
-#        if: always()
-#        with:
-#          name: screenshots-${{ github.run_number }}
-#          path: output/screenshots/
-#          retention-days: 3
+      - name: 上传截图
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-${{ github.run_number }}
+          path: output/screenshots/
+          retention-days: 3
       
       - name: 清理历史运行记录
         uses: Mattraks/delete-workflow-runs@v2
