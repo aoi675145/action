@@ -67,6 +67,7 @@ def shot_path(idx, name):
 class PellaAutoRenew:
     LOGIN_URL = "https://www.pella.app/login"
     HOME_URL = "https://www.pella.app/home"
+    LOGS_API = "https://api.pella.app/server/logs"
     RENEW_WAIT_TIME = 8
     WAIT_TIME_AFTER_LOGIN = 20
     RESTART_WAIT_TIME = 60
@@ -78,6 +79,7 @@ class PellaAutoRenew:
         self.initial_expiry_details = "N/A"
         self.initial_expiry_value = -1.0
         self.server_url = None
+        self.server_id = None
         self.server_status = "unknown"
         self.last_screenshot = None
         
@@ -141,6 +143,14 @@ class PellaAutoRenew:
             return f"{d}天", float(d)
             
         return "无法提取", -1.0
+
+    def extract_server_id(self, url):
+        """从服务器URL提取ID"""
+        # URL格式: https://www.pella.app/server/aa783fc9f0274f35ab183a4e7a73bf27
+        match = re.search(r'/server/([a-f0-9]{32})', url)
+        if match:
+            return match.group(1)
+        return None
 
     def find_and_click_button(self):
         selectors = [
@@ -318,15 +328,60 @@ class PellaAutoRenew:
             link.click()
             WebDriverWait(self.driver, 10).until(EC.url_contains("/server/"))
             self.server_url = self.driver.current_url
-            logger.info(f"✅ 获取服务器URL成功")
+            self.server_id = self.extract_server_id(self.server_url)
+            logger.info(f"✅ 获取服务器URL成功, ID: {self.server_id[:8] if self.server_id else 'N/A'}...")
             self.take_screenshot("03-server-page")
             return True
         except Exception as e:
             self.take_screenshot("error-server")
             raise Exception(f"❌ 获取服务器失败: {e}")
     
+    def check_logs_api(self):
+        """通过 API 检查服务器日志状态"""
+        if not self.server_id:
+            return None
+        
+        try:
+            # 从浏览器获取 cookies
+            cookies = {c['name']: c['value'] for c in self.driver.get_cookies()}
+            
+            # 调用 logs API
+            api_url = f"{self.LOGS_API}?id={self.server_id}&use_cache=true"
+            
+            response = requests.get(
+                api_url,
+                cookies=cookies,
+                headers={
+                    'Accept': 'application/json',
+                    'Referer': self.server_url,
+                    'User-Agent': self.driver.execute_script("return navigator.userAgent")
+                },
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                
+                # 检查是否有错误
+                if isinstance(data, dict) and data.get('error'):
+                    error_msg = data.get('error', '')
+                    if 'Failed to fetch logs' in error_msg:
+                        logger.info(f"⚠️ API返回: {error_msg} - 服务器已掉线")
+                        return "offline"
+                    return "error"
+                
+                # 有正常日志数据，服务器在线
+                return "online"
+            else:
+                logger.warning(f"API请求失败: {response.status_code}")
+                return None
+                
+        except Exception as e:
+            logger.warning(f"检查 logs API 出错: {e}")
+            return None
+    
     def check_server_status(self):
-        """检查服务器状态 - 同时检测 RUNNING 状态和错误提示"""
+        """检查服务器状态 - 优先使用 API 检测"""
         if not self.server_url:
             return "unknown"
         
@@ -334,37 +389,13 @@ class PellaAutoRenew:
             self.driver.get(self.server_url)
             time.sleep(3)
         
-        # 先检查是否有 "Failed to fetch logs" 错误提示（服务器掉线标志）
-        try:
-            error_selectors = [
-                "//*[contains(text(), 'Failed to fetch logs')]",
-                "//*[contains(text(), 'failed to fetch')]",
-                "//div[contains(@class, 'Toastify')]//div[contains(text(), 'Failed')]",
-                "//div[contains(@class, 'toast')]//div[contains(text(), 'Failed')]",
-            ]
-            
-            for selector in error_selectors:
-                try:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for elem in elements:
-                        if elem.is_displayed():
-                            logger.info("⚠️ 检测到 'Failed to fetch logs' 错误，服务器已掉线")
-                            self.server_status = "offline"
-                            return "offline"
-                except:
-                    continue
-            
-            # 也检查页面文本
-            page_text = self.driver.find_element(By.TAG_NAME, "body").text
-            if "Failed to fetch logs" in page_text or "failed to fetch" in page_text.lower():
-                logger.info("⚠️ 检测到获取日志失败，服务器已掉线")
-                self.server_status = "offline"
-                return "offline"
-                
-        except Exception as e:
-            logger.warning(f"检查错误提示时出错: {e}")
+        # 优先通过 API 检测
+        api_status = self.check_logs_api()
+        if api_status == "offline":
+            self.server_status = "offline"
+            return "offline"
         
-        # 检查状态文本
+        # API 返回在线，检查页面状态确认
         page_text = self.driver.find_element(By.TAG_NAME, "body").text.upper()
         
         running_indicators = ["STATUS: RUNNING", "RUNNING", "ONLINE", "ACTIVE"]
@@ -487,6 +518,7 @@ class PellaAutoRenew:
             return "skip", "缺少服务器URL"
         
         status = self.check_server_status()
+        logger.info(f"📊 服务器状态: {status}")
         
         if status == "running":
             logger.info("✅ 服务器正常运行，无需重启")
@@ -497,7 +529,7 @@ class PellaAutoRenew:
         
         # offline 或 stopped 都需要重启
         if status == "offline":
-            logger.info("🔄 服务器已掉线，开始重启...")
+            logger.info("🔄 服务器已掉线(API检测)，开始重启...")
         else:
             logger.info("🔄 服务器已停止，开始重启...")
         
