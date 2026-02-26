@@ -30,8 +30,7 @@ jobs:
 
       - name: 安装并启动代理
         env:
-        # 这里我改外部变量名了 ZAMPTO_PROXY_NOD
-          PROXY_NODE: ${{ secrets.ZAMPTO_PROXY_NODE }}
+          PROXY_NODE: ${{ secrets.PROXY_NODE }}
         run: |
           if [ -z "$PROXY_NODE" ]; then
             echo "[INFO] 未配置代理，直连模式"
