@@ -12,7 +12,7 @@ jobs:
       contents: read
       actions: write
     concurrency:
-      group: zampto-renew       # 同一时间只允许一个运行
+      group: Zampto_Renew       # 同一时间只允许一个运行
       cancel-in-progress: false
 
     steps:
