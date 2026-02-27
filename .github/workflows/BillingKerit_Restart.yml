@@ -10,7 +10,7 @@ on:
         type: string
 
 concurrency:
-  group: Kerit_Restart
+  group: Billing_Kerit_Restart
   cancel-in-progress: false
 
 permissions:
@@ -35,14 +35,18 @@ jobs:
       - name: 安装依赖
         run: |
           pip install --upgrade pip
-          pip install playwright requests
+          pip install playwright aiohttp pynacl
           playwright install chromium
 
       - name: 执行重启脚本
         env:
-          KERIT_ACCOUNT: ${{ secrets.KERIT_ACCOUNT }}
+          BILLING_KERIT_COOKIES_1: ${{ secrets.BILLING_KERIT_COOKIES_1 }}
+          BILLING_KERIT_COOKIES_2: ${{ secrets.BILLING_KERIT_COOKIES_2 }}
+          BILLING_KERIT_COOKIES_3: ${{ secrets.BILLING_KERIT_COOKIES_3 }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
           ACCOUNT_NAME: ${{ github.event.inputs.account_name }}
         run: |
           python scripts/BillingKerit/BillingKerit_Restart.py
