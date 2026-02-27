@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+"""
+Weirdhost 自动登录 - Wit.ai 语音验证方案
+参考: https://github.com/dessant/buster
+"""
 
 from DrissionPage import ChromiumPage, ChromiumOptions
 import time
@@ -7,6 +11,7 @@ import os
 import random
 import requests
 import tempfile
+import re
 from typing import Optional
 
 # ============== 配置 ==============
@@ -16,81 +21,121 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
 
+# Wit.ai Token
+WIT_AI_TOKEN = os.environ.get("WIT_AI_TOKEN", "")
 
-class SpeechRecognizer:
-    """语音识别器"""
+
+class WitAiRecognizer:
+    """Wit.ai 语音识别器"""
     
-    def __init__(self):
-        self.recognizer = None
-        self._init_recognizer()
-    
-    def _init_recognizer(self):
-        """初始化语音识别"""
-        try:
-            # 方案1: 使用 OpenAI Whisper (推荐)
-            import whisper
-            self.model = whisper.load_model("base")
-            self.method = "whisper"
-            print("✅ 使用 Whisper 语音识别")
-        except ImportError:
-            try:
-                # 方案2: 使用 SpeechRecognition
-                import speech_recognition as sr
-                self.recognizer = sr.Recognizer()
-                self.method = "speech_recognition"
-                print("✅ 使用 SpeechRecognition")
-            except ImportError:
-                print("⚠️ 未安装语音识别库，将使用在线 API")
-                self.method = "api"
+    def __init__(self, token: str):
+        self.token = token
+        if not self.token:
+            raise ValueError("WIT_AI_TOKEN 未设置")
     
     def recognize(self, audio_path: str) -> Optional[str]:
-        """识别音频"""
-        if self.method == "whisper":
-            return self._recognize_whisper(audio_path)
-        elif self.method == "speech_recognition":
-            return self._recognize_sr(audio_path)
-        else:
-            return self._recognize_api(audio_path)
-    
-    def _recognize_whisper(self, audio_path: str) -> Optional[str]:
-        """使用 Whisper 识别"""
+        """
+        识别音频文件
+        
+        Args:
+            audio_path: MP3 音频文件路径
+            
+        Returns:
+            识别的文本，失败返回 None
+        """
         try:
-            import whisper
-            result = self.model.transcribe(audio_path, language="en")
-            text = result["text"].strip()
-            # 清理文本，只保留数字和字母
-            cleaned = ''.join(c for c in text if c.isalnum() or c.isspace())
-            return cleaned.lower().strip()
+            # 读取音频文件
+            with open(audio_path, 'rb') as f:
+                audio_data = f.read()
+            
+            print(f"      📤 上传音频 ({len(audio_data)} bytes)...")
+            
+            # 调用 Wit.ai API
+            headers = {
+                'Authorization': f'Bearer {self.token}',
+                'Content-Type': 'audio/mpeg3',
+            }
+            
+            response = requests.post(
+                'https://api.wit.ai/speech?v=20231117',
+                headers=headers,
+                data=audio_data,
+                timeout=30
+            )
+            
+            print(f"      📥 响应状态: {response.status_code}")
+            
+            if response.status_code == 200:
+                # Wit.ai 返回的可能是多行 JSON
+                # 取最后一个完整的 JSON
+                text = response.text.strip()
+                lines = text.split('\n')
+                
+                result_text = ""
+                for line in reversed(lines):
+                    try:
+                        result = __import__('json').loads(line)
+                        if 'text' in result:
+                            result_text = result['text']
+                            break
+                    except:
+                        continue
+                
+                if result_text:
+                    cleaned = self._clean_text(result_text)
+                    print(f"      ✅ 原始: {result_text}")
+                    print(f"      ✅ 清理: {cleaned}")
+                    return cleaned
+                else:
+                    print(f"      ⚠️ 响应中无文本: {text[:200]}")
+                    return None
+            else:
+                print(f"      ❌ API 错误: {response.status_code}")
+                print(f"      ❌ 响应: {response.text[:200]}")
+                return None
+                
         except Exception as e:
-            print(f"   ⚠️ Whisper 识别失败: {e}")
+            print(f"      ❌ 识别异常: {e}")
             return None
     
-    def _recognize_sr(self, audio_path: str) -> Optional[str]:
-        """使用 SpeechRecognition 识别"""
-        try:
-            import speech_recognition as sr
-            from pydub import AudioSegment
-            
-            # 转换 MP3 到 WAV
-            wav_path = audio_path.replace('.mp3', '.wav')
-            audio = AudioSegment.from_mp3(audio_path)
-            audio.export(wav_path, format="wav")
-            
-            with sr.AudioFile(wav_path) as source:
-                audio_data = self.recognizer.record(source)
-            
-            # 使用 Google 语音识别
-            text = self.recognizer.recognize_google(audio_data, language="en-US")
-            return text.lower().strip()
-        except Exception as e:
-            print(f"   ⚠️ SpeechRecognition 识别失败: {e}")
-            return None
-    
-    def _recognize_api(self, audio_path: str) -> Optional[str]:
-        """使用在线 API 识别 (备用)"""
-        # 可以集成其他在线 API
-        print("   ⚠️ 在线 API 识别暂未实现")
-        return None
+    def _clean_text(self, text: str) -> str:
+        """
+        清理识别文本
+        reCAPTCHA 音频通常是数字或简单单词
+        """
+        if not text:
+            return ""
+        
+        # 转小写
+        text = text.lower().strip()
+        
+        # 移除标点符号
+        text = re.sub(r'[^\w\s]', '', text)
+        
+        # 数字单词转数字
+        word_to_num = {
+            'zero': '0', 'oh': '0', 'o': '0',
+            'one': '1', 'won': '1',
+            'two': '2', 'to': '2', 'too': '2',
+            'three': '3', 'tree': '3',
+            'four': '4', 'for': '4', 'fore': '4',
+            'five': '5', 'fife': '5',
+            'six': '6', 'sex': '6',
+            'seven': '7',
+            'eight': '8', 'ate': '8',
+            'nine': '9', 'niner': '9',
+        }
+        
+        words = text.split()
+        result = []
+        for word in words:
+            word = word.strip()
+            if word in word_to_num:
+                result.append(word_to_num[word])
+            elif word:
+                result.append(word)
+        
+        return ' '.join(result)
 
 
 class WeirdhostLogin:
@@ -99,26 +144,33 @@ class WeirdhostLogin:
     def __init__(self, headless: bool = True):
         self.headless = headless
         self.page = None
-        self.speech = SpeechRecognizer()
+        self.recognizer = WitAiRecognizer(WIT_AI_TOKEN)
     
     def _create_browser(self) -> ChromiumPage:
-        """创建浏览器"""
+        """创建浏览器实例"""
         co = ChromiumOptions()
         co.auto_port()
         
         if self.headless:
             co.headless()
         
+        # 基本参数
         co.set_argument('--no-sandbox')
         co.set_argument('--disable-dev-shm-usage')
         co.set_argument('--disable-gpu')
-        co.set_argument('--disable-blink-features=AutomationControlled')
         co.set_argument('--window-size=1280,900')
         
+        # 反检测参数
+        co.set_argument('--disable-blink-features=AutomationControlled')
+        co.set_argument('--disable-infobars')
+        co.set_argument('--disable-extensions')
+        
+        # Chrome 路径
         chrome_path = '/usr/bin/google-chrome'
         if os.path.exists(chrome_path):
             co.set_browser_path(chrome_path)
         
+        # User-Agent
         co.set_user_agent(
             'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
             'AppleWebKit/537.36 (KHTML, like Gecko) '
@@ -127,222 +179,293 @@ class WeirdhostLogin:
         
         return ChromiumPage(co)
     
+    def _save_screenshot(self, name: str):
+        """保存截图"""
+        if DEBUG and self.page:
+            path = f"{SCREENSHOT_DIR}/{name}.png"
+            self.page.get_screenshot(path=path)
+            print(f"      📸 截图: {name}.png")
+    
     def login(self, email: str, password: str) -> bool:
-        """执行登录"""
+        """
+        执行登录
+        
+        Args:
+            email: 邮箱
+            password: 密码
+            
+        Returns:
+            是否成功
+        """
         print(f"\n{'='*60}")
-        print(f"🔐 开始登录: {email[:3]}***@***")
+        print(f"🔐 Weirdhost 自动登录")
         print(f"{'='*60}")
+        print(f"📧 账号: {email[:3]}***@***")
+        print(f"🔑 密码: {'*' * 8}")
         
         self.page = self._create_browser()
         
         try:
-            # 1. 打开登录页面
-            print("\n[1/5] 打开登录页面...")
+            # ========== 步骤1: 打开登录页面 ==========
+            print(f"\n[1/6] 打开登录页面...")
             self.page.get(LOGIN_URL)
             self.page.wait.doc_loaded()
             time.sleep(2)
             
-            if DEBUG:
-                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/01_login_page.png")
+            self._save_screenshot("01_login_page")
+            print(f"   ✅ 页面已加载")
             
-            # 2. 填写邮箱
-            print("[2/5] 填写邮箱...")
+            # ========== 步骤2: 填写邮箱 ==========
+            print(f"\n[2/6] 填写邮箱...")
             email_input = self.page.ele('@name=username')
+            if not email_input:
+                email_input = self.page.ele('@type=email')
+            if not email_input:
+                email_input = self.page.ele('@placeholder:email')
+            
             if email_input:
+                email_input.clear()
                 email_input.input(email)
-                print("   ✅ 已输入邮箱")
+                print(f"   ✅ 已输入邮箱")
             else:
                 raise Exception("未找到邮箱输入框")
             
-            time.sleep(0.3)
+            time.sleep(random.uniform(0.3, 0.6))
             
-            # 3. 填写密码
-            print("[3/5] 填写密码...")
+            # ========== 步骤3: 填写密码 ==========
+            print(f"\n[3/6] 填写密码...")
             password_input = self.page.ele('@name=password')
+            if not password_input:
+                password_input = self.page.ele('@type=password')
+            
             if password_input:
+                password_input.clear()
                 password_input.input(password)
-                print("   ✅ 已输入密码")
+                print(f"   ✅ 已输入密码")
             else:
                 raise Exception("未找到密码输入框")
             
-            time.sleep(0.3)
+            time.sleep(random.uniform(0.3, 0.6))
             
-            # 4. 勾选条款
-            print("[4/5] 勾选条款...")
+            # ========== 步骤4: 勾选条款 ==========
+            print(f"\n[4/6] 勾选条款...")
             checkbox = self.page.ele('@type=checkbox')
             if checkbox:
-                checkbox.click()
-                print("   ✅ 已勾选")
+                if not checkbox.states.is_checked:
+                    checkbox.click()
+                print(f"   ✅ 已勾选")
+            else:
+                print(f"   ⚠️ 未找到复选框")
             
-            time.sleep(0.5)
+            time.sleep(random.uniform(0.3, 0.6))
+            self._save_screenshot("02_form_filled")
             
-            if DEBUG:
-                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/02_filled.png")
+            # ========== 步骤5: 点击登录 ==========
+            print(f"\n[5/6] 点击登录按钮...")
             
-            # 5. 点击登录
-            print("[5/5] 点击登录按钮...")
-            login_btn = self.page.ele('@tag()=button@@text():로그인')
-            if not login_btn:
-                login_btn = self.page.ele('@@tag()=button@@class:jOimeR')
+            # 尝试多种方式找登录按钮
+            login_btn = None
+            btn_selectors = [
+                '@tag()=button@@text():로그인',      # 韩文登录
+                '@tag()=button@@text():Login',       # 英文登录
+                '@tag()=button@@text():登录',        # 中文登录
+                '@@tag()=button@@type=submit',       # 提交按钮
+                'css:button[type="submit"]',
+                'css:form button',
+            ]
+            
+            for selector in btn_selectors:
+                login_btn = self.page.ele(selector)
+                if login_btn:
+                    break
             
             if login_btn:
                 login_btn.click()
-                print("   ✅ 已点击登录")
+                print(f"   ✅ 已点击登录按钮")
             else:
                 raise Exception("未找到登录按钮")
             
             time.sleep(2)
+            self._save_screenshot("03_after_login_click")
             
-            if DEBUG:
-                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/03_after_click.png")
+            # ========== 步骤6: 处理验证码 ==========
+            print(f"\n[6/6] 处理 reCAPTCHA...")
+            success = self._handle_recaptcha()
             
-            # 6. 处理 reCAPTCHA (语音验证)
-            success = self._handle_audio_captcha()
+            # ========== 检查结果 ==========
+            time.sleep(2)
+            current_url = self.page.url
+            print(f"\n📍 当前 URL: {current_url}")
             
-            if success:
-                time.sleep(3)
-                current_url = self.page.url
-                print(f"\n📍 当前URL: {current_url}")
+            if "/auth/login" not in current_url:
+                print(f"\n{'='*60}")
+                print(f"🎉 登录成功!")
+                print(f"{'='*60}")
+                self._save_screenshot("99_success")
+                return True
+            else:
+                print(f"\n{'='*60}")
+                print(f"❌ 登录失败 - 仍在登录页面")
+                print(f"{'='*60}")
+                self._save_screenshot("99_failed")
+                return False
                 
-                if "/auth/login" not in current_url:
-                    print("✅ 登录成功!")
-                    if DEBUG:
-                        self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/99_success.png")
-                    return True
-                else:
-                    print("❌ 仍在登录页面")
-                    return False
-            
-            return False
-            
         except Exception as e:
-            print(f"❌ 登录异常: {e}")
+            print(f"\n❌ 登录异常: {e}")
             import traceback
             traceback.print_exc()
-            if DEBUG:
-                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/error.png")
+            self._save_screenshot("99_error")
             return False
         
         finally:
             if self.page:
+                print(f"\n🔒 关闭浏览器...")
                 self.page.quit()
     
     def _get_recaptcha_frame(self):
-        """获取 reCAPTCHA 弹窗 frame"""
-        frame = self.page.get_frame('@src:recaptcha.net/recaptcha/api2/bframe')
-        if not frame:
-            frame = self.page.get_frame('@src:recaptcha/api2/bframe')
-        if not frame:
-            frame = self.page.get_frame('@src:recaptcha/enterprise/bframe')
-        return frame
+        """获取 reCAPTCHA 弹窗 iframe"""
+        frame_srcs = [
+            'recaptcha.net/recaptcha/api2/bframe',
+            'google.com/recaptcha/api2/bframe',
+            'recaptcha/api2/bframe',
+            'recaptcha/enterprise/bframe',
+        ]
+        
+        for src in frame_srcs:
+            frame = self.page.get_frame(f'@src:{src}')
+            if frame:
+                return frame
+        
+        return None
     
-    def _handle_audio_captcha(self) -> bool:
-        """处理语音验证"""
-        print("\n🔍 检测 reCAPTCHA...")
+    def _handle_recaptcha(self) -> bool:
+        """
+        处理 reCAPTCHA 语音验证
         
-        max_retries = 10
+        Returns:
+            是否成功
+        """
+        max_attempts = 15
         
-        for attempt in range(max_retries):
-            print(f"\n🔄 --- 第 {attempt + 1} 次尝试 ---")
+        for attempt in range(max_attempts):
+            print(f"\n   🔄 尝试 {attempt + 1}/{max_attempts}")
             
             # 检查是否已跳转
             if "/auth/login" not in self.page.url:
-                print("✅ 页面已跳转!")
+                print(f"   ✅ 页面已跳转，无需验证!")
                 return True
             
-            # 查找 reCAPTCHA 弹窗
-            recaptcha_frame = self._get_recaptcha_frame()
+            # 获取验证码 iframe
+            frame = self._get_recaptcha_frame()
             
-            if not recaptcha_frame:
-                print("   📭 未检测到验证弹窗")
+            if not frame:
+                print(f"   📭 未检测到 reCAPTCHA 弹窗")
                 time.sleep(1)
                 
+                # 检查是否已跳转
                 if "/auth/login" not in self.page.url:
                     return True
                 
-                # 重新点击登录
-                if attempt > 1:
-                    login_btn = self.page.ele('@tag()=button@@text():로그인')
-                    if login_btn:
-                        login_btn.click()
-                        time.sleep(2)
+                # 多次未检测到，尝试重新点击登录
+                if attempt >= 2 and attempt % 3 == 0:
+                    print(f"   🔄 重新点击登录按钮...")
+                    for selector in ['@tag()=button@@text():로그인', 
+                                     '@tag()=button@@type=submit']:
+                        btn = self.page.ele(selector)
+                        if btn:
+                            btn.click()
+                            time.sleep(2)
+                            break
                 continue
             
-            print("   🎯 检测到 reCAPTCHA 弹窗!")
+            print(f"   🎯 检测到 reCAPTCHA 弹窗!")
+            self._save_screenshot(f"captcha_{attempt:02d}")
             
-            if DEBUG:
-                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/captcha_{attempt}.png")
-            
-            # 步骤1: 点击语音按钮
-            print("   🔊 切换到语音验证...")
-            audio_btn = recaptcha_frame.ele("#recaptcha-audio-button")
-            
-            if not audio_btn:
-                print("   ⚠️ 未找到语音按钮")
-                time.sleep(1)
-                continue
-            
-            # 检查是否已经在语音模式
-            audio_challenge = recaptcha_frame.ele("#rc-audio")
+            # ===== 步骤1: 切换到语音验证 =====
+            audio_challenge = frame.ele("#rc-audio")
             if not audio_challenge or not audio_challenge.states.is_displayed:
-                audio_btn.click()
-                time.sleep(2)
-            
-            if DEBUG:
-                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/audio_mode_{attempt}.png")
-            
-            # 步骤2: 检查是否有错误消息（被检测到自动化）
-            error_msg = recaptcha_frame.ele(".rc-audiochallenge-error-message")
-            if error_msg and error_msg.states.is_displayed:
-                error_text = error_msg.text
-                print(f"   ❌ 错误: {error_text}")
+                print(f"   🔊 切换到语音验证模式...")
+                audio_btn = frame.ele("#recaptcha-audio-button")
                 
-                if "自动" in error_text or "automated" in error_text.lower():
-                    print("   ⚠️ 被检测到自动化，刷新重试...")
-                    reload_btn = recaptcha_frame.ele("#recaptcha-reload-button")
+                if audio_btn and audio_btn.states.is_displayed:
+                    audio_btn.click()
+                    time.sleep(2)
+                    self._save_screenshot(f"audio_mode_{attempt:02d}")
+                else:
+                    print(f"   ⚠️ 语音按钮不可用")
+            
+            # ===== 步骤2: 检查错误消息 =====
+            error_el = frame.ele(".rc-audiochallenge-error-message")
+            if error_el and error_el.states.is_displayed:
+                error_text = error_el.text
+                print(f"   ❌ 错误消息: {error_text}")
+                
+                # 检查是否被限制
+                if any(kw in error_text.lower() for kw in 
+                       ['automated', '自动', 'later', '稍后', 'try again']):
+                    print(f"   ⚠️ 被检测到自动化，等待后刷新...")
+                    time.sleep(random.uniform(3, 6))
+                    
+                    reload_btn = frame.ele("#recaptcha-reload-button")
                     if reload_btn:
                         reload_btn.click()
                         time.sleep(2)
                     continue
             
-            # 步骤3: 获取音频下载链接
-            print("   📥 获取音频链接...")
-            download_link = recaptcha_frame.ele(".rc-audiochallenge-tdownload-link")
+            # ===== 步骤3: 获取音频链接 =====
+            print(f"   📥 获取音频链接...")
+            audio_url = None
             
-            if not download_link:
-                # 备用: 从 audio source 获取
-                audio_source = recaptcha_frame.ele("#audio-source")
+            # 方法1: 从下载链接获取
+            download_link = frame.ele(".rc-audiochallenge-tdownload-link")
+            if download_link:
+                audio_url = download_link.attr("href")
+                print(f"   📎 从下载链接获取")
+            
+            # 方法2: 从 audio source 获取
+            if not audio_url:
+                audio_source = frame.ele("#audio-source")
                 if audio_source:
                     audio_url = audio_source.attr("src")
-                else:
-                    print("   ⚠️ 未找到音频链接")
-                    continue
-            else:
-                audio_url = download_link.attr("href")
+                    print(f"   📎 从 audio source 获取")
             
             if not audio_url:
-                print("   ⚠️ 音频链接为空")
+                print(f"   ⚠️ 无法获取音频链接，刷新重试...")
+                reload_btn = frame.ele("#recaptcha-reload-button")
+                if reload_btn:
+                    reload_btn.click()
+                    time.sleep(2)
                 continue
             
-            print(f"   🔗 音频URL: {audio_url[:80]}...")
+            print(f"   🔗 音频 URL: {audio_url[:70]}...")
             
-            # 步骤4: 下载音频
-            print("   📥 下载音频文件...")
+            # ===== 步骤4: 下载音频 =====
+            print(f"   📥 下载音频文件...")
             audio_path = self._download_audio(audio_url)
             
             if not audio_path:
-                print("   ⚠️ 下载音频失败")
+                print(f"   ⚠️ 下载失败，刷新重试...")
+                reload_btn = frame.ele("#recaptcha-reload-button")
+                if reload_btn:
+                    reload_btn.click()
+                    time.sleep(2)
                 continue
             
-            print(f"   ✅ 音频已保存: {audio_path}")
+            print(f"   ✅ 音频已下载: {audio_path}")
             
-            # 步骤5: 语音识别
-            print("   🎤 识别语音内容...")
-            recognized_text = self.speech.recognize(audio_path)
+            # ===== 步骤5: 语音识别 =====
+            print(f"   🎤 调用 Wit.ai 识别...")
+            recognized_text = self.recognizer.recognize(audio_path)
+            
+            # 清理临时文件
+            try:
+                os.remove(audio_path)
+            except:
+                pass
             
             if not recognized_text:
-                print("   ⚠️ 语音识别失败，刷新重试...")
-                reload_btn = recaptcha_frame.ele("#recaptcha-reload-button")
+                print(f"   ⚠️ 识别失败，刷新重试...")
+                reload_btn = frame.ele("#recaptcha-reload-button")
                 if reload_btn:
                     reload_btn.click()
                     time.sleep(2)
@@ -350,76 +473,94 @@ class WeirdhostLogin:
             
             print(f"   📝 识别结果: {recognized_text}")
             
-            # 步骤6: 输入识别文字
-            print("   ⌨️ 输入验证答案...")
-            response_input = recaptcha_frame.ele("#audio-response")
+            # ===== 步骤6: 输入验证答案 =====
+            print(f"   ⌨️ 输入验证答案...")
+            response_input = frame.ele("#audio-response")
             
             if not response_input:
-                print("   ⚠️ 未找到输入框")
+                print(f"   ⚠️ 未找到输入框")
                 continue
             
+            # 清空输入框
             response_input.clear()
             time.sleep(0.2)
             
             # 模拟人类输入
             for char in recognized_text:
                 response_input.input(char)
-                time.sleep(random.uniform(0.05, 0.15))
+                time.sleep(random.uniform(0.05, 0.12))
             
             time.sleep(0.5)
+            self._save_screenshot(f"input_{attempt:02d}")
             
-            if DEBUG:
-                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/input_{attempt}.png")
-            
-            # 步骤7: 点击验证
-            print("   🖱️ 点击验证按钮...")
-            verify_btn = recaptcha_frame.ele("#recaptcha-verify-button")
+            # ===== 步骤7: 点击验证按钮 =====
+            print(f"   🖱️ 点击验证按钮...")
+            verify_btn = frame.ele("#recaptcha-verify-button")
             
             if verify_btn:
                 verify_btn.click()
                 time.sleep(3)
+            else:
+                print(f"   ⚠️ 未找到验证按钮")
+                continue
             
-            if DEBUG:
-                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/verify_{attempt}.png")
+            self._save_screenshot(f"verify_{attempt:02d}")
             
-            # 检查结果
+            # ===== 检查验证结果 =====
+            # 检查是否跳转
             if "/auth/login" not in self.page.url:
-                print("   ✅ 验证成功!")
+                print(f"   ✅ 验证成功，页面已跳转!")
                 return True
             
-            # 检查是否还有验证码
-            recaptcha_frame = self._get_recaptcha_frame()
-            if not recaptcha_frame:
-                print("   ✅ 验证码已消失!")
+            # 检查验证码是否消失
+            time.sleep(1)
+            new_frame = self._get_recaptcha_frame()
+            if not new_frame:
+                print(f"   ✅ 验证码已消失!")
                 time.sleep(2)
                 if "/auth/login" not in self.page.url:
                     return True
+                # 可能需要等待页面跳转
+                time.sleep(3)
+                if "/auth/login" not in self.page.url:
+                    return True
             
-            # 检查错误
-            if recaptcha_frame:
-                error_msg = recaptcha_frame.ele(".rc-audiochallenge-error-message")
-                if error_msg and error_msg.states.is_displayed:
-                    print(f"   ❌ 验证失败: {error_msg.text}")
-                    # 刷新重试
-                    reload_btn = recaptcha_frame.ele("#recaptcha-reload-button")
+            # 检查是否有新的错误
+            if new_frame:
+                # 检查是否显示"请重试"
+                retry_msg = new_frame.ele(".rc-audiochallenge-error-message")
+                if retry_msg and retry_msg.states.is_displayed:
+                    print(f"   ⚠️ 验证失败: {retry_msg.text}")
+                
+                # 多次重试响应错误，刷新换一个
+                incorrect = new_frame.ele("text:incorrect") or new_frame.ele("text:请重试")
+                if incorrect:
+                    print(f"   🔄 答案错误，刷新重试...")
+                    reload_btn = new_frame.ele("#recaptcha-reload-button")
                     if reload_btn:
                         reload_btn.click()
                         time.sleep(2)
             
-            # 清理临时文件
-            try:
-                os.remove(audio_path)
-            except:
-                pass
+            print(f"   🔄 继续下一轮尝试...")
         
+        print(f"\n   ❌ 已达最大尝试次数")
         return False
     
     def _download_audio(self, url: str) -> Optional[str]:
-        """下载音频文件"""
+        """
+        下载音频文件
+        
+        Args:
+            url: 音频 URL
+            
+        Returns:
+            本地文件路径，失败返回 None
+        """
         try:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
                 'Accept': 'audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.9',
                 'Referer': 'https://www.google.com/',
             }
             
@@ -431,37 +572,54 @@ class WeirdhostLogin:
                 f.write(response.content)
                 return f.name
                 
-        except Exception as e:
-            print(f"   ⚠️ 下载失败: {e}")
+        except requests.RequestException as e:
+            print(f"      ❌ 下载失败: {e}")
             return None
 
 
 def main():
+    """主函数"""
     print("=" * 60)
-    print("🚀 Weirdhost 自动登录 (语音验证版)")
+    print("🚀 Weirdhost 自动登录 (Wit.ai 语音验证)")
     print("=" * 60)
     
+    # 获取环境变量
     email = os.environ.get("TEST_EMAIL", "")
     password = os.environ.get("TEST_PASSWORD", "")
+    wit_token = os.environ.get("WIT_AI_TOKEN", "")
     
-    if not email or not password:
-        print("❌ 错误: 未设置 TEST_EMAIL 或 TEST_PASSWORD 环境变量")
+    # 检查配置
+    if not email:
+        print("❌ 错误: 未设置 TEST_EMAIL 环境变量")
         exit(1)
     
-    print(f"📧 账号: {email[:3]}***@***")
+    if not password:
+        print("❌ 错误: 未设置 TEST_PASSWORD 环境变量")
+        exit(1)
     
-    login_handler = WeirdhostLogin(headless=True)
+    if not wit_token:
+        print("❌ 错误: 未设置 WIT_AI_TOKEN 环境变量")
+        print("   请访问 https://wit.ai/ 创建 App 并获取 Token")
+        exit(1)
+    
+    print(f"\n📋 配置检查:")
+    print(f"   📧 邮箱: {email[:3]}***@***")
+    print(f"   🔑 密码: {'*' * len(password)}")
+    print(f"   🎤 Wit.ai Token: {wit_token[:8]}***")
+    
+    # 执行登录
+    headless = os.environ.get("HEADLESS", "true").lower() == "true"
+    print(f"   🖥️ 无头模式: {headless}")
+    
+    login_handler = WeirdhostLogin(headless=headless)
     success = login_handler.login(email, password)
     
+    # 返回结果
     if success:
-        print("\n" + "=" * 60)
-        print("🎉 登录成功!")
-        print("=" * 60)
+        print("\n✅ 程序执行成功")
         exit(0)
     else:
-        print("\n" + "=" * 60)
-        print("❌ 登录失败!")
-        print("=" * 60)
+        print("\n❌ 程序执行失败")
         exit(1)
 
 
