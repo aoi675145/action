@@ -28,39 +28,56 @@ def cn_now() -> datetime:
 def cn_time_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
     return cn_now().strftime(fmt)
 
-def mask(s: str, show: int = 3) -> str:
+def mask_str(s: str, show: int = 2) -> str:
+    """通用字符串遮蔽"""
     if not s: return "***"
     s = str(s)
     if len(s) <= show: return s[0] + "***"
-    return s[:show] + "*" * min(5, len(s) - show)
+    return s[:show] + "*" * min(4, len(s) - show)
+
+def mask_email(email: str) -> str:
+    """遮蔽邮箱"""
+    if not email or '@' not in email:
+        return mask_str(email)
+    local, domain = email.split('@', 1)
+    return mask_str(local, 2) + "@" + mask_str(domain, 2)
 
 def mask_id(sid: str) -> str:
+    """遮蔽服务器ID"""
     if not sid: return "****"
-    return sid[:4] + "****" if len(sid) > 4 else sid
+    return sid[:2] + "****" if len(sid) > 2 else "****"
+
+def mask_username(name: str) -> str:
+    """遮蔽用户名"""
+    if not name: return "***"
+    if len(name) <= 2: return name[0] + "**"
+    return name[0] + "*" * (len(name) - 1)
 
 def shot_path(name: str) -> str:
-    """生成截图路径"""
-    return str(OUTPUT_DIR / f"{cn_now().strftime('%H%M%S')}-{name}.png")
+    """生成截图路径（使用时间戳避免泄露）"""
+    ts = cn_now().strftime('%H%M%S%f')[:9]
+    return str(OUTPUT_DIR / f"{ts}.png")
 
 def notify(ok: bool, title: str, details: str = "", image_path: str = None):
-    """发送 Telegram 通知（支持图片）"""
+    """发送 Telegram 通知（私人通知，不脱敏）"""
     token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
     if not token or not chat:
         return
     
     try:
         icon = "✅" if ok else "❌"
-        text = f"""{icon} Kerit Cloud {title}
+        text = f"""{icon} {result}
 
 {details}
-时间：{cn_time_str()}"""
+时间：{cn_time_str()}
+
+Billing Kerit Auto Restart"""
         
-        # 如果有图片，发送带图片的消息
         if image_path and Path(image_path).exists():
             with open(image_path, 'rb') as f:
                 requests.post(
                     f"https://api.telegram.org/bot{token}/sendPhoto",
-                    data={"chat_id": chat, "caption": text[:1024]},  # caption 限制1024字符
+                    data={"chat_id": chat, "caption": text[:1024]},
                     files={"photo": f},
                     timeout=60
                 )
@@ -71,7 +88,7 @@ def notify(ok: bool, title: str, details: str = "", image_path: str = None):
                 timeout=30
             )
     except Exception as e:
-        print(f"[WARN] 通知发送失败: {e}")
+        print(f"[WARN] 通知发送失败")
 
 def parse_cookies(cookie_str: str) -> List[Dict[str, Any]]:
     """解析 Cookie 字符串为 Playwright 格式"""
@@ -155,7 +172,7 @@ def get_server_status(session: requests.Session, server_id: str) -> Dict[str, An
             result['state'] = attrs.get('current_state', 'unknown')
             result['is_suspended'] = attrs.get('is_suspended', False)
     except Exception as e:
-        print(f"[ERROR] 获取状态: {e}")
+        print(f"[ERROR] 获取状态失败")
     return result
 
 def send_power_action(session: requests.Session, server_id: str, action: str) -> bool:
@@ -168,16 +185,20 @@ def send_power_action(session: requests.Session, server_id: str, action: str) ->
         )
         return resp.status_code in [200, 204]
     except Exception as e:
-        print(f"[ERROR] 电源操作: {e}")
+        print(f"[ERROR] 电源操作失败")
         return False
 
-async def process_account(account: Dict[str, str]) -> Dict[str, Any]:
+async def process_account(account: Dict[str, str], index: int) -> Dict[str, Any]:
     """处理单个账号"""
     name = account['name']
     cookie_str = account['cookie']
     
+    # 日志用遮蔽名称
+    masked_name = mask_email(name) if '@' in name else mask_str(name)
+    
     result = {
-        "account": name,
+        "account": name,  # 原始名称用于TG通知
+        "account_masked": masked_name,  # 遮蔽名称用于日志
         "success": False,
         "message": "",
         "servers": [],
@@ -185,10 +206,9 @@ async def process_account(account: Dict[str, str]) -> Dict[str, Any]:
     }
     
     print(f"\n{'='*50}")
-    print(f"[INFO] 账号: {name}")
+    print(f"[INFO] 账号 #{index + 1}: {masked_name}")
     print(f"{'='*50}")
     
-    # 解析 Cookie
     cookies = parse_cookies(cookie_str)
     if not cookies:
         result['message'] = "Cookie 解析失败"
@@ -197,65 +217,53 @@ async def process_account(account: Dict[str, str]) -> Dict[str, Any]:
     print(f"[INFO] 解析到 {len(cookies)} 个 Cookie")
     
     async with async_playwright() as p:
-        # 启动浏览器
         browser = await p.chromium.launch(headless=True)
         context = await browser.new_context(
             viewport={"width": 1920, "height": 1080},
             user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         )
         
-        # 注入 Cookie
         await context.add_cookies(cookies)
-        
         page = await context.new_page()
         
         try:
-            # 访问首页
             print("[INFO] 访问面板首页...")
             await page.goto(BASE_URL, wait_until="networkidle", timeout=30000)
             await page.wait_for_timeout(3000)
             
-            # 截图
-            screenshot_path = shot_path(f"dashboard-{name[:10]}")
+            screenshot_path = shot_path("dashboard")
             await page.screenshot(path=screenshot_path, full_page=True)
             result['screenshot'] = screenshot_path
-            print(f"[INFO] 截图已保存: {screenshot_path}")
+            print(f"[INFO] 截图已保存")
             
-            # 检查是否登录成功
             current_url = page.url
-            print(f"[INFO] 当前 URL: {current_url}")
             
             if '/auth/login' in current_url:
-                result['message'] = "Cookie 已过期，需要重新登录"
+                result['message'] = "Cookie 已过期"
                 print(f"[ERROR] {result['message']}")
                 notify(False, "登录失败", f"账号: {name}\n{result['message']}", screenshot_path)
                 return result
             
-            # 获取页面内容
             content = await page.content()
             
-            # 检查用户信息
             user_match = re.search(r'"username":"([^"]+)"', content)
             if user_match:
                 username = user_match.group(1)
-                print(f"[INFO] ✅ 登录成功 ({username})")
+                print(f"[INFO] ✅ 登录成功 (用户: {mask_username(username)})")
             else:
                 print("[INFO] ✅ 登录成功")
             
-            # 查找服务器 - 多种方式
+            # 查找服务器
             servers = []
             seen_ids = set()
             
-            # 方式1: 从 href 中提取
             href_matches = re.findall(r'href="/server/([a-zA-Z0-9]+)"', content)
             for sid in href_matches:
                 if sid not in seen_ids:
                     seen_ids.add(sid)
-                    servers.append({"id": sid, "name": f"Server-{sid[:6]}"})
+                    servers.append({"id": sid, "name": f"Server-{sid[:4]}"})
             
-            # 方式2: 从页面元素中查找
             if not servers:
-                print("[INFO] 尝试从页面元素查找服务器...")
                 server_links = await page.query_selector_all('a[href^="/server/"]')
                 for link in server_links:
                     href = await link.get_attribute('href')
@@ -265,59 +273,12 @@ async def process_account(account: Dict[str, str]) -> Dict[str, Any]:
                             sid = match.group(1)
                             if sid not in seen_ids:
                                 seen_ids.add(sid)
-                                # 尝试获取名称
-                                try:
-                                    name_el = await link.query_selector('p')
-                                    srv_name = await name_el.inner_text() if name_el else f"Server-{sid[:6]}"
-                                except:
-                                    srv_name = f"Server-{sid[:6]}"
-                                servers.append({"id": sid, "name": srv_name.strip()})
-            
-            # 方式3: 使用 JavaScript 提取
-            if not servers:
-                print("[INFO] 尝试使用 JavaScript 查找服务器...")
-                js_result = await page.evaluate('''
-                    () => {
-                        const servers = [];
-                        const links = document.querySelectorAll('a[href*="/server/"]');
-                        links.forEach(link => {
-                            const match = link.href.match(/\\/server\\/([a-zA-Z0-9]+)/);
-                            if (match) {
-                                const id = match[1];
-                                let name = "Server-" + id.substring(0, 6);
-                                const p = link.querySelector('p');
-                                if (p) name = p.innerText.trim();
-                                servers.push({id: id, name: name});
-                            }
-                        });
-                        return servers;
-                    }
-                ''')
-                if js_result:
-                    for srv in js_result:
-                        if srv['id'] not in seen_ids:
-                            seen_ids.add(srv['id'])
-                            servers.append(srv)
+                                servers.append({"id": sid, "name": f"Server-{sid[:4]}"})
             
             print(f"[INFO] 找到 {len(servers)} 个服务器")
             
-            # 打印页面部分内容用于调试
-            if not servers:
-                print("[DEBUG] 页面内容片段:")
-                # 查找可能包含服务器信息的部分
-                if 'ServerRow' in content:
-                    print("[DEBUG] 找到 ServerRow 相关内容")
-                if '/server/' in content:
-                    # 提取包含 /server/ 的行
-                    lines = [l for l in content.split('\n') if '/server/' in l]
-                    for line in lines[:5]:
-                        print(f"[DEBUG] {line[:200]}")
-                else:
-                    print("[DEBUG] 未找到任何 /server/ 链接")
-                    # 打印 body 开始部分
-                    body_start = content.find('<body')
-                    if body_start > 0:
-                        print(f"[DEBUG] Body 开始: {content[body_start:body_start+500]}")
+            for srv in servers:
+                print(f"  - {mask_id(srv['id'])}")
             
             if not servers:
                 result['message'] = "未找到服务器"
@@ -325,35 +286,26 @@ async def process_account(account: Dict[str, str]) -> Dict[str, Any]:
                 notify(False, "未找到服务器", f"账号: {name}", screenshot_path)
                 return result
             
-            # 显示找到的服务器
-            for srv in servers:
-                print(f"  - {srv['name']} (ID: {mask_id(srv['id'])})")
-            
-            # 创建 API Session
             api_session = create_api_session(cookie_str)
             
-            # 处理每个服务器
-            for server in servers:
-                srv_result = await process_server(page, api_session, server)
+            for i, server in enumerate(servers):
+                srv_result = await process_server(page, api_session, server, i)
                 result['servers'].append(srv_result)
                 await page.wait_for_timeout(1000)
             
-            # 最终截图
-            final_shot = shot_path(f"final-{name[:10]}")
+            final_shot = shot_path("final")
             await page.screenshot(path=final_shot, full_page=True)
             result['screenshot'] = final_shot
             
-            # 汇总
             ok_count = sum(1 for s in result['servers'] if s['success'])
             result['success'] = ok_count > 0 or all(s.get('action') == 'skip' for s in result['servers'])
             result['message'] = f"{ok_count}/{len(result['servers'])} 正常"
             
         except Exception as e:
-            print(f"[ERROR] 处理账号异常: {e}")
-            result['message'] = str(e)
-            # 尝试截图
+            print(f"[ERROR] 处理异常")
+            result['message'] = "处理异常"
             try:
-                err_shot = shot_path(f"error-{name[:10]}")
+                err_shot = shot_path("error")
                 await page.screenshot(path=err_shot)
                 result['screenshot'] = err_shot
             except:
@@ -364,14 +316,19 @@ async def process_account(account: Dict[str, str]) -> Dict[str, Any]:
     
     return result
 
-async def process_server(page, api_session: requests.Session, server: Dict[str, str]) -> Dict[str, Any]:
+async def process_server(page, api_session: requests.Session, server: Dict[str, str], index: int) -> Dict[str, Any]:
     """处理单个服务器"""
     sid, srv_name = server['id'], server['name']
-    result = {"id": sid, "name": srv_name, "success": False, "message": "", "action": "none"}
+    result = {
+        "id": sid,
+        "name": srv_name,
+        "success": False,
+        "message": "",
+        "action": "none"
+    }
     
-    print(f"\n[INFO] 服务器: {srv_name} ({mask_id(sid)})")
+    print(f"\n[INFO] 服务器 #{index + 1}: {mask_id(sid)}")
     
-    # 获取状态
     status = get_server_status(api_session, sid)
     state = status['state']
     print(f"[INFO] 状态: {state}")
@@ -380,7 +337,6 @@ async def process_server(page, api_session: requests.Session, server: Dict[str, 
         result['message'] = "⚠️ 已暂停"
         return result
     
-    # 非 offline 跳过
     if state != 'offline':
         result['success'] = True
         result['message'] = f"正常 ({state})"
@@ -388,32 +344,26 @@ async def process_server(page, api_session: requests.Session, server: Dict[str, 
         print(f"[INFO] ✅ 无需操作")
         return result
     
-    # offline 需要启动
     print(f"[INFO] 服务器离线，进入控制台启动...")
     result['action'] = "start"
     
     try:
-        # 进入服务器页面
         server_url = f"{BASE_URL}/server/{sid}"
         await page.goto(server_url, wait_until="networkidle", timeout=30000)
         await page.wait_for_timeout(3000)
         
-        # 截图
-        srv_shot = shot_path(f"server-{sid[:6]}")
+        srv_shot = shot_path("server")
         await page.screenshot(path=srv_shot)
-        print(f"[INFO] 服务器页面截图: {srv_shot}")
+        print(f"[INFO] 服务器页面截图已保存")
         
-        # 尝试点击启动按钮
         clicked = False
         
-        # 方式1: 通过 ID
         start_btn = await page.query_selector('#power-start')
         if start_btn:
             await start_btn.click()
             clicked = True
-            print("[INFO] ✅ 点击 Start 按钮成功 (ID)")
+            print("[INFO] ✅ 点击 Start 按钮成功")
         
-        # 方式2: 通过文本
         if not clicked:
             buttons = await page.query_selector_all('button')
             for btn in buttons:
@@ -421,23 +371,18 @@ async def process_server(page, api_session: requests.Session, server: Dict[str, 
                 if 'start' in text.lower():
                     await btn.click()
                     clicked = True
-                    print("[INFO] ✅ 点击 Start 按钮成功 (文本)")
+                    print("[INFO] ✅ 点击 Start 按钮成功")
                     break
         
-        # 方式3: JavaScript
         if not clicked:
             js_clicked = await page.evaluate('''
                 () => {
                     const startBtn = document.getElementById('power-start');
-                    if (startBtn) {
-                        startBtn.click();
-                        return true;
-                    }
+                    if (startBtn) { startBtn.click(); return true; }
                     const buttons = document.querySelectorAll('button');
                     for (const btn of buttons) {
                         if (btn.textContent.toLowerCase().includes('start')) {
-                            btn.click();
-                            return true;
+                            btn.click(); return true;
                         }
                     }
                     return false;
@@ -445,17 +390,14 @@ async def process_server(page, api_session: requests.Session, server: Dict[str, 
             ''')
             if js_clicked:
                 clicked = True
-                print("[INFO] ✅ 点击 Start 按钮成功 (JS)")
+                print("[INFO] ✅ 点击 Start 按钮成功")
         
         if not clicked:
-            # 尝试 API 方式
-            print("[INFO] 按钮未找到，尝试 API 启动...")
             if send_power_action(api_session, sid, "start"):
                 clicked = True
                 print("[INFO] ✅ API 启动命令已发送")
         
         if clicked:
-            # 等待启动
             await page.wait_for_timeout(3000)
             
             for i in range(6):
@@ -478,18 +420,17 @@ async def process_server(page, api_session: requests.Session, server: Dict[str, 
             result['message'] = "⚠️ 未找到启动按钮"
             
     except Exception as e:
-        result['message'] = f"⚠️ {str(e)}"
-        print(f"[ERROR] {e}")
+        result['message'] = "⚠️ 操作异常"
+        print(f"[ERROR] 操作异常")
     
     return result
 
 async def main():
     print(f"\n{'='*60}")
-    print(f"  Kerit Cloud 自动重启")
+    print(f"  Billing Kerit 自动重启")
     print(f"  {cn_time_str()}")
     print(f"{'='*60}")
     
-    # 获取账号配置
     account_str = os.environ.get("KERIT_ACCOUNT", "")
     if not account_str:
         print("[ERROR] 缺少 KERIT_ACCOUNT")
@@ -500,67 +441,82 @@ async def main():
         print("[ERROR] 无有效账号")
         sys.exit(1)
     
-    # 筛选指定账号
     target_name = os.environ.get("ACCOUNT_NAME", "").strip()
     if target_name:
         accounts = [a for a in accounts if a['name'] == target_name]
         if not accounts:
-            print(f"[ERROR] 未找到账号: {target_name}")
+            print(f"[ERROR] 未找到指定账号")
             sys.exit(1)
     
     print(f"[INFO] 处理 {len(accounts)} 个账号")
     
-    # 处理每个账号
     results = []
-    for account in accounts:
+    for i, account in enumerate(accounts):
         try:
-            result = await process_account(account)
+            result = await process_account(account, i)
             results.append(result)
             await asyncio.sleep(2)
         except Exception as e:
-            print(f"[ERROR] 处理账号异常: {e}")
             results.append({
                 "account": account['name'],
+                "account_masked": mask_email(account['name']) if '@' in account['name'] else mask_str(account['name']),
                 "success": False,
-                "message": str(e),
+                "message": "处理异常",
                 "servers": [],
                 "screenshot": None
             })
     
-    # 汇总输出
+    # 汇总输出（日志脱敏）
     print(f"\n{'='*60}")
     print(f"  执行汇总")
     print(f"{'='*60}")
     
-    summary_lines = []
+    # TG 通知用（不脱敏）
+    tg_lines = []
+    # 日志用（脱敏）
+    log_lines = []
+    
     total_ok = 0
     total_servers = 0
     last_screenshot = None
     
     for r in results:
         icon = "✅" if r['success'] else "❌"
-        line = f"{icon} {r['account']}: {r['message']}"
-        print(line)
-        summary_lines.append(line)
+        
+        # 日志输出（脱敏）
+        masked_name = r.get('account_masked', mask_str(r['account']))
+        log_line = f"{icon} 账号: {r['message']}"
+        print(log_line)
+        log_lines.append(log_line)
+        
+        # TG 通知（不脱敏）
+        tg_line = f"{icon} {r['account']}: {r['message']}"
+        tg_lines.append(tg_line)
         
         if r.get('screenshot'):
             last_screenshot = r['screenshot']
         
         for s in r.get('servers', []):
             srv_icon = "✓" if s['success'] else "✗"
-            srv_line = f"  {srv_icon} {s['name']}: {s['message']}"
-            print(srv_line)
-            summary_lines.append(srv_line)
+            
+            # 日志（脱敏）
+            log_srv = f"  {srv_icon} 服务器: {s['message']}"
+            print(log_srv)
+            
+            # TG（不脱敏）
+            tg_srv = f"  {srv_icon} {s['name']}: {s['message']}"
+            tg_lines.append(tg_srv)
+            
             total_servers += 1
             if s['success']:
                 total_ok += 1
     
-    # 通知（带截图）
+    # 发送 TG 通知（使用不脱敏的内容）
     all_ok = all(r['success'] for r in results)
     notify(
         all_ok,
         "执行完成" if all_ok else "部分失败",
-        "\n".join(summary_lines),
+        "\n".join(tg_lines),
         last_screenshot
     )
     
