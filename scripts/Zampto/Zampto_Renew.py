@@ -72,16 +72,25 @@ def shot(idx: int, name: str) -> str:
     return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
 def notify(ok: bool, username: str, server_id: str, message: str, img: str = None):
+    """发送 TG 通知"""
     token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
     if not token or not chat: 
         return
     try:
-        text = f"""{'✅' if ok else '❌'} Zampto {'续期成功' if ok else '续期失败'}
+        # 提取到期时间
+        expiry = ""
+        if "到期:" in message:
+            expiry = message.split("到期:")[-1].strip()
+        elif "剩余:" in message:
+            expiry = message.split("剩余:")[-1].strip()
+        
+        text = f"""{'✅ 续期成功' if ok else '❌ 续期失败'}
 
-📧 账号: {username}
-🖥️ 服务器: {server_id}
-📝 {message}
-⏰ {cn_time_str()}"""
+账号：{username}
+信息：服务器: {server_id}
+{'到期: ' + expiry if expiry else message}
+
+Zampto Auto Renew"""
         
         if img and Path(img).exists():
             with open(img, "rb") as f:
@@ -94,11 +103,17 @@ def notify(ok: bool, username: str, server_id: str, message: str, img: str = Non
         print(f"[WARN] 通知失败: {e}")
 
 def notify_login_fail(username: str, img: str = None):
+    """登录失败通知"""
     token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
     if not token or not chat: 
         return
     try:
-        text = f"❌ Zampto 登录失败\n\n📧 账号: {username}\n⏰ {cn_time_str()}"
+        text = f"""❌ 登录失败
+
+账号：{username}
+
+Zampto Auto Renew"""
+        
         if img and Path(img).exists():
             with open(img, "rb") as f:
                 requests.post(f"https://api.telegram.org/bot{token}/sendPhoto",
