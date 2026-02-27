@@ -686,24 +686,6 @@ def main():
         for s in r.get("servers", []):
             log_summary += f"  {'✓' if s.get('success') else '✗'} Server {mask_id(s['server_id'])}: {s.get('message','')}\n"
     
-    print(f"\n{'='*50}\n{log_summary}{'='*
-    except Exception as e:
-        print(f"[ERROR] 脚本异常: {e}")
-        sys.exit(1)
-    finally:
-        if display:
-            display.stop()
-    
-    ok_acc = sum(1 for r in results if r.get("success"))
-    total_srv = sum(len(r.get("servers", [])) for r in results)
-    ok_srv = sum(sum(1 for s in r.get("servers", []) if s.get("success")) for r in results)
-    
-    log_summary = f"📊 账号: {ok_acc}/{len(results)} | 服务器: {ok_srv}/{total_srv}\n{'─'*30}\n"
-    for r in results:
-        log_summary += f"{'✅' if r.get('success') else '❌'} {mask(r['username'])}: {r.get('message','')}\n"
-        for s in r.get("servers", []):
-            log_summary += f"  {'✓' if s.get('success') else '✗'} Server {mask_id(s['server_id'])}: {s.get('message','')}\n"
-    
     print(f"\n{'='*50}\n{log_summary}{'='*50}")
     
     sys.exit(0 if ok_srv > 0 else 1)
