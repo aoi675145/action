@@ -1,9 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Weirdhost 自动登录 - Wit.ai 语音验证方案
-参考: https://github.com/dessant/buster
-"""
 
 from DrissionPage import ChromiumPage, ChromiumOptions
 import time
