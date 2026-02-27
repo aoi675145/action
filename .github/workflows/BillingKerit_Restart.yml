@@ -47,13 +47,13 @@ jobs:
         run: |
           python scripts/BillingKerit/BillingKerit_Restart.py
 
-      - name: 上传截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshots-${{ github.run_number }}
-          path: output/screenshots/
-          retention-days: 3
+#      - name: 上传截图
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: screenshots-${{ github.run_number }}
+#          path: output/screenshots/
+#          retention-days: 3
 
       - name: 清理工作流记录
         if: always()
