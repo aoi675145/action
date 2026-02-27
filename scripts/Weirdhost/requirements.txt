@@ -1,7 +1,2 @@
-# scripts/Weirdhost/requirements.txt
 DrissionPage>=4.0.0
 requests>=2.28.0
-openai-whisper>=20231117
-# 备选方案
-# SpeechRecognition>=3.10.0
-# pydub>=0.25.1
