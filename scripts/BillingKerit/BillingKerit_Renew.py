@@ -59,7 +59,7 @@ def setup_display():
             d = Display(visible=False, size=(1920, 1080))
             d.start()
             os.environ["DISPLAY"] = d.new_display_var
-            log("INFO", "虚拟显示已启动")
+            log("INFO", "🖥️ 虚拟显示已启动")
             return d
         except Exception as e:
             log("ERROR", f"虚拟显示失败: {e}")
@@ -106,7 +106,7 @@ def notify(ok: bool, account: str, info: str, img: str = None):
 
 # ============== 账号解析 ==============
 def parse_accounts(s: str) -> List[Dict[str, str]]:
-    """解析账号配置：邮箱----IMAP密码----邮箱2----IMAP密码2"""
+    """解析账号配置"""
     accounts = []
     parts = [p.strip() for p in s.replace('\n', '----').split('----') if p.strip()]
     
@@ -135,6 +135,40 @@ def get_imap_server(email_addr: str) -> Tuple[str, int]:
     }
     return servers.get(domain, (f"imap.{domain}", 993))
 
+# ============== 页面检测 ==============
+def check_blocked(sb) -> Tuple[bool, str]:
+    """检查是否被阻止，返回 (是否阻止, 原因)"""
+    try:
+        src = sb.get_page_source()
+        
+        if "Access Restricted" in src:
+            return True, "Access Restricted - VPN/代理被检测"
+        
+        if "Server error occurred" in src:
+            return True, "Server error - 服务器错误"
+        
+        if "unusual network activity" in src:
+            return True, "异常网络活动被检测"
+        
+        # 检查错误弹窗
+        error_modal = sb.execute_script('''
+            var errorText = document.body.innerText;
+            if (errorText.includes('Server error') || errorText.includes('Error')) {
+                var gotItBtn = document.querySelector('button');
+                if (gotItBtn && gotItBtn.textContent.includes('Got it')) {
+                    return "Server error modal";
+                }
+            }
+            return null;
+        ''')
+        
+        if error_modal:
+            return True, error_modal
+        
+        return False, ""
+    except:
+        return False, ""
+
 # ============== 邮箱验证码 ==============
 def fetch_otp_from_email(email_addr: str, imap_pwd: str, timeout: int = 120) -> Optional[str]:
     """从邮箱获取 OTP 验证码"""
@@ -149,12 +183,21 @@ def fetch_otp_from_email(email_addr: str, imap_pwd: str, timeout: int = 120) -> 
             mail.login(email_addr, imap_pwd)
             mail.select("INBOX")
             
-            # 搜索 Kerit 邮件
-            _, messages = mail.search(None, '(FROM "kerit" UNSEEN)')
-            if not messages[0]:
-                _, messages = mail.search(None, '(SUBJECT "OTP" UNSEEN)')
-            if not messages[0]:
-                _, messages = mail.search(None, '(SUBJECT "verification" UNSEEN)')
+            # 搜索 Kerit 相关邮件
+            search_queries = [
+                '(FROM "kerit" UNSEEN)',
+                '(SUBJECT "OTP" UNSEEN)',
+                '(SUBJECT "verification" UNSEEN)',
+                '(SUBJECT "code" UNSEEN)',
+            ]
+            
+            for query in search_queries:
+                try:
+                    _, messages = mail.search(None, query)
+                    if messages[0]:
+                        break
+                except:
+                    continue
             
             if messages[0]:
                 msg_ids = messages[0].split()
@@ -166,171 +209,372 @@ def fetch_otp_from_email(email_addr: str, imap_pwd: str, timeout: int = 120) -> 
                     body = ""
                     if msg.is_multipart():
                         for part in msg.walk():
-                            if part.get_content_type() == "text/plain":
+                            content_type = part.get_content_type()
+                            if content_type == "text/plain":
                                 body = part.get_payload(decode=True).decode(errors="ignore")
                                 break
-                            elif part.get_content_type() == "text/html":
+                            elif content_type == "text/html":
                                 body = part.get_payload(decode=True).decode(errors="ignore")
                     else:
                         body = msg.get_payload(decode=True).decode(errors="ignore")
                     
-                    # 提取 OTP
-                    otp_match = re.search(r'\b(\d{4,6})\b', body)
+                    # 提取 4 位 OTP
+                    otp_match = re.search(r'\b(\d{4})\b', body)
                     if otp_match:
                         otp = otp_match.group(1)
                         mail.store(msg_id, '+FLAGS', '\\Seen')
                         mail.logout()
-                        log("INFO", "✅ 获取到验证码: ****")
+                        log("INFO", f"✅ 获取到验证码: ****")
                         return otp
             
             mail.logout()
             
         except Exception as e:
-            log("WARN", f"邮箱连接失败: {e}")
+            log("WARN", f"   邮箱连接失败: {e}")
         
+        log("INFO", f"   等待验证码邮件... ({int(time.time() - start_time)}s)")
         time.sleep(5)
     
     log("ERROR", "❌ 获取验证码超时")
     return None
 
 # ============== 登录流程 ==============
+def input_otp_to_boxes(sb, otp: str) -> bool:
+    """将 OTP 输入到 4 个单独的输入框"""
+    log("INFO", f"📝 输入验证码到 4 个输入框...")
+    
+    try:
+        # 方法1：使用 JavaScript 找到所有输入框并填入
+        result = sb.execute_script(f'''
+            (function() {{
+                var otp = "{otp}";
+                
+                // 查找所有可能的 OTP 输入框
+                var inputs = document.querySelectorAll('input[type="text"], input[type="tel"], input[type="number"]');
+                var otpInputs = [];
+                
+                // 过滤出 OTP 输入框（通常是短的、单字符的输入框）
+                for (var i = 0; i < inputs.length; i++) {{
+                    var input = inputs[i];
+                    var maxLen = input.maxLength;
+                    var placeholder = input.placeholder || "";
+                    
+                    // OTP 输入框通常 maxLength=1 或者是数字输入
+                    if (maxLen === 1 || maxLen === -1) {{
+                        var rect = input.getBoundingClientRect();
+                        if (rect.width > 0 && rect.width < 100) {{
+                            otpInputs.push(input);
+                        }}
+                    }}
+                }}
+                
+                // 如果找到 4 个输入框，填入 OTP
+                if (otpInputs.length >= 4) {{
+                    for (var j = 0; j < 4 && j < otp.length; j++) {{
+                        otpInputs[j].value = otp[j];
+                        otpInputs[j].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        otpInputs[j].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    }}
+                    return "success";
+                }}
+                
+                // 备用方法：查找特定的 OTP 容器
+                var otpContainer = document.querySelector('[class*="otp"], [class*="code"], [class*="verify"]');
+                if (otpContainer) {{
+                    var containerInputs = otpContainer.querySelectorAll('input');
+                    if (containerInputs.length >= 4) {{
+                        for (var k = 0; k < 4 && k < otp.length; k++) {{
+                            containerInputs[k].value = otp[k];
+                            containerInputs[k].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                            containerInputs[k].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                        }}
+                        return "success";
+                    }}
+                }}
+                
+                return "not_found";
+            }})()
+        ''')
+        
+        if result == "success":
+            log("INFO", "   ✅ OTP 已填入输入框")
+            return True
+        
+        # 方法2：逐个定位输入框
+        log("INFO", "   尝试备用方法...")
+        for i, digit in enumerate(otp[:4]):
+            try:
+                # 尝试多种选择器
+                selectors = [
+                    f'input:nth-of-type({i+1})',
+                    f'input[data-index="{i}"]',
+                    f'input[aria-label*="{i+1}"]',
+                ]
+                
+                for sel in selectors:
+                    try:
+                        if sb.is_element_present(sel):
+                            sb.type(sel, digit)
+                            break
+                    except:
+                        continue
+            except:
+                continue
+        
+        return True
+        
+    except Exception as e:
+        log("ERROR", f"   OTP 输入失败: {e}")
+        return False
+
 def login(sb, email_addr: str, imap_pwd: str, idx: int) -> Tuple[bool, Optional[str]]:
-    """登录，返回 (成功, 截图路径)"""
+    """登录流程"""
     email_masked = mask_email(email_addr)
     log("INFO", f"\n{'='*50}")
-    log("INFO", f"账号 {idx}: 登录 {email_masked}")
+    log("INFO", f"🔐 账号 {idx}: 登录 {email_masked}")
     log("INFO", f"{'='*50}")
     
     last_shot = None
     
-    try:
-        # 打开登录页
-        log("INFO", "打开登录页...")
-        sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=10)
-        time.sleep(5)
-        
-        last_shot = shot(idx, "01-login-page")
-        sb.save_screenshot(last_shot)
-        
-        # 检查是否已登录
-        current_url = sb.get_current_url()
-        if "/session" in current_url:
-            log("INFO", "✅ 已登录")
-            return True, last_shot
-        
-        # 检查访问是否被阻止
-        src = sb.get_page_source()
-        if "Access Blocked" in src or "blocked" in src.lower():
-            log("ERROR", "⚠️ 访问被阻止")
-            return False, last_shot
-        
-        # 输入邮箱
-        log("INFO", "输入邮箱...")
-        for sel in ['input[name="email"]', 'input[type="email"]', 'input[type="text"]']:
-            try:
-                if sb.is_element_visible(sel):
-                    sb.type(sel, email_addr)
-                    log("INFO", "✅ 已输入邮箱")
-                    break
-            except:
-                continue
-        
-        time.sleep(1)
-        
-        # 点击发送 OTP
-        log("INFO", "点击发送验证码...")
-        sb.execute_script('''
-            var btn = document.querySelector('button[type="submit"], button');
-            if (btn) btn.click();
-        ''')
-        
-        time.sleep(3)
-        last_shot = shot(idx, "02-otp-sent")
-        sb.save_screenshot(last_shot)
-        
-        # 处理 Turnstile
-        log("INFO", "处理 Turnstile...")
+    for attempt in range(3):
         try:
-            sb.uc_gui_click_captcha()
-        except:
-            pass
-        time.sleep(3)
-        
-        # 获取 OTP
-        log("INFO", "获取邮箱验证码...")
-        otp = fetch_otp_from_email(email_addr, imap_pwd, timeout=120)
-        
-        if not otp:
-            log("ERROR", "❌ 获取验证码失败")
-            last_shot = shot(idx, "03-otp-failed")
+            log("INFO", f"尝试 {attempt + 1}/3: 打开登录页...")
+            sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=10)
+            time.sleep(5)
+            
+            last_shot = shot(idx, f"01-login-{attempt}")
             sb.save_screenshot(last_shot)
-            return False, last_shot
-        
-        # 输入 OTP
-        log("INFO", "输入验证码: ****")
-        for sel in ['input[name="otp"]', 'input[type="text"]:not([name="email"])']:
-            try:
-                if sb.is_element_visible(sel):
-                    sb.type(sel, otp)
+            
+            # 检查是否被阻止
+            blocked, reason = check_blocked(sb)
+            if blocked:
+                log("ERROR", f"⚠️ {reason}")
+                if attempt < 2:
+                    log("INFO", "   等待后重试...")
+                    time.sleep(10)
+                    continue
+                return False, last_shot
+            
+            # 检查是否已登录
+            current_url = sb.get_current_url()
+            if "/session" in current_url:
+                log("INFO", "✅ 已登录")
+                return True, last_shot
+            
+            # 等待邮箱输入框
+            log("INFO", "   等待登录表单...")
+            for _ in range(10):
+                if sb.is_element_present('input[type="email"]') or sb.is_element_present('input[placeholder*="email"]'):
                     break
-            except:
-                continue
-        
-        time.sleep(1)
-        last_shot = shot(idx, "04-otp-input")
-        sb.save_screenshot(last_shot)
-        
-        # 提交验证码
-        log("INFO", "提交验证码...")
-        sb.execute_script('''
-            var btn = document.querySelector('button[type="submit"], button');
-            if (btn) btn.click();
-        ''')
-        
-        time.sleep(5)
-        last_shot = shot(idx, "05-login-result")
-        sb.save_screenshot(last_shot)
-        
-        # 验证登录结果
-        current_url = sb.get_current_url()
-        log("INFO", f"当前 URL: {current_url}")
-        
-        if "/session" in current_url or "billing.kerit.cloud" in current_url:
-            log("INFO", "✅ 登录成功")
-            return True, last_shot
-        
-        log("ERROR", "❌ 登录失败")
-        return False, last_shot
-        
-    except Exception as e:
-        log("ERROR", f"登录异常: {e}")
-        if last_shot is None:
-            last_shot = shot(idx, "login-error")
+                time.sleep(1)
+            
+            # 输入邮箱
+            log("INFO", "   输入邮箱...")
+            email_input = sb.execute_script('''
+                var inputs = document.querySelectorAll('input');
+                for (var i = 0; i < inputs.length; i++) {
+                    var input = inputs[i];
+                    if (input.type === 'email' || 
+                        input.placeholder.toLowerCase().includes('email') ||
+                        input.name === 'email') {
+                        return input;
+                    }
+                }
+                return null;
+            ''')
+            
+            if email_input:
+                sb.execute_script(f'''
+                    var input = arguments[0];
+                    input.value = "{email_addr}";
+                    input.dispatchEvent(new Event('input', {{ bubbles: true }}));
+                ''', email_input)
+            else:
+                sb.type('input[type="email"], input[placeholder*="email"]', email_addr)
+            
+            time.sleep(2)
+            
+            last_shot = shot(idx, f"02-email-{attempt}")
+            sb.save_screenshot(last_shot)
+            
+            # 处理 Turnstile
+            log("INFO", "   处理 Turnstile...")
             try:
-                sb.save_screenshot(last_shot)
+                sb.uc_gui_click_captcha()
             except:
                 pass
-        return False, last_shot
+            time.sleep(3)
+            
+            # 等待 Turnstile 完成
+            for _ in range(15):
+                turnstile_ok = sb.execute_script('''
+                    var successText = document.body.innerText;
+                    return successText.includes('Success!') || 
+                           document.querySelector('[data-turnstile-response]') !== null;
+                ''')
+                if turnstile_ok:
+                    log("INFO", "   ✅ Turnstile 验证通过")
+                    break
+                time.sleep(1)
+            
+            # 点击 Continue with Email
+            log("INFO", "   点击 Continue with Email...")
+            sb.execute_script('''
+                var buttons = document.querySelectorAll('button');
+                for (var btn of buttons) {
+                    if (btn.textContent.includes('Continue with Email') || 
+                        btn.textContent.includes('Continue')) {
+                        btn.click();
+                        return true;
+                    }
+                }
+                var submitBtn = document.querySelector('button[type="submit"]');
+                if (submitBtn) submitBtn.click();
+            ''')
+            
+            time.sleep(5)
+            
+            last_shot = shot(idx, f"03-after-continue-{attempt}")
+            sb.save_screenshot(last_shot)
+            
+            # 检查是否出错
+            blocked, reason = check_blocked(sb)
+            if blocked:
+                log("ERROR", f"⚠️ {reason}")
+                # 点击 Got it 关闭错误弹窗
+                sb.execute_script('''
+                    var buttons = document.querySelectorAll('button');
+                    for (var btn of buttons) {
+                        if (btn.textContent.includes('Got it') || btn.textContent.includes('Try Again')) {
+                            btn.click();
+                            break;
+                        }
+                    }
+                ''')
+                time.sleep(2)
+                if attempt < 2:
+                    log("INFO", "   等待后重试...")
+                    time.sleep(10)
+                    continue
+                return False, last_shot
+            
+            # 检查是否到达 OTP 页面
+            otp_page = sb.execute_script('''
+                return document.body.innerText.includes('Check Your Inbox') ||
+                       document.body.innerText.includes('verification code');
+            ''')
+            
+            if not otp_page:
+                log("WARN", "   未进入 OTP 页面")
+                if attempt < 2:
+                    continue
+                return False, last_shot
+            
+            log("INFO", "✅ 进入 OTP 验证页面")
+            
+            # 获取邮箱验证码
+            log("INFO", "📧 获取邮箱验证码...")
+            otp = fetch_otp_from_email(email_addr, imap_pwd, timeout=120)
+            
+            if not otp:
+                log("ERROR", "❌ 获取验证码失败")
+                last_shot = shot(idx, "04-otp-failed")
+                sb.save_screenshot(last_shot)
+                return False, last_shot
+            
+            # 输入 OTP 到 4 个输入框
+            input_otp_to_boxes(sb, otp)
+            
+            time.sleep(2)
+            last_shot = shot(idx, "05-otp-input")
+            sb.save_screenshot(last_shot)
+            
+            # 点击 Verify Code
+            log("INFO", "   点击 Verify Code...")
+            sb.execute_script('''
+                var buttons = document.querySelectorAll('button');
+                for (var btn of buttons) {
+                    if (btn.textContent.includes('Verify') || btn.textContent.includes('Submit')) {
+                        btn.click();
+                        return;
+                    }
+                }
+            ''')
+            
+            time.sleep(5)
+            
+            last_shot = shot(idx, "06-verify-result")
+            sb.save_screenshot(last_shot)
+            
+            # 检查是否出错
+            blocked, reason = check_blocked(sb)
+            if blocked:
+                log("ERROR", f"⚠️ 验证后出错: {reason}")
+                if attempt < 2:
+                    # 点击关闭错误弹窗
+                    sb.execute_script('''
+                        var buttons = document.querySelectorAll('button');
+                        for (var btn of buttons) {
+                            if (btn.textContent.includes('Got it')) {
+                                btn.click();
+                                break;
+                            }
+                        }
+                    ''')
+                    time.sleep(5)
+                    continue
+                return False, last_shot
+            
+            # 验证登录结果
+            current_url = sb.get_current_url()
+            log("INFO", f"   当前 URL: {current_url}")
+            
+            if "/session" in current_url or ("/billing.kerit" in current_url and "?" not in current_url):
+                log("INFO", "✅ 登录成功!")
+                return True, last_shot
+            
+            # 再等待一下
+            time.sleep(3)
+            current_url = sb.get_current_url()
+            if "/session" in current_url:
+                log("INFO", "✅ 登录成功!")
+                return True, last_shot
+            
+            log("WARN", f"   登录未成功，URL: {current_url}")
+            
+        except Exception as e:
+            log("ERROR", f"   尝试 {attempt + 1} 异常: {e}")
+            if attempt < 2:
+                time.sleep(5)
+                continue
+    
+    log("ERROR", "❌ 登录失败")
+    return False, last_shot
 
 # ============== 续订流程 ==============
 def get_renewal_info(sb) -> Tuple[int, int]:
-    """获取续订信息：(已续订次数, 剩余天数)"""
+    """获取续订信息"""
     try:
-        count = sb.execute_script('''
-            var el = document.getElementById('renewal-count');
-            if (el) return parseInt(el.textContent) || 0;
-            var text = document.body.innerText;
-            var match = text.match(/(\\d+)\\s*\\/\\s*7/);
-            return match ? parseInt(match[1]) : 0;
-        ''') or 0
+        info = sb.execute_script('''
+            var count = 0, days = 0;
+            
+            var countEl = document.getElementById('renewal-count');
+            if (countEl) count = parseInt(countEl.textContent) || 0;
+            
+            var daysEl = document.getElementById('expiry-display');
+            if (daysEl) days = parseInt(daysEl.textContent) || 0;
+            
+            // 备用方法
+            if (!count) {
+                var text = document.body.innerText;
+                var match = text.match(/(\\d+)\\s*\\/\\s*7/);
+                if (match) count = parseInt(match[1]);
+            }
+            
+            return {count: count, days: days};
+        ''')
         
-        days = sb.execute_script('''
-            var el = document.getElementById('expiry-display');
-            if (el) return parseInt(el.textContent) || 0;
-            return 0;
-        ''') or 0
-        
-        return count, days
+        return info.get('count', 0), info.get('days', 0)
     except:
         return 0, 0
 
@@ -347,32 +591,26 @@ def do_renewal(sb, idx: int, email_masked: str) -> Dict[str, Any]:
     }
     
     try:
-        # ========== 步骤1：访问 Session 页面 ==========
+        # ========== 步骤1：访问 Session ==========
         log("INFO", "📋 访问 Session 页面...")
         sb.uc_open_with_reconnect(SESSION_URL, reconnect_time=8)
         time.sleep(5)
         
-        current_url = sb.get_current_url()
-        log("INFO", f"   当前 URL: {current_url}")
-        
         result["screenshot"] = shot(idx, "10-session")
         sb.save_screenshot(result["screenshot"])
         
-        # 验证会话
-        has_sidebar = sb.execute_script('''
-            return document.querySelector('[onclick*="showFreeServers"]') !== null ||
-                   document.body.innerText.includes('Free Plans');
-        ''')
+        current_url = sb.get_current_url()
+        log("INFO", f"   当前 URL: {current_url}")
         
-        if not has_sidebar and "/session" not in current_url:
-            log("ERROR", "❌ 会话无效")
-            result["message"] = "会话无效"
-            notify(False, email_masked, "⚠️ 会话无效", result["screenshot"])
+        # 检查是否被阻止
+        blocked, reason = check_blocked(sb)
+        if blocked:
+            log("ERROR", f"⚠️ {reason}")
+            result["message"] = reason
+            notify(False, email_masked, reason, result["screenshot"])
             return result
         
-        log("INFO", "✅ Session 页面正常")
-        
-        # ========== 步骤2：点击侧边栏进入 Free Plans ==========
+        # ========== 步骤2：进入 Free Plans ==========
         log("INFO", "🎁 点击侧边栏 Free Plans...")
         
         sb.execute_script('''
@@ -399,15 +637,22 @@ def do_renewal(sb, idx: int, email_masked: str) -> Dict[str, Any]:
             sb.uc_open_with_reconnect(FREE_PANEL_URL, reconnect_time=8)
             time.sleep(5)
             current_url = sb.get_current_url()
-            log("INFO", f"   当前 URL: {current_url}")
         
         result["screenshot"] = shot(idx, "11-free-panel")
         sb.save_screenshot(result["screenshot"])
         
+        # 检查是否被阻止
+        blocked, reason = check_blocked(sb)
+        if blocked:
+            log("ERROR", f"⚠️ {reason}")
+            result["message"] = reason
+            notify(False, email_masked, reason, result["screenshot"])
+            return result
+        
         if "/free_panel" not in current_url:
             log("ERROR", "❌ 无法进入 Free Plans")
-            result["message"] = f"无法进入 Free Plans\n当前: {current_url}"
-            notify(False, email_masked, "⚠️ 无法进入 Free Plans", result["screenshot"])
+            result["message"] = f"无法进入 Free Plans"
+            notify(False, email_masked, result["message"], result["screenshot"])
             return result
         
         log("INFO", "✅ 成功进入 Free Plans")
@@ -466,8 +711,12 @@ def do_renewal(sb, idx: int, email_masked: str) -> Dict[str, Any]:
             ''')
             
             if not modal_visible:
-                log("WARN", "   模态框未出现")
-                continue
+                log("WARN", "   模态框未出现，重试...")
+                sb.execute_script('''
+                    var btn = document.getElementById('renewServerBtn');
+                    if (btn) btn.click();
+                ''')
+                time.sleep(3)
             
             # 处理 Turnstile
             log("INFO", "   处理 Turnstile...")
