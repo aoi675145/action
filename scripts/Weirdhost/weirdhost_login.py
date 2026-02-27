@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# scripts/weirdhost_login.py
+# scripts/Weirdhost/weirdhost_login.py
 
 """
 Weirdhost 自动登录 + reCAPTCHA 图片验证
-GitHub Actions 版本 (Headless)
 """
 
 from ultralytics import YOLO
@@ -23,7 +22,6 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
 
-# 类别映射表
 CATEGORY_MAPPING = {
     "摩托": ["motorcycle"], "motorcycle": ["motorcycle"],
     "公交": ["bus"], "巴士": ["bus"], "bus": ["bus"],
@@ -35,7 +33,6 @@ CATEGORY_MAPPING = {
     "卡车": ["truck"], "truck": ["truck"],
 }
 
-# 不支持的类别
 UNSUPPORTED_KEYWORDS = [
     "crosswalk", "人行横道", "斑马线",
     "stair", "楼梯", "bridge", "桥",
@@ -83,9 +80,7 @@ class WeirdhostLogin:
     def _load_model(self):
         """加载 YOLO 模型"""
         print("🚀 正在加载 YOLO 模型...")
-        # 从上级目录加载模型
-        model_path = "../yolo11x.pt" if os.path.exists("../yolo11x.pt") else "yolo11x.pt"
-        self.model = YOLO(model_path)
+        self.model = YOLO("yolo11x.pt")
         print("✅ YOLO11x 加载完成")
     
     def _create_browser(self) -> ChromiumPage:
@@ -96,14 +91,12 @@ class WeirdhostLogin:
         if self.headless:
             co.headless()
         
-        # GitHub Actions 必需参数
         co.set_argument('--no-sandbox')
         co.set_argument('--disable-dev-shm-usage')
         co.set_argument('--disable-gpu')
         co.set_argument('--disable-blink-features=AutomationControlled')
         co.set_argument('--window-size=1280,900')
         
-        # 设置 Chrome 路径 (GitHub Actions)
         chrome_path = '/usr/bin/google-chrome'
         if os.path.exists(chrome_path):
             co.set_browser_path(chrome_path)
@@ -139,7 +132,7 @@ class WeirdhostLogin:
             email_input = self.page.ele('@name=username')
             if email_input:
                 email_input.input(email)
-                print(f"   ✅ 已输入邮箱")
+                print("   ✅ 已输入邮箱")
             else:
                 raise Exception("未找到邮箱输入框")
             
@@ -227,12 +220,10 @@ class WeirdhostLogin:
             current_try += 1
             print(f"\n🔄 --- 第 {current_try} 次循环 ---")
             
-            # 检查是否已跳转
             if "/auth/login" not in self.page.url:
                 print("✅ 页面已跳转!")
                 return True
             
-            # 查找 reCAPTCHA 弹窗 (注意: recaptcha.net)
             recaptcha_frame = self.page.get_frame('@src:recaptcha.net/recaptcha/api2/bframe')
             if not recaptcha_frame:
                 recaptcha_frame = self.page.get_frame('@src:recaptcha/api2/bframe')
@@ -255,7 +246,6 @@ class WeirdhostLogin:
             
             print("   🎯 检测到 reCAPTCHA 弹窗!")
             
-            # 等待图片加载
             target_ele = recaptcha_frame.wait.ele_displayed(
                 "@class=rc-imageselect-challenge", timeout=3
             )
@@ -264,7 +254,6 @@ class WeirdhostLogin:
                 time.sleep(1)
                 continue
             
-            # 获取题目
             text_str = ""
             try:
                 texts = recaptcha_frame.ele("@class=rc-imageselect-desc-no-canonical").texts()
@@ -292,15 +281,13 @@ class WeirdhostLogin:
             
             print(f"   📊 网格: {grid_side}x{grid_side}, 动态: {is_dynamic}")
             
-            # 不支持 -> 刷新
             if not target_labels:
-                print(f"   ⚠️ 不支持的类别，刷新!")
+                print("   ⚠️ 不支持的类别，刷新!")
                 self._click_reload(recaptcha_frame)
                 continue
             
             print(f"   🎯 目标: {target_labels}")
             
-            # 截图
             time.sleep(0.5)
             
             dpr = self.page.run_js("return window.devicePixelRatio;")
@@ -326,7 +313,6 @@ class WeirdhostLogin:
                 with open(f"{SCREENSHOT_DIR}/crop_{current_try}.jpg", "wb") as f:
                     f.write(image_cp)
             
-            # YOLO 识别
             img_obj = Image.open(io.BytesIO(image_cp))
             results = self.model(img_obj, verbose=False)
             
@@ -374,7 +360,6 @@ class WeirdhostLogin:
             if not is_dynamic:
                 sorted_indices = [i for i in sorted_indices if i not in clicked_history]
             
-            # 点击
             if sorted_indices:
                 print(f"   🖱️ 点击 {len(sorted_indices)} 个图块...")
                 click_order = sorted_indices.copy()
@@ -390,13 +375,11 @@ class WeirdhostLogin:
             else:
                 print("   🤷 未发现目标")
             
-            # 动态模式等待
             if is_dynamic and sorted_indices:
                 print("   ⏳ 等待新图片...")
                 time.sleep(2.5)
                 continue
             
-            # 提交
             verify_btn = recaptcha_frame.ele("#recaptcha-verify-button")
             if verify_btn and verify_btn.states.is_enabled:
                 print(f"   🖱️ 点击: {verify_btn.text}")
@@ -425,13 +408,11 @@ class WeirdhostLogin:
             pass
 
 
-# ============== 主程序 ==============
 def main():
     print("=" * 60)
     print("🚀 Weirdhost 自动登录")
     print("=" * 60)
     
-    # 从环境变量读取账号
     email = os.environ.get("TEST_EMAIL", "")
     password = os.environ.get("TEST_PASSWORD", "")
     
@@ -441,7 +422,6 @@ def main():
     
     print(f"📧 账号: {email[:3]}***@***")
     
-    # 执行登录
     login_handler = WeirdhostLogin(headless=True)
     success = login_handler.login(email, password)
     
