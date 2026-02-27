@@ -5,7 +5,6 @@
 import os, sys, time, platform, requests, re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from typing import Dict, Any, List, Tuple, Optional
 from seleniumbase import SB
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
@@ -32,8 +31,7 @@ def calc_expiry_time(renewal_time_str, minutes=2880):
     if not renewal_time_str: return "未知"
     try:
         dt = datetime.strptime(renewal_time_str, "%b %d, %Y %I:%M %p")
-        dt = dt.replace(tzinfo=timezone.utc)
-        expiry = dt + timedelta(minutes=minutes)
+        expiry = dt.replace(tzinfo=timezone.utc) + timedelta(minutes=minutes)
         return expiry.astimezone(CN_TZ).strftime("%Y年%m月%d日 %H时%M分")
     except: return "未知"
 
@@ -42,11 +40,9 @@ def mask(s, show=1):
     s = str(s)
     return s[:show] + "***" if len(s) > show else s[0] + "***"
 
-def mask_id(sid): return sid[0] + "***" if sid else "****"
+def mask_id(sid): return str(sid)[0] + "***" if sid else "****"
 def is_linux(): return platform.system().lower() == "linux"
-
-def shot(idx, name):
-    return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
+def shot(idx, name): return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
 def notify(ok, username, info, img=None):
     token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
@@ -67,58 +63,42 @@ def parse_accounts(s):
     return [(p[0].strip(), p[1].strip()) for line in s.strip().split('\n') 
             if '----' in line and len(p := line.strip().split('----', 1)) == 2 and p[0].strip() and p[1].strip()]
 
-def detect_turnstile_type(sb):
+def js_get_element_text(sb, element_id):
+    """安全获取元素文本"""
     try:
-        result = sb.execute_script('''
-            return (function() {
-                var container = document.getElementById('turnstileContainer');
-                var cfInput = document.querySelector("input[name='cf-turnstile-response']");
-                if (!container && !cfInput) return "none";
-                var iframes = document.querySelectorAll('iframe');
-                for (var i = 0; i < iframes.length; i++) {
-                    var src = iframes[i].src || "";
-                    if (src.includes("challenges.cloudflare.com") || src.includes("turnstile")) {
-                        var rect = iframes[i].getBoundingClientRect();
-                        if (rect.width > 100 && rect.height > 50) return "visible";
-                    }
-                }
-                return "invisible";
-            })();
-        ''')
-        return result or "unknown"
-    except: return "visible"
+        el = sb.find_element(f"#{element_id}")
+        return el.text.strip() if el else ""
+    except:
+        return ""
 
 def wait_turnstile_complete(sb, timeout=45):
     print(f"[INFO] 等待验证完成 (最多 {timeout}s)...")
     for i in range(timeout):
         try:
-            result = sb.execute_script('''
-                return (function() {
-                    var modal = document.querySelector('.confirmation-modal-content');
-                    var container = document.getElementById('turnstileContainer');
-                    if (!modal && !container) return "closed";
-                    var inputs = document.querySelectorAll("input[name='cf-turnstile-response']");
-                    for (var j = 0; j < inputs.length; j++) {
-                        if (inputs[j].value && inputs[j].value.length > 20) return "token";
-                    }
-                    return "waiting";
-                })();
-            ''')
-            if result == "closed":
+            # 检查弹窗是否还在
+            modals = sb.find_elements(".confirmation-modal-content")
+            containers = sb.find_elements("#turnstileContainer")
+            if not modals and not containers:
                 print(f"[INFO] ✅ 验证完成 ({i}s)")
                 return "closed"
-            elif result == "token":
-                print(f"[INFO] ✅ Token 已获取 ({i}s)")
-                return "token"
+            
+            # 检查 token
+            inputs = sb.find_elements("input[name='cf-turnstile-response']")
+            for inp in inputs:
+                val = inp.get_attribute("value") or ""
+                if len(val) > 20:
+                    print(f"[INFO] ✅ Token 已获取 ({i}s)")
+                    return "token"
         except:
             return "closed"
+        
         if i % 10 == 0 and i:
             print(f"[INFO] 等待验证... {i}s")
         time.sleep(1)
     return "timeout"
 
 def click_captcha_with_timeout(sb, timeout=20):
-    print(f"[INFO] 尝试 uc_gui_click_captcha (超时: {timeout}s)...")
+    print(f"[INFO] 尝试点击验证码 (超时: {timeout}s)...")
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
             future = executor.submit(sb.uc_gui_click_captcha)
@@ -126,20 +106,37 @@ def click_captcha_with_timeout(sb, timeout=20):
             print("[INFO] ✅ 已点击验证")
             return True
     except FuturesTimeoutError:
-        print(f"[WARN] uc_gui_click_captcha 超时")
+        print(f"[WARN] 点击超时")
     except Exception as e:
-        print(f"[WARN] uc_gui_click_captcha 失败: {e}")
+        print(f"[WARN] 点击失败: {e}")
     return False
 
 def handle_turnstile(sb, idx):
     time.sleep(3)
-    turnstile_type = detect_turnstile_type(sb)
+    
+    # 检测类型
+    turnstile_type = "none"
+    try:
+        containers = sb.find_elements("#turnstileContainer")
+        cf_inputs = sb.find_elements("input[name='cf-turnstile-response']")
+        if containers or cf_inputs:
+            iframes = sb.find_elements("iframe")
+            for iframe in iframes:
+                src = iframe.get_attribute("src") or ""
+                if "challenges.cloudflare.com" in src or "turnstile" in src:
+                    turnstile_type = "visible"
+                    break
+            else:
+                turnstile_type = "invisible"
+    except:
+        turnstile_type = "visible"
+    
     print(f"[INFO] Turnstile 类型: {turnstile_type}")
     
     if turnstile_type == "none":
         return True
     
-    if turnstile_type in ("visible", "unknown"):
+    if turnstile_type == "visible":
         click_captcha_with_timeout(sb, 20)
         time.sleep(3)
     
@@ -259,8 +256,10 @@ def renew(sb, sid, idx, username):
     time.sleep(4)
     
     # 滚动页面
-    sb.execute_script("window.scrollTo(0, 800);")
-    time.sleep(2)
+    sb.scroll_to_bottom()
+    time.sleep(1)
+    sb.scroll_to_top()
+    time.sleep(1)
     
     console_shot = shot(idx, "console")
     sb.save_screenshot(console_shot)
@@ -273,56 +272,76 @@ def renew(sb, sid, idx, username):
         return result
     
     # 获取续期前时间
-    old_renewal = sb.execute_script('''
-        return (function() {
-            var el = document.getElementById("lastRenewalTime");
-            return el ? el.textContent.trim() : "";
-        })();
-    ''') or ""
+    old_renewal = js_get_element_text(sb, "lastRenewalTime")
     print(f"[INFO] 续期前: {old_renewal or '(空)'}")
     
-    # 点击续期按钮 - 使用单独的脚本
-    click_js = '''
-    return (function() {
-        var links = document.querySelectorAll('a[onclick*="handleServerRenewal"]');
-        for (var i = 0; i < links.length; i++) {
-            var onclick = links[i].getAttribute('onclick') || "";
-            if (onclick.includes("''' + sid + '''")) {
-                links[i].click();
-                return "found_onclick";
-            }
-        }
-        var allElements = document.querySelectorAll('a, button');
-        for (var i = 0; i < allElements.length; i++) {
-            var text = (allElements[i].textContent || "").toLowerCase();
-            if (text.includes("renew") && text.length < 20) {
-                allElements[i].click();
-                return "found_text";
-            }
-        }
-        return "not_found";
-    })();
-    '''
+    # 滚动到中间位置
+    sb.scroll_to_y(600)
+    time.sleep(1)
+    sb.save_screenshot(shot(idx, "scroll"))
     
+    # 查找并点击续期按钮
+    clicked = False
+    
+    # 方法1: 通过 onclick 属性查找
     try:
-        clicked = sb.execute_script(click_js)
-        print(f"[INFO] 点击结果: {clicked}")
-        
-        if clicked == "not_found":
-            # 再滚动找
-            sb.execute_script("window.scrollTo(0, 1200);")
-            time.sleep(2)
-            sb.save_screenshot(shot(idx, "scroll"))
-            clicked = sb.execute_script(click_js)
-            print(f"[INFO] 再次点击: {clicked}")
-        
-        if clicked == "not_found":
-            result["message"] = "⚠️ 未找到续期按钮"
-            notify(False, username, f"{mask_id(sid)}: {result['message']}", console_shot)
-            return result
-            
+        links = sb.find_elements(f'a[onclick*="handleServerRenewal"]')
+        for link in links:
+            onclick = link.get_attribute("onclick") or ""
+            if sid in onclick:
+                link.click()
+                clicked = True
+                print("[INFO] 通过 onclick 找到按钮")
+                break
     except Exception as e:
-        result["message"] = f"⚠️ 点击失败: {e}"
+        print(f"[DEBUG] 方法1失败: {e}")
+    
+    # 方法2: 通过文本查找
+    if not clicked:
+        try:
+            elements = sb.find_elements("a, button")
+            for el in elements:
+                text = (el.text or "").lower()
+                if "renew" in text and len(text) < 30:
+                    el.click()
+                    clicked = True
+                    print(f"[INFO] 通过文本找到按钮: {text}")
+                    break
+        except Exception as e:
+            print(f"[DEBUG] 方法2失败: {e}")
+    
+    # 方法3: 通过 CSS 选择器
+    if not clicked:
+        try:
+            for sel in ['a.action-button', 'button.btn-renew', '.renew-btn', '[class*="renew"]']:
+                try:
+                    btns = sb.find_elements(sel)
+                    for btn in btns:
+                        if "renew" in (btn.text or "").lower():
+                            btn.click()
+                            clicked = True
+                            print(f"[INFO] 通过选择器 {sel} 找到按钮")
+                            break
+                except: continue
+                if clicked: break
+        except Exception as e:
+            print(f"[DEBUG] 方法3失败: {e}")
+    
+    if not clicked:
+        # 打印页面上所有按钮和链接的信息
+        try:
+            elements = sb.find_elements("a, button")
+            print(f"[DEBUG] 页面上找到 {len(elements)} 个链接/按钮:")
+            for i, el in enumerate(elements[:20]):
+                text = (el.text or "").strip()[:30]
+                onclick = (el.get_attribute("onclick") or "")[:50]
+                href = (el.get_attribute("href") or "")[:50]
+                if text or onclick:
+                    print(f"  [{i}] text='{text}' onclick='{onclick}' href='{href}'")
+        except: pass
+        
+        result["message"] = "⚠️ 未找到续期按钮"
+        notify(False, username, f"{mask_id(sid)}: {result['message']}", console_shot)
         return result
     
     print("[INFO] 已点击续期按钮")
@@ -337,19 +356,8 @@ def renew(sb, sid, idx, username):
     sb.open(SERVER_URL.format(sid))
     time.sleep(4)
     
-    new_renewal = sb.execute_script('''
-        return (function() {
-            var el = document.getElementById("lastRenewalTime");
-            return el ? el.textContent.trim() : "";
-        })();
-    ''') or ""
-    
-    remain = sb.execute_script('''
-        return (function() {
-            var el = document.getElementById("nextRenewalTime");
-            return el ? el.textContent.trim() : "";
-        })();
-    ''') or ""
+    new_renewal = js_get_element_text(sb, "lastRenewalTime")
+    remain = js_get_element_text(sb, "nextRenewalTime")
     
     result["expiry_cn"] = calc_expiry_time(new_renewal)
     print(f"[INFO] 续期后: {new_renewal or '(空)'}, 剩余: {remain or '(空)'}")
