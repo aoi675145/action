@@ -557,7 +557,6 @@ def check_access_blocked(sb) -> bool:
     except:
         return False
 
-
 def do_renewal(sb, display_name: str) -> Dict:
     """执行续订操作"""
     result = {
@@ -570,43 +569,109 @@ def do_renewal(sb, display_name: str) -> Dict:
     }
     
     try:
-        # 🔧 修复4：添加重试逻辑进入 Free Plans 页面
-        log("INFO", "🎁 进入 Free Plans 页面...")
+        # ============================================
+        # 步骤1：先访问 /session 确保会话建立
+        # ============================================
+        log("INFO", "📋 访问 Session 页面确保会话有效...")
+        sb.uc_open_with_reconnect(SESSION_URL, reconnect_time=8)
+        time.sleep(5)
         
+        current_url = sb.get_current_url()
+        log("INFO", f"   当前 URL: {current_url}")
+        
+        # 验证是否在 session 页面
+        if "/session" not in current_url:
+            # 检查是否有 Free Plans 侧边栏（说明已登录）
+            has_sidebar = sb.execute_script("""
+                return document.querySelector('[onclick*="showFreeServers"]') !== null ||
+                       document.querySelector('.sidebar-item') !== null;
+            """)
+            
+            if not has_sidebar:
+                log("ERROR", "❌ 会话无效，未能进入 Session 页面")
+                result["message"] = "会话无效，请重新登录"
+                return result
+        
+        log("INFO", "✅ Session 页面加载成功")
+        
+        # ============================================
+        # 步骤2：模拟点击侧边栏 Free Plans 按钮
+        # ============================================
+        log("INFO", "🎁 点击侧边栏 Free Plans 按钮...")
+        
+        # 方法1：直接调用页面的 showFreeServers 函数
+        clicked = sb.execute_script("""
+            // 尝试调用 showFreeServers 函数
+            if (typeof showFreeServers === 'function') {
+                showFreeServers();
+                return true;
+            }
+            
+            // 备用：查找并点击侧边栏按钮
+            var items = document.querySelectorAll('.sidebar-item');
+            for (var item of items) {
+                if (item.textContent.includes('Free Plans') || 
+                    item.getAttribute('onclick')?.includes('showFreeServers')) {
+                    item.click();
+                    return true;
+                }
+            }
+            
+            // 再备用：直接跳转
+            window.location.href = '/free_panel';
+            return true;
+        """)
+        
+        log("INFO", "   等待页面跳转...")
+        time.sleep(5)
+        
+        # ============================================
+        # 步骤3：验证是否成功进入 Free Plans 页面
+        # ============================================
+        current_url = sb.get_current_url()
+        log("INFO", f"   当前 URL: {current_url}")
+        
+        # 重试机制
         max_attempts = 3
-        entered_free_panel = False
-        
         for attempt in range(max_attempts):
-            sb.uc_open_with_reconnect(FREE_PANEL_URL, reconnect_time=8)
-            time.sleep(5)
-            
-            current_url = sb.get_current_url()
-            log("INFO", f"   当前 URL: {current_url}")
-            
             if "/free_panel" in current_url:
-                entered_free_panel = True
                 log("INFO", "✅ 成功进入 Free Plans 页面")
                 break
-            else:
-                log("WARN", f"   尝试 {attempt + 1}/{max_attempts}，未能进入 Free Plans")
+            
+            log("WARN", f"   尝试 {attempt + 1}/{max_attempts}，未能进入 Free Plans")
+            
+            # 检查是否被阻止
+            if check_access_blocked(sb):
+                log("ERROR", "❌ 访问被阻止")
+                result["message"] = "IP 被限制，请更换代理"
+                return result
+            
+            # 重试：回到 session 再点击
+            if attempt < max_attempts - 1:
+                log("INFO", "   返回 Session 页面重试...")
+                sb.uc_open_with_reconnect(SESSION_URL, reconnect_time=5)
+                time.sleep(3)
                 
-                # 检查是否被阻止
-                if check_access_blocked(sb):
-                    log("ERROR", "❌ 访问被阻止")
-                    result["message"] = "IP 被限制，请更换代理"
-                    return result
-                
-                # 等待后重试
-                if attempt < max_attempts - 1:
-                    log("INFO", "   等待 3 秒后重试...")
-                    time.sleep(3)
+                # 再次点击侧边栏
+                sb.execute_script("""
+                    if (typeof showFreeServers === 'function') {
+                        showFreeServers();
+                    } else {
+                        window.location.href = '/free_panel';
+                    }
+                """)
+                time.sleep(5)
+                current_url = sb.get_current_url()
+                log("INFO", f"   当前 URL: {current_url}")
         
-        if not entered_free_panel:
+        if "/free_panel" not in current_url:
             log("ERROR", "❌ 无法进入 Free Plans 页面")
-            result["message"] = f"无法进入 Free Plans 页面\n当前页面: {current_url}"
+            result["message"] = f"无法进入 Free Plans 页面\n当前: {current_url}"
             return result
         
-        # 获取初始状态
+        # ============================================
+        # 步骤4：获取初始状态
+        # ============================================
         initial_count = get_renewal_count(sb)
         initial_days = get_days_remaining(sb)
         result["initial_count"] = initial_count
@@ -622,7 +687,9 @@ def do_renewal(sb, display_name: str) -> Dict:
             result["message"] = f"🎉 已达上限\n续订: {initial_count}/7\n剩余: {initial_days} 天"
             return result
         
-        # 循环续订
+        # ============================================
+        # 步骤5：循环续订
+        # ============================================
         total_renewed = 0
         max_renewals = 7
         
@@ -641,7 +708,7 @@ def do_renewal(sb, display_name: str) -> Dict:
                 log("INFO", "🎉 剩余天数已达 7 天，停止续订")
                 break
             
-            # 检查续订按钮
+            # 检查续订按钮是否可用
             renew_btn_disabled = sb.execute_script("""
                 var btn = document.getElementById('renewServerBtn');
                 if (!btn) return true;
@@ -652,21 +719,19 @@ def do_renewal(sb, display_name: str) -> Dict:
                 log("INFO", "⏸️ 续订按钮不可用，停止续订")
                 break
             
-            # 点击 Renew Server
+            # 点击 Renew Server 按钮
             sb.execute_script("""
                 var btn = document.getElementById('renewServerBtn');
                 if (btn && !btn.disabled) btn.click();
             """)
             log("INFO", "   点击 Renew Server")
-            
             time.sleep(3)
             
-            # 等待模态框
+            # 等待模态框出现
             modal_visible = sb.execute_script("""
                 var modal = document.getElementById('renewalModal');
                 if (!modal) return false;
-                var style = window.getComputedStyle(modal);
-                return style.display !== 'none';
+                return !modal.classList.contains('hidden');
             """)
             
             if not modal_visible:
@@ -676,31 +741,46 @@ def do_renewal(sb, display_name: str) -> Dict:
                     if (btn) btn.click();
                 """)
                 time.sleep(3)
+                
+                # 再次检查
+                modal_visible = sb.execute_script("""
+                    var modal = document.getElementById('renewalModal');
+                    return modal && !modal.classList.contains('hidden');
+                """)
+                
+                if not modal_visible:
+                    log("WARN", "   模态框仍未出现，跳过本轮")
+                    continue
             
-            # 处理 Turnstile
+            # 处理 Turnstile 验证
+            log("INFO", "   ⏳ 处理 Turnstile 验证...")
             try:
                 sb.uc_gui_click_captcha()
             except:
                 pass
+            time.sleep(3)
             
-            time.sleep(2)
-            
-            # 点击广告
-            log("INFO", "   🖱️ 点击广告...")
+            # 点击广告横幅
+            log("INFO", "   🖱️ 点击广告横幅...")
             main_window = sb.driver.current_window_handle
             original_windows = set(sb.driver.window_handles)
             
             sb.execute_script("""
-                var adBanner = document.getElementById('adBanner');
-                if (adBanner) {
-                    var clickable = adBanner.closest('[onclick]') || adBanner.parentElement || adBanner;
-                    clickable.click();
+                // 调用页面的 openAdLink 函数
+                if (typeof openAdLink === 'function') {
+                    openAdLink();
+                } else {
+                    // 备用：直接点击广告图片
+                    var adBanner = document.getElementById('adBanner');
+                    if (adBanner) {
+                        adBanner.click();
+                    }
                 }
             """)
             
             time.sleep(3)
             
-            # 关闭广告窗口
+            # 关闭广告弹出窗口
             new_windows = set(sb.driver.window_handles) - original_windows
             if new_windows:
                 log("INFO", f"   关闭 {len(new_windows)} 个广告窗口")
@@ -712,55 +792,74 @@ def do_renewal(sb, display_name: str) -> Dict:
                         pass
                 sb.driver.switch_to.window(main_window)
             
-            time.sleep(1)
+            time.sleep(2)
+            
+            # 等待续订按钮可用
+            log("INFO", "   ⏳ 等待续订按钮可用...")
+            for _ in range(10):
+                btn_enabled = sb.execute_script("""
+                    var btn = document.getElementById('renewBtn');
+                    return btn && !btn.disabled;
+                """)
+                if btn_enabled:
+                    break
+                time.sleep(1)
             
             # 点击最终续订按钮
-            log("INFO", "   🔘 点击续订按钮...")
+            log("INFO", "   🔘 点击 Complete Renewal 按钮...")
             sb.execute_script("""
                 var btn = document.getElementById('renewBtn');
                 if (btn && !btn.disabled) {
                     btn.click();
-                } else {
-                    var form = document.querySelector('#renewalModal form');
-                    if (form) form.submit();
                 }
             """)
             
-            time.sleep(3)
+            time.sleep(4)
             
             # 检查是否达到限制
             limit_reached = sb.execute_script("""
                 var bodyText = document.body.innerText || '';
                 return bodyText.includes('Cannot exceed 7 days') ||
                        bodyText.includes('exceed 7 days') ||
-                       bodyText.includes('limit reached');
+                       bodyText.includes('limit reached') ||
+                       bodyText.includes('Weekly limit');
             """)
             
             if limit_reached:
                 log("INFO", "   ⚠️ 已达续订限制")
                 break
             
-            total_renewed += 1
-            log("INFO", f"   ✅ 第 {renewal_round} 轮完成")
+            # 检查是否有成功提示
+            success_msg = sb.execute_script("""
+                var successModal = document.querySelector('.success-modal');
+                return successModal !== null;
+            """)
+            
+            if success_msg:
+                total_renewed += 1
+                log("INFO", f"   ✅ 第 {renewal_round} 轮续订成功")
+            else:
+                log("INFO", f"   ✅ 第 {renewal_round} 轮完成")
+                total_renewed += 1
             
             # 关闭模态框
             sb.execute_script("""
-                var closeBtn = document.querySelector('#renewalModal .close, .btn-close, [data-dismiss="modal"]');
-                if (closeBtn) closeBtn.click();
-                var modal = document.getElementById('renewalModal');
-                if (modal) modal.style.display = 'none';
-                var backdrop = document.querySelector('.modal-backdrop');
-                if (backdrop) backdrop.remove();
-                document.body.classList.remove('modal-open');
+                // 调用页面的关闭函数
+                if (typeof closeRenewalModal === 'function') {
+                    closeRenewalModal();
+                } else {
+                    var modal = document.getElementById('renewalModal');
+                    if (modal) modal.classList.add('hidden');
+                }
             """)
             
             time.sleep(2)
             
-            # 刷新页面
+            # 刷新页面获取最新状态
             sb.refresh()
-            time.sleep(3)
+            time.sleep(4)
             
-            # 检查状态
+            # 检查更新后的状态
             new_count = get_renewal_count(sb)
             new_days = get_days_remaining(sb)
             
@@ -770,7 +869,9 @@ def do_renewal(sb, display_name: str) -> Dict:
                 log("INFO", "🎉 已达到上限!")
                 break
         
-        # 获取最终状态
+        # ============================================
+        # 步骤6：获取最终状态
+        # ============================================
         time.sleep(2)
         final_count = get_renewal_count(sb)
         final_days = get_days_remaining(sb)
@@ -782,7 +883,7 @@ def do_renewal(sb, display_name: str) -> Dict:
         log("INFO", f"📊 最终状态: 续订 {final_count}/7, 剩余 {final_days} 天")
         log("INFO", f"   本次续订: {total_renewed} 次")
         
-        # 判断成功
+        # 判断成功与否
         if final_count >= 7 or final_days >= 7:
             result["success"] = True
             result["message"] = (
@@ -803,6 +904,8 @@ def do_renewal(sb, display_name: str) -> Dict:
         
     except Exception as e:
         log("ERROR", f"续订异常: {e}")
+        import traceback
+        traceback.print_exc()
         result["message"] = f"续订异常: {str(e)[:100]}"
     
     return result
