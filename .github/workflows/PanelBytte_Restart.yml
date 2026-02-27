@@ -1,0 +1,61 @@
+# .github/workflows/Panel-Bytte_renew.yml
+name: Panel Bytte 自动重启&续约
+
+on:
+  # 定时触发 - 每天 UTC 0:00 (北京时间 8:00)
+#  schedule:
+#    - cron: '0 0 * * *'
+  
+  # 手动触发
+  workflow_dispatch:
+
+jobs:
+  renew:
+    name: 自动重启&续约服务器
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+      
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: 安装依赖
+        run: |
+          pip install playwright requests pynacl
+          playwright install chromium
+          playwright install-deps chromium
+      
+      - name: 创建截图输出目录
+        run: mkdir -p output/screenshots
+      
+      - name: 执行自动重启&续约
+        env:
+          PANEL_BYTTE_COOKIES: ${{ secrets.PANEL_BYTTE_COOKIES }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: python scripts/Panel-Bytte_renew.py
+      
+#      - name: 上传截图
+#        uses: actions/upload-artifact@v4
+#        if: always()
+#        with:
+#          name: bytte-screenshots-${{ github.run_number }}
+#          path: output/screenshots/
+#          retention-days: 3
+      
+      - name: 清理旧运行记录
+        uses: Mattraks/delete-workflow-runs@v2
+        if: always()
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: "Panel Bytte 自动重启&续约"
+          retain_days: 0
+          keep_minimum_runs: 3
