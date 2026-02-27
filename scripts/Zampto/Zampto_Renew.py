@@ -5,6 +5,7 @@
 import os, sys, time, platform, requests, re
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
+from typing import Dict, Any, List, Tuple, Optional
 from seleniumbase import SB
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeoutError
 
@@ -17,38 +18,72 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
 CN_TZ = timezone(timedelta(hours=8))
 
-def cn_now(): return datetime.now(CN_TZ)
-def cn_time_str(fmt="%Y-%m-%d %H:%M:%S"): return cn_now().strftime(fmt)
+def cn_now() -> datetime:
+    return datetime.now(CN_TZ)
 
-def parse_renewal_time(time_str):
-    if not time_str: return "未知"
+def cn_time_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    return cn_now().strftime(fmt)
+
+def parse_renewal_time(time_str: str) -> str:
+    if not time_str:
+        return "未知"
     try:
         dt = datetime.strptime(time_str, "%b %d, %Y %I:%M %p")
-        return dt.replace(tzinfo=timezone.utc).astimezone(CN_TZ).strftime("%Y年%m月%d日 %H时%M分")
-    except: return time_str
+        dt = dt.replace(tzinfo=timezone.utc)
+        dt_cn = dt.astimezone(CN_TZ)
+        return dt_cn.strftime("%Y年%m月%d日 %H时%M分")
+    except:
+        return time_str
 
-def calc_expiry_time(renewal_time_str, minutes=2880):
-    if not renewal_time_str: return "未知"
+def calc_expiry_time(renewal_time_str: str, minutes: int = 2880) -> str:
+    if not renewal_time_str:
+        return "未知"
     try:
         dt = datetime.strptime(renewal_time_str, "%b %d, %Y %I:%M %p")
-        expiry = dt.replace(tzinfo=timezone.utc) + timedelta(minutes=minutes)
-        return expiry.astimezone(CN_TZ).strftime("%Y年%m月%d日 %H时%M分")
-    except: return "未知"
+        dt = dt.replace(tzinfo=timezone.utc)
+        expiry = dt + timedelta(minutes=minutes)
+        expiry_cn = expiry.astimezone(CN_TZ)
+        return expiry_cn.strftime("%Y年%m月%d日 %H时%M分")
+    except:
+        return "未知"
 
-def mask(s, show=1):
+def mask(s: str, show: int = 1) -> str:
     if not s: return "***"
     s = str(s)
-    return s[:show] + "***" if len(s) > show else s[0] + "***"
+    if len(s) <= show: return s[0] + "***"
+    return s[:show] + "*" * min(3, len(s) - show)
 
-def mask_id(sid): return str(sid)[0] + "***" if sid else "****"
+def mask_id(sid: str) -> str:
+    if not sid: return "****"
+    return sid[0] + "***"
+
 def is_linux(): return platform.system().lower() == "linux"
-def shot(idx, name): return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
-def notify(ok, username, info, img=None):
+def setup_display():
+    if is_linux() and not os.environ.get("DISPLAY"):
+        try:
+            from pyvirtualdisplay import Display
+            d = Display(visible=False, size=(1920, 1080))
+            d.start()
+            os.environ["DISPLAY"] = d.new_display_var
+            print("[INFO] 虚拟显示已启动")
+            return d
+        except Exception as e:
+            print(f"[ERROR] 虚拟显示失败: {e}"); sys.exit(1)
+    return None
+
+def shot(idx: int, name: str) -> str:
+    return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
+
+def notify(ok: bool, username: str, info: str, img: str = None):
     token, chat = os.environ.get("TG_BOT_TOKEN"), os.environ.get("TG_CHAT_ID")
-    if not token or not chat: return
+    if not token or not chat: 
+        return
     try:
-        text = f"{'✅' if ok else '❌'} {'续期成功' if ok else '续期失败'}\n\n账号：{username}\n信息：{info}\n时间：{cn_time_str()}"
+        icon = "✅" if ok else "❌"
+        result = "续期成功" if ok else "续期失败"
+        text = f"{icon} {result}\n\n账号：{username}\n信息：{info}\n时间：{cn_time_str()}\n\nZampto Auto Renew"
+        
         if img and Path(img).exists():
             with open(img, "rb") as f:
                 requests.post(f"https://api.telegram.org/bot{token}/sendPhoto",
@@ -57,122 +92,131 @@ def notify(ok, username, info, img=None):
             requests.post(f"https://api.telegram.org/bot{token}/sendMessage",
                 json={"chat_id": chat, "text": text}, timeout=30)
     except Exception as e:
-        print(f"[WARN] 通知失败: {e}")
+        print(f"[WARN] 通知发送失败: {e}")
 
-def parse_accounts(s):
+def parse_accounts(s: str) -> List[Tuple[str, str]]:
     return [(p[0].strip(), p[1].strip()) for line in s.strip().split('\n') 
             if '----' in line and len(p := line.strip().split('----', 1)) == 2 and p[0].strip() and p[1].strip()]
 
-def js_get_element_text(sb, element_id):
-    """安全获取元素文本"""
+def detect_turnstile_type(sb) -> str:
     try:
-        el = sb.find_element(f"#{element_id}")
-        return el.text.strip() if el else ""
+        result = sb.execute_script('''
+            (function() {
+                var container = document.getElementById('turnstileContainer');
+                var cfInput = document.querySelector("input[name='cf-turnstile-response']");
+                if (!container && !cfInput) return "none";
+                var iframes = document.querySelectorAll('iframe');
+                for (var i = 0; i < iframes.length; i++) {
+                    var src = iframes[i].src || "";
+                    if (src.includes("challenges.cloudflare.com") || src.includes("turnstile")) {
+                        var rect = iframes[i].getBoundingClientRect();
+                        if (rect.width > 100 && rect.height > 50) return "visible";
+                    }
+                }
+                return "invisible";
+            })()
+        ''')
+        return result or "unknown"
     except:
-        return ""
+        return "visible"
 
-def wait_turnstile_complete(sb, timeout=45):
+def wait_turnstile_complete(sb, timeout: int = 45) -> str:
     print(f"[INFO] 等待验证完成 (最多 {timeout}s)...")
     for i in range(timeout):
         try:
-            # 检查弹窗是否还在
-            modals = sb.find_elements(".confirmation-modal-content")
-            containers = sb.find_elements("#turnstileContainer")
-            if not modals and not containers:
-                print(f"[INFO] ✅ 验证完成 ({i}s)")
+            result = sb.execute_script('''
+                (function() {
+                    var modal = document.querySelector('.confirmation-modal-content');
+                    var container = document.getElementById('turnstileContainer');
+                    if (!modal && !container) return "closed";
+                    var inputs = document.querySelectorAll("input[name='cf-turnstile-response']");
+                    for (var j = 0; j < inputs.length; j++) {
+                        if (inputs[j].value && inputs[j].value.length > 20) return "token";
+                    }
+                    return "waiting";
+                })()
+            ''')
+            if result == "closed":
+                print(f"[INFO] ✅ 验证完成，页面已刷新 ({i}s)")
                 return "closed"
-            
-            # 检查 token
-            inputs = sb.find_elements("input[name='cf-turnstile-response']")
-            for inp in inputs:
-                val = inp.get_attribute("value") or ""
-                if len(val) > 20:
-                    print(f"[INFO] ✅ Token 已获取 ({i}s)")
-                    return "token"
+            elif result == "token":
+                print(f"[INFO] ✅ Token 已获取 ({i}s)")
+                return "token"
         except:
+            print(f"[INFO] ✅ 页面刷新中 ({i}s)")
             return "closed"
-        
         if i % 10 == 0 and i:
             print(f"[INFO] 等待验证... {i}s")
         time.sleep(1)
+    print(f"[WARN] 验证超时 ({timeout}s)")
     return "timeout"
 
-def click_captcha_with_timeout(sb, timeout=20):
-    print(f"[INFO] 尝试点击验证码 (超时: {timeout}s)...")
-    try:
-        with ThreadPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(sb.uc_gui_click_captcha)
-            future.result(timeout=timeout)
-            print("[INFO] ✅ 已点击验证")
-            return True
-    except FuturesTimeoutError:
-        print(f"[WARN] 点击超时")
-    except Exception as e:
-        print(f"[WARN] 点击失败: {e}")
-    return False
-
-def handle_turnstile(sb, idx):
+def handle_turnstile(sb, idx: int) -> bool:
+    """处理 Turnstile 验证 - 带超时保护"""
     time.sleep(3)
     
-    # 检测类型
-    turnstile_type = "none"
-    try:
-        containers = sb.find_elements("#turnstileContainer")
-        cf_inputs = sb.find_elements("input[name='cf-turnstile-response']")
-        if containers or cf_inputs:
-            iframes = sb.find_elements("iframe")
-            for iframe in iframes:
-                src = iframe.get_attribute("src") or ""
-                if "challenges.cloudflare.com" in src or "turnstile" in src:
-                    turnstile_type = "visible"
-                    break
-            else:
-                turnstile_type = "invisible"
-    except:
-        turnstile_type = "visible"
-    
+    turnstile_type = detect_turnstile_type(sb)
     print(f"[INFO] Turnstile 类型: {turnstile_type}")
     
     if turnstile_type == "none":
+        print("[INFO] 未检测到 Turnstile")
         return True
     
-    if turnstile_type == "visible":
-        click_captcha_with_timeout(sb, 20)
+    if turnstile_type in ("visible", "unknown"):
+        print("[INFO] 尝试 uc_gui_click_captcha (超时: 30s)...")
+        try:
+            # 使用 ThreadPoolExecutor 实现超时
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(sb.uc_gui_click_captcha)
+                try:
+                    future.result(timeout=30)  # 30秒超时
+                    print("[INFO] ✅ 已点击验证")
+                except FuturesTimeoutError:
+                    print("[WARN] ⚠️ uc_gui_click_captcha 超时，继续等待...")
+        except Exception as e:
+            print(f"[WARN] uc_gui_click_captcha 失败: {e}")
         time.sleep(3)
+    else:
+        print("[INFO] Invisible Turnstile - 等待自动验证...")
     
     result = wait_turnstile_complete(sb, 45)
     return result in ("token", "closed")
 
-def login(sb, user, pwd, idx):
-    print(f"\n{'='*50}\n[INFO] 账号 {idx}: 登录 {mask(user)}\n{'='*50}")
+def login(sb, user: str, pwd: str, idx: int) -> Tuple[bool, Optional[str]]:
+    user_masked = mask(user)
+    print(f"\n{'='*50}\n[INFO] 账号 {idx}: 登录 {user_masked}\n{'='*50}")
     last_shot = None
     
     for attempt in range(3):
         try:
-            print(f"[INFO] 打开登录页 (尝试 {attempt+1}/3)...")
-            sb.uc_open_with_reconnect(AUTH_URL, reconnect_time=8)
-            time.sleep(4)
+            print(f"[INFO] 打开登录页 (尝试 {attempt + 1}/3)...")
+            sb.uc_open_with_reconnect(AUTH_URL, reconnect_time=10.0)
+            time.sleep(5)
             
             if "dash.zampto.net" in sb.get_current_url():
                 print("[INFO] ✅ 已登录")
                 return True, None
             
-            last_shot = shot(idx, f"login-{attempt}")
+            last_shot = shot(idx, f"01-login-{attempt}")
             sb.save_screenshot(last_shot)
             
             for _ in range(10):
-                if 'identifier' in sb.get_page_source(): break
+                if 'identifier' in sb.get_page_source():
+                    break
                 time.sleep(2)
             
             for sel in ['input[name="identifier"]', 'input[type="email"]', 'input[type="text"]']:
                 try:
                     sb.wait_for_element(sel, timeout=5)
+                    print(f"[INFO] 找到输入框: {sel}")
                     sb.type(sel, user)
-                    print(f"[INFO] 输入用户名")
                     break
-                except: continue
+                except:
+                    continue
             else:
-                if attempt < 2: continue
+                if attempt < 2:
+                    time.sleep(5)
+                    continue
                 return False, last_shot
             
             time.sleep(1)
@@ -185,9 +229,10 @@ def login(sb, user, pwd, idx):
                     try:
                         if sb.is_element_visible(sel):
                             sb.type(sel, pwd)
-                            print("[INFO] 输入密码")
+                            print("[INFO] 已输入密码")
                             break
-                    except: continue
+                    except:
+                        continue
                 else:
                     time.sleep(1)
                     continue
@@ -198,16 +243,17 @@ def login(sb, user, pwd, idx):
             except: sb.click('button')
             time.sleep(6)
             
-            last_shot = shot(idx, "result")
+            last_shot = shot(idx, "02-result")
             sb.save_screenshot(last_shot)
             
             if "dash.zampto.net" in sb.get_current_url() or "sign-in" not in sb.get_current_url():
                 print("[INFO] ✅ 登录成功")
                 return True, last_shot
-                
+            
         except Exception as e:
-            print(f"[WARN] 尝试 {attempt+1} 异常: {e}")
-            if attempt < 2: time.sleep(5)
+            print(f"[WARN] 尝试 {attempt + 1} 异常: {e}")
+            if attempt < 2:
+                time.sleep(5)
     
     return False, last_shot
 
@@ -215,176 +261,135 @@ def logout(sb):
     try:
         sb.delete_all_cookies()
         sb.open("about:blank")
+        time.sleep(1)
         print("[INFO] 已退出登录")
     except: pass
 
-def get_servers(sb, idx):
+def get_servers(sb, idx: int) -> Tuple[List[Dict[str, str]], str, Optional[str]]:
     print("[INFO] 获取服务器列表...")
-    servers, seen = [], set()
+    servers, seen_ids = [], set()
     
     sb.open(DASHBOARD_URL)
     time.sleep(5)
-    screenshot = shot(idx, "dashboard")
+    screenshot = shot(idx, "03-dashboard")
     sb.save_screenshot(screenshot)
     
     src = sb.get_page_source()
-    if "Access Blocked" in src or "VPN or Proxy" in src:
+    if "Access Blocked" in src or "VPN or Proxy Detected" in src:
         return [], "⚠️ 访问被阻止", screenshot
     
-    for url in [DASHBOARD_URL, OVERVIEW_URL]:
-        if url != DASHBOARD_URL:
-            sb.open(url)
+    for page_url in [DASHBOARD_URL, OVERVIEW_URL]:
+        if page_url != DASHBOARD_URL:
+            sb.open(page_url)
             time.sleep(3)
         for sid in re.findall(r'/server\?id=(\d+)', sb.get_page_source()):
-            if sid not in seen:
-                seen.add(sid)
-                servers.append({"id": sid})
+            if sid not in seen_ids:
+                seen_ids.add(sid)
+                servers.append({"id": sid, "name": f"Server {sid}"})
     
     if not servers:
         return [], "⚠️ 未找到服务器", screenshot
     
     print(f"[INFO] 找到 {len(servers)} 个服务器")
+    for s in servers:
+        print(f"  - ID: {mask_id(s['id'])}")
     return servers, "", screenshot
 
-def renew(sb, sid, idx, username):
-    """续期服务器"""
+def renew(sb, sid: str, idx: int, username: str) -> Dict[str, Any]:
+    sid_masked = mask_id(sid)
     result = {"server_id": sid, "success": False, "message": "", "screenshot": None, "expiry_cn": ""}
     
-    print(f"\n[INFO] 续期服务器 {mask_id(sid)}...")
+    print(f"\n[INFO] 续期服务器 {sid_masked}...")
     
     sb.open(SERVER_URL.format(sid))
     time.sleep(4)
     
-    # 滚动页面
-    sb.scroll_to_bottom()
-    time.sleep(1)
-    sb.scroll_to_top()
-    time.sleep(1)
-    
-    console_shot = shot(idx, "console")
+    console_shot = shot(idx, "srv-console")
     sb.save_screenshot(console_shot)
     result["screenshot"] = console_shot
     
-    src = sb.get_page_source()
-    if "Access Blocked" in src:
+    if "Access Blocked" in sb.get_page_source():
         result["message"] = "⚠️ 访问被阻止"
         notify(False, username, result["message"], console_shot)
         return result
     
-    # 获取续期前时间
-    old_renewal = js_get_element_text(sb, "lastRenewalTime")
-    print(f"[INFO] 续期前: {old_renewal or '(空)'}")
-    
-    # 滚动到中间位置
-    sb.scroll_to_y(600)
-    time.sleep(1)
-    sb.save_screenshot(shot(idx, "scroll"))
-    
-    # 查找并点击续期按钮
-    clicked = False
-    
-    # 方法1: 通过 onclick 属性查找
+    old_renewal = ""
     try:
-        links = sb.find_elements(f'a[onclick*="handleServerRenewal"]')
-        for link in links:
-            onclick = link.get_attribute("onclick") or ""
-            if sid in onclick:
-                link.click()
-                clicked = True
-                print("[INFO] 通过 onclick 找到按钮")
-                break
+        old_renewal = sb.execute_script('var el = document.getElementById("lastRenewalTime"); return el ? el.textContent.trim() : "";') or ""
+    except: pass
+    print(f"[INFO] 续期前: {old_renewal}")
+    
+    # 点击续期按钮
+    try:
+        clicked = sb.execute_script('''
+            (function() {
+                var links = document.querySelectorAll('a[onclick*="handleServerRenewal"]');
+                for (var i = 0; i < links.length; i++) {
+                    if (links[i].getAttribute('onclick').includes("''' + sid + '''")) {
+                        links[i].click();
+                        return true;
+                    }
+                }
+                var btns = document.querySelectorAll('a.action-button, button');
+                for (var i = 0; i < btns.length; i++) {
+                    if (btns[i].textContent.toLowerCase().includes('renew')) {
+                        btns[i].click();
+                        return true;
+                    }
+                }
+                return false;
+            })()
+        ''')
+        if not clicked:
+            result["message"] = "⚠️ 未找到续期按钮"
+            notify(False, username, f"{sid_masked}: {result['message']}", console_shot)
+            return result
     except Exception as e:
-        print(f"[DEBUG] 方法1失败: {e}")
-    
-    # 方法2: 通过文本查找
-    if not clicked:
-        try:
-            elements = sb.find_elements("a, button")
-            for el in elements:
-                text = (el.text or "").lower()
-                if "renew" in text and len(text) < 30:
-                    el.click()
-                    clicked = True
-                    print(f"[INFO] 通过文本找到按钮: {text}")
-                    break
-        except Exception as e:
-            print(f"[DEBUG] 方法2失败: {e}")
-    
-    # 方法3: 通过 CSS 选择器
-    if not clicked:
-        try:
-            for sel in ['a.action-button', 'button.btn-renew', '.renew-btn', '[class*="renew"]']:
-                try:
-                    btns = sb.find_elements(sel)
-                    for btn in btns:
-                        if "renew" in (btn.text or "").lower():
-                            btn.click()
-                            clicked = True
-                            print(f"[INFO] 通过选择器 {sel} 找到按钮")
-                            break
-                except: continue
-                if clicked: break
-        except Exception as e:
-            print(f"[DEBUG] 方法3失败: {e}")
-    
-    if not clicked:
-        # 打印页面上所有按钮和链接的信息
-        try:
-            elements = sb.find_elements("a, button")
-            print(f"[DEBUG] 页面上找到 {len(elements)} 个链接/按钮:")
-            for i, el in enumerate(elements[:20]):
-                text = (el.text or "").strip()[:30]
-                onclick = (el.get_attribute("onclick") or "")[:50]
-                href = (el.get_attribute("href") or "")[:50]
-                if text or onclick:
-                    print(f"  [{i}] text='{text}' onclick='{onclick}' href='{href}'")
-        except: pass
-        
-        result["message"] = "⚠️ 未找到续期按钮"
-        notify(False, username, f"{mask_id(sid)}: {result['message']}", console_shot)
+        result["message"] = f"⚠️ 点击失败: {e}"
         return result
     
     print("[INFO] 已点击续期按钮")
     time.sleep(2)
-    sb.save_screenshot(shot(idx, "modal"))
+    sb.save_screenshot(shot(idx, "srv-modal"))
     
-    # 处理 Turnstile
     handle_turnstile(sb, idx)
     time.sleep(3)
     
-    # 刷新获取新时间
     sb.open(SERVER_URL.format(sid))
-    time.sleep(4)
+    time.sleep(3)
     
-    new_renewal = js_get_element_text(sb, "lastRenewalTime")
-    remain = js_get_element_text(sb, "nextRenewalTime")
+    new_renewal = ""
+    remain = ""
+    try:
+        new_renewal = sb.execute_script('var el = document.getElementById("lastRenewalTime"); return el ? el.textContent.trim() : "";') or ""
+        remain = sb.execute_script('var el = document.getElementById("nextRenewalTime"); return el ? el.textContent.trim() : "";') or ""
+    except: pass
     
     result["expiry_cn"] = calc_expiry_time(new_renewal)
-    print(f"[INFO] 续期后: {new_renewal or '(空)'}, 剩余: {remain or '(空)'}")
+    print(f"[INFO] 续期后: {new_renewal}, 剩余: {remain}")
     
-    # 判断成功
     today = datetime.now().strftime('%b %d, %Y')
     if new_renewal and new_renewal != old_renewal:
         result["success"] = True
-        result["message"] = f"到期: {result['expiry_cn']}"
+        result["message"] = f"续期成功！到期: {result['expiry_cn']}"
     elif today in str(new_renewal):
         result["success"] = True
         result["message"] = f"今日已续期，到期: {result['expiry_cn']}"
     elif remain and ("day" in remain or "hour" in remain):
         result["success"] = True
-        result["message"] = f"到期: {result['expiry_cn']}"
+        result["message"] = f"续期成功！到期: {result['expiry_cn']}"
     else:
         result["message"] = f"⚠️ 状态未知"
     
-    final_shot = shot(idx, "result")
+    final_shot = shot(idx, "srv-result")
     sb.save_screenshot(final_shot)
     result["screenshot"] = final_shot
     
-    notify(result["success"], username, f"{mask_id(sid)}: {result['message']}", final_shot)
+    notify(result["success"], username, f"{sid_masked}: {result['message']}", final_shot)
     print(f"[INFO] {'✅' if result['success'] else '⚠️'} {result['message']}")
     return result
 
-def process(sb, user, pwd, idx):
+def process(sb, user: str, pwd: str, idx: int) -> Dict[str, Any]:
     result = {"username": user, "success": False, "message": "", "servers": []}
     
     login_ok, login_shot = login(sb, user, pwd, idx)
@@ -393,16 +398,17 @@ def process(sb, user, pwd, idx):
         notify(False, user, "⚠️ 登录失败", login_shot)
         return result
     
-    servers, error, dash_shot = get_servers(sb, idx)
+    servers, error, dashboard_shot = get_servers(sb, idx)
     if error:
         result["message"] = error
-        notify(False, user, error, dash_shot)
+        notify(False, user, error, dashboard_shot)
         logout(sb)
         return result
     
     for srv in servers:
         try:
             r = renew(sb, srv["id"], idx, user)
+            r["name"] = srv.get("name", srv["id"])
             result["servers"].append(r)
             time.sleep(3)
         except Exception as e:
@@ -435,30 +441,31 @@ def main():
         except Exception as e:
             print(f"[WARN] 代理测试失败: {e}")
     
+    display = setup_display()
     results = []
-    sb_args = {"uc": True, "locale": "en"}
-    
-    if is_linux():
-        sb_args["xvfb"] = True
-        sb_args["headed"] = False
-        print("[INFO] Linux: xvfb + headless")
-    
-    if proxy:
-        sb_args["proxy"] = proxy
-        print("[INFO] 使用代理")
     
     try:
-        with SB(**sb_args) as sb:
+        opts = {"uc": True, "test": True, "locale": "en", "headed": not is_linux()}
+        if proxy:
+            opts["proxy"] = proxy
+            print("[INFO] 使用代理模式")
+        
+        with SB(**opts) as sb:
             for i, (u, p) in enumerate(accounts, 1):
                 try:
                     r = process(sb, u, p, i)
                     results.append(r)
+                    time.sleep(3)
                 except Exception as e:
                     print(f"[ERROR] 账号 {mask(u)} 异常: {e}")
                     results.append({"username": u, "success": False, "message": str(e), "servers": []})
+                    
     except Exception as e:
         print(f"[ERROR] 脚本异常: {e}")
         sys.exit(1)
+    finally:
+        if display:
+            display.stop()
     
     ok_acc = sum(1 for r in results if r.get("success"))
     total_srv = sum(len(r.get("servers", [])) for r in results)
@@ -468,6 +475,8 @@ def main():
     print(f"📊 账号: {ok_acc}/{len(results)} | 服务器: {ok_srv}/{total_srv}")
     for r in results:
         print(f"{'✅' if r.get('success') else '❌'} {mask(r['username'])}: {r.get('message','')}")
+        for s in r.get("servers", []):
+            print(f"  {'✓' if s.get('success') else '✗'} {mask_id(s['server_id'])}: {s.get('message','')}")
     print(f"{'='*50}")
     
     sys.exit(0 if ok_srv > 0 else 1)
