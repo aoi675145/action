@@ -1,8 +1,6 @@
 name: Billing Kerit 重启
 
 on:
-  schedule:
-    - cron: '0 */6 * * *'  # 每6小时运行一次
   workflow_dispatch:
     inputs:
       account_name:
@@ -23,7 +21,7 @@ jobs:
   restart:
     name: 重启服务器
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
 
     steps:
       - name: 拉取代码仓库
@@ -37,7 +35,8 @@ jobs:
       - name: 安装依赖
         run: |
           pip install --upgrade pip
-          pip install requests
+          pip install playwright requests
+          playwright install chromium
 
       - name: 执行重启脚本
         env:
@@ -46,7 +45,15 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ACCOUNT_NAME: ${{ github.event.inputs.account_name }}
         run: |
-          python scripts/BillingKerit/BillingKerit_Restart.py
+          python scripts/Kerit/kerit_restart.py
+
+      - name: 上传截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ github.run_number }}
+          path: output/screenshots/
+          retention-days: 3
 
       - name: 清理工作流记录
         if: always()
