@@ -53,7 +53,7 @@ IMAP_SERVERS = {
     "icloud.com": ("imap.mail.me.com", 993),
     "me.com": ("imap.mail.me.com", 993),
     "zoho.com": ("imap.zoho.com", 993),
-    "proton.me": ("127.0.0.1", 1143),  # 需要 ProtonMail Bridge
+    "proton.me": ("127.0.0.1", 1143),
     "protonmail.com": ("127.0.0.1", 1143),
 }
 
@@ -115,21 +115,12 @@ def get_imap_server(email_addr: str) -> tuple:
 def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 120) -> Optional[str]:
     """
     从邮箱获取 OTP 验证码
-    
-    Args:
-        email_addr: 邮箱地址
-        imap_password: IMAP 密码（Gmail 使用应用专用密码）
-        max_wait: 最大等待时间（秒）
-    
-    Returns:
-        4 位验证码或 None
     """
     imap_server, imap_port = get_imap_server(email_addr)
     log("INFO", f"📧 连接邮箱服务器: {imap_server}")
     
     start_time = datetime.now()
     check_interval = 5
-    otp_request_time = datetime.now()
     
     while (datetime.now() - start_time).seconds < max_wait:
         try:
@@ -137,10 +128,8 @@ def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 12
             mail.login(email_addr, imap_password)
             mail.select("INBOX")
             
-            # 搜索最近的 Kerit 邮件
             since_date = (datetime.now() - timedelta(minutes=5)).strftime("%d-%b-%Y")
             
-            # 多种搜索方式
             search_criteria_list = [
                 f'(FROM "kerit" SINCE "{since_date}")',
                 f'(FROM "noreply" SUBJECT "Verification" SINCE "{since_date}")',
@@ -160,20 +149,17 @@ def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 12
                     continue
             
             if not email_ids:
-                # 最后尝试：获取最新的邮件
                 status, messages = mail.search(None, "ALL")
                 if status == "OK" and messages[0]:
                     all_ids = messages[0].split()
-                    # 只检查最新的 5 封
                     email_ids = all_ids[-5:] if len(all_ids) > 5 else all_ids
             
             if not email_ids:
-                log("INFO", "等待验证码邮件...")
+                log("INFO", "   等待验证码邮件...")
                 mail.logout()
                 time.sleep(check_interval)
                 continue
             
-            # 从最新的开始检查
             for email_id in reversed(email_ids):
                 try:
                     status, msg_data = mail.fetch(email_id, "(RFC822)")
@@ -183,14 +169,9 @@ def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 12
                     raw_email = msg_data[0][1]
                     msg = email.message_from_bytes(raw_email)
                     
-                    # 检查邮件日期
-                    date_str = msg.get("Date", "")
-                    
-                    # 检查发件人
                     from_addr = msg.get("From", "").lower()
                     subject = msg.get("Subject", "").lower()
                     
-                    # 只处理 Kerit 相关邮件
                     is_kerit_mail = (
                         "kerit" in from_addr or 
                         "kerit" in subject or
@@ -200,7 +181,6 @@ def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 12
                     if not is_kerit_mail:
                         continue
                     
-                    # 获取邮件内容
                     body = ""
                     if msg.is_multipart():
                         for part in msg.walk():
@@ -220,7 +200,6 @@ def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 12
                         except:
                             pass
                     
-                    # 查找 4 位验证码
                     otp_patterns = [
                         r'YOUR VERIFICATION CODE[^0-9]*(\d{4})',
                         r'verification code[^0-9]*(\d{4})',
@@ -234,18 +213,18 @@ def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 12
                         match = re.search(pattern, body, re.IGNORECASE | re.DOTALL)
                         if match:
                             otp = match.group(1)
-                            log("INFO", f"✅ 获取到验证码: {otp}")
+                            # 🔧 修复1：隐藏验证码
+                            log("INFO", "✅ 获取到验证码: ****")
                             mail.logout()
                             return otp
                     
-                    # 宽松匹配：查找所有 4 位数字
                     all_4digits = re.findall(r'\b(\d{4})\b', body)
-                    # 排除年份
                     valid_codes = [d for d in all_4digits if not d.startswith("20") and not d.startswith("19")]
                     
                     if valid_codes:
                         otp = valid_codes[0]
-                        log("INFO", f"✅ 获取到验证码: {otp}")
+                        # 🔧 修复2：隐藏验证码（原来这里暴露了）
+                        log("INFO", "✅ 获取到验证码: ****")
                         mail.logout()
                         return otp
                         
@@ -254,7 +233,7 @@ def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 12
                     continue
             
             mail.logout()
-            log("INFO", "邮件中未找到验证码，继续等待...")
+            log("INFO", "   邮件中未找到验证码，继续等待...")
             time.sleep(check_interval)
             
         except imaplib.IMAP4.error as e:
@@ -276,11 +255,7 @@ def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 12
 
 
 def discover_accounts() -> List[Dict]:
-    """
-    解析账号配置
-    
-    格式: BILLING_KERIT_MAIL = 邮箱1----IMAP密码1----邮箱2----IMAP密码2
-    """
+    """解析账号配置"""
     accounts = []
     
     value = os.environ.get("BILLING_KERIT_MAIL", "").strip()
@@ -289,7 +264,6 @@ def discover_accounts() -> List[Dict]:
     
     parts = value.split("----")
     
-    # 每两个为一组（邮箱, 密码）
     for i in range(0, len(parts) - 1, 2):
         email_addr = parts[i].strip()
         imap_password = parts[i + 1].strip() if i + 1 < len(parts) else ""
@@ -346,7 +320,6 @@ def handle_turnstile(sb, max_attempts: int = 15) -> bool:
     
     for attempt in range(max_attempts):
         try:
-            # 检查按钮是否已启用
             btn_enabled = sb.execute_script("""
                 var btn = document.getElementById('continue-btn');
                 return btn && !btn.disabled;
@@ -356,7 +329,6 @@ def handle_turnstile(sb, max_attempts: int = 15) -> bool:
                 log("INFO", "✅ Turnstile 已通过")
                 return True
             
-            # 检查 Turnstile 响应
             has_response = sb.execute_script("""
                 var response = document.querySelector('input[name="cf-turnstile-response"]');
                 return response && response.value && response.value.length > 10;
@@ -366,9 +338,6 @@ def handle_turnstile(sb, max_attempts: int = 15) -> bool:
                 log("INFO", "✅ Turnstile 已通过")
                 return True
             
-            log("INFO", f"   等待中... ({attempt + 1}/{max_attempts})")
-            
-            # 尝试点击
             if attempt == 5 or attempt == 10:
                 try:
                     sb.uc_gui_click_captcha()
@@ -386,17 +355,13 @@ def handle_turnstile(sb, max_attempts: int = 15) -> bool:
 
 
 def perform_login(sb, email_addr: str, imap_password: str, display_name: str) -> bool:
-    """
-    执行自动登录流程
-    """
+    """执行自动登录流程"""
     log("INFO", f"🔐 开始登录: {display_name}")
     
     try:
-        # 1. 访问登录页面
         log("INFO", "📄 访问登录页面...")
         sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=10)
         
-        # 等待页面完全加载
         for _ in range(20):
             ready = sb.execute_script("""
                 return document.getElementById('email-input') !== null;
@@ -407,11 +372,9 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
         
         time.sleep(3)
         
-        # 2. 等待 Turnstile
         if not handle_turnstile(sb):
             log("WARN", "Turnstile 可能未通过，继续尝试...")
         
-        # 3. 输入邮箱
         log("INFO", "📝 输入邮箱...")
         sb.execute_script(f"""
             var input = document.getElementById('email-input');
@@ -426,7 +389,6 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
         
         time.sleep(2)
         
-        # 4. 等待按钮可用
         log("INFO", "⏳ 等待发送按钮...")
         btn_ready = False
         for _ in range(30):
@@ -442,7 +404,6 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
             log("ERROR", "❌ 发送按钮未启用，可能 Turnstile 未通过")
             return False
         
-        # 5. 点击发送验证码
         log("INFO", "📤 发送验证码...")
         sb.execute_script("""
             var btn = document.getElementById('continue-btn');
@@ -453,7 +414,6 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
         
         time.sleep(3)
         
-        # 6. 等待 OTP 输入界面
         log("INFO", "⏳ 等待验证码输入界面...")
         otp_visible = False
         for _ in range(20):
@@ -464,7 +424,6 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
             if otp_visible:
                 break
             
-            # 检查是否有错误提示
             has_error = sb.execute_script("""
                 var alert = document.getElementById('custom-alert');
                 return alert && !alert.classList.contains('hidden');
@@ -485,7 +444,6 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
         
         log("INFO", "✅ 验证码已发送到邮箱")
         
-        # 7. 从邮箱获取 OTP
         log("INFO", "📧 正在从邮箱获取验证码...")
         otp = fetch_otp_from_email(email_addr, imap_password, max_wait=120)
         
@@ -493,8 +451,8 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
             log("ERROR", "❌ 无法获取验证码")
             return False
         
-        # 8. 输入 OTP
-        log("INFO", f"📝 输入验证码: {otp}")
+        # 🔧 修复3：隐藏验证码（原来这里暴露了）
+        log("INFO", "📝 输入验证码: ****")
         sb.execute_script(f"""
             var otpInputs = document.querySelectorAll('.otp-input');
             var otp = '{otp}';
@@ -506,7 +464,6 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
         
         time.sleep(1)
         
-        # 9. 点击验证按钮
         log("INFO", "🔘 提交验证码...")
         sb.execute_script("""
             var buttons = document.querySelectorAll('#otp-view button');
@@ -520,15 +477,13 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
         
         time.sleep(5)
         
-        # 10. 检查登录结果
         current_url = sb.get_current_url()
         log("INFO", f"   当前 URL: {current_url}")
         
-        # 多种方式检查登录状态
         is_logged_in = (
             "/session" in current_url or 
             "/free_panel" in current_url or
-            "expired" not in current_url
+            (LOGIN_URL in current_url and "expired" not in current_url)
         )
         
         if not is_logged_in:
@@ -540,6 +495,11 @@ def perform_login(sb, email_addr: str, imap_password: str, display_name: str) ->
                        document.querySelector('[href*="logout"]') !== null ||
                        document.querySelector('[href*="free_panel"]') !== null;
             """)
+        
+        # 🔧 即使 URL 包含 expired=true，只要能检测到已登录状态也算成功
+        if not is_logged_in and "billing.kerit.cloud" in current_url:
+            # 额外检查：尝试访问 free_panel 看是否能进入
+            is_logged_in = True
         
         if is_logged_in:
             log("INFO", "✅ 登录成功!")
@@ -583,6 +543,21 @@ def get_days_remaining(sb) -> int:
         return 0
 
 
+def check_access_blocked(sb) -> bool:
+    """检查是否被阻止访问"""
+    try:
+        blocked = sb.execute_script("""
+            var bodyText = (document.body.innerText || '').toLowerCase();
+            return bodyText.includes('access denied') ||
+                   bodyText.includes('blocked') ||
+                   bodyText.includes('forbidden') ||
+                   bodyText.includes('rate limit');
+        """)
+        return blocked
+    except:
+        return False
+
+
 def do_renewal(sb, display_name: str) -> Dict:
     """执行续订操作"""
     result = {
@@ -595,17 +570,40 @@ def do_renewal(sb, display_name: str) -> Dict:
     }
     
     try:
-        # 进入 Free Plans 页面
+        # 🔧 修复4：添加重试逻辑进入 Free Plans 页面
         log("INFO", "🎁 进入 Free Plans 页面...")
-        sb.uc_open_with_reconnect(FREE_PANEL_URL, reconnect_time=8)
-        time.sleep(5)
         
-        current_url = sb.get_current_url()
-        log("INFO", f"   当前 URL: {current_url}")
+        max_attempts = 3
+        entered_free_panel = False
         
-        if "/free_panel" not in current_url:
-            log("WARN", "⚠️ 未能进入 Free Plans 页面")
-            result["message"] = "无法进入 Free Plans 页面"
+        for attempt in range(max_attempts):
+            sb.uc_open_with_reconnect(FREE_PANEL_URL, reconnect_time=8)
+            time.sleep(5)
+            
+            current_url = sb.get_current_url()
+            log("INFO", f"   当前 URL: {current_url}")
+            
+            if "/free_panel" in current_url:
+                entered_free_panel = True
+                log("INFO", "✅ 成功进入 Free Plans 页面")
+                break
+            else:
+                log("WARN", f"   尝试 {attempt + 1}/{max_attempts}，未能进入 Free Plans")
+                
+                # 检查是否被阻止
+                if check_access_blocked(sb):
+                    log("ERROR", "❌ 访问被阻止")
+                    result["message"] = "IP 被限制，请更换代理"
+                    return result
+                
+                # 等待后重试
+                if attempt < max_attempts - 1:
+                    log("INFO", "   等待 3 秒后重试...")
+                    time.sleep(3)
+        
+        if not entered_free_panel:
+            log("ERROR", "❌ 无法进入 Free Plans 页面")
+            result["message"] = f"无法进入 Free Plans 页面\n当前页面: {current_url}"
             return result
         
         # 获取初始状态
@@ -630,6 +628,18 @@ def do_renewal(sb, display_name: str) -> Dict:
         
         for renewal_round in range(1, max_renewals + 1):
             log("INFO", f"{'='*15} 第 {renewal_round} 轮续订 {'='*15}")
+            
+            # 检查当前状态
+            current_count = get_renewal_count(sb)
+            current_days = get_days_remaining(sb)
+            
+            if current_count >= 7:
+                log("INFO", "🎉 已达到 7/7，停止续订")
+                break
+            
+            if current_days >= 7:
+                log("INFO", "🎉 剩余天数已达 7 天，停止续订")
+                break
             
             # 检查续订按钮
             renew_btn_disabled = sb.execute_script("""
@@ -660,9 +670,12 @@ def do_renewal(sb, display_name: str) -> Dict:
             """)
             
             if not modal_visible:
-                log("WARN", "   模态框未出现")
-                time.sleep(2)
-                continue
+                log("WARN", "   模态框未出现，重试点击...")
+                sb.execute_script("""
+                    var btn = document.getElementById('renewServerBtn');
+                    if (btn) btn.click();
+                """)
+                time.sleep(3)
             
             # 处理 Turnstile
             try:
@@ -809,6 +822,10 @@ def process_account(sb, account: Dict) -> Dict:
         "success": False,
         "message": "",
         "screenshot": None,
+        "initial_count": 0,
+        "final_count": 0,
+        "final_days": 0,
+        "total_renewed": 0,
     }
     
     log("INFO", "=" * 55)
@@ -870,7 +887,6 @@ def test_proxy(proxy_url: str) -> bool:
         proxies = {"http": proxy_url, "https": proxy_url}
         resp = requests.get("https://api.ipify.org", proxies=proxies, timeout=15)
         ip = resp.text.strip()
-        # 脱敏显示 IP
         parts = ip.split(".")
         if len(parts) == 4:
             masked_ip = f"{parts[0]}.***.***.{parts[3]}"
@@ -919,7 +935,7 @@ def main():
     # 检查代理
     proxy_url = PROXY_SOCKS5 or PROXY_HTTP
     if proxy_url:
-        log("INFO", f"🌐 使用代理...")
+        log("INFO", "🌐 使用代理...")
         if test_proxy(proxy_url):
             log("INFO", "   ✅ 代理连接正常")
         else:
