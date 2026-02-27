@@ -10,777 +10,489 @@ BILLING_KERIT_MAIL = 邮箱1----IMAP密码1----邮箱2----IMAP密码2----邮箱3
 - 需要在邮箱设置中开启 IMAP 访问
 """
 
-import os
-import sys
-import re
-import time
-import imaplib
-import email
-import requests
+import os, sys, time, platform, requests, re, imaplib, email
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
-from datetime import datetime, timedelta
-from typing import Optional, Dict, List
-
+from typing import Dict, Any, List, Tuple, Optional
 from seleniumbase import SB
 
 # ============== 配置 ==============
-FREE_PANEL_URL = "https://billing.kerit.cloud/free_panel"
-SESSION_URL = "https://billing.kerit.cloud/session"
-LOGIN_URL = "https://billing.kerit.cloud/"
-BASE_DOMAIN = "billing.kerit.cloud"
+BASE_URL = "https://billing.kerit.cloud"
+LOGIN_URL = f"{BASE_URL}/"
+SESSION_URL = f"{BASE_URL}/session"
+FREE_PANEL_URL = f"{BASE_URL}/free_panel"
 
-TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "")
-TG_CHAT_ID = os.environ.get("TG_CHAT_ID", "")
+OUTPUT_DIR = Path("output/screenshots")
+OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-PROXY_SOCKS5 = os.environ.get("PROXY_SOCKS5", "")
-PROXY_HTTP = os.environ.get("PROXY_HTTP", "")
+CN_TZ = timezone(timedelta(hours=8))
 
-SCREENSHOT_DIR = Path("output/screenshots")
-SCREENSHOT_DIR.mkdir(parents=True, exist_ok=True)
+# ============== 工具函数 ==============
+def cn_now() -> datetime:
+    return datetime.now(CN_TZ)
 
-# ============== IMAP 服务器配置 ==============
-IMAP_SERVERS = {
-    "gmail.com": ("imap.gmail.com", 993),
-    "googlemail.com": ("imap.gmail.com", 993),
-    "outlook.com": ("imap-mail.outlook.com", 993),
-    "hotmail.com": ("imap-mail.outlook.com", 993),
-    "live.com": ("imap-mail.outlook.com", 993),
-    "yahoo.com": ("imap.mail.yahoo.com", 993),
-    "163.com": ("imap.163.com", 993),
-    "126.com": ("imap.126.com", 993),
-    "qq.com": ("imap.qq.com", 993),
-    "foxmail.com": ("imap.qq.com", 993),
-    "icloud.com": ("imap.mail.me.com", 993),
-    "me.com": ("imap.mail.me.com", 993),
-    "zoho.com": ("imap.zoho.com", 993),
-    "proton.me": ("127.0.0.1", 1143),
-    "protonmail.com": ("127.0.0.1", 1143),
-}
+def cn_time_str(fmt: str = "%Y-%m-%d %H:%M:%S") -> str:
+    return cn_now().strftime(fmt)
 
-# ============== 隐私设置 ==============
-HIDE_ACCOUNT_IN_LOG = True
-HIDE_ACCOUNT_IN_TG = False
+def log(level: str, msg: str):
+    print(f"[{cn_time_str()}] [{level}] {msg}")
 
-
-def log(level: str, message: str):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    print(f"[{timestamp}] [{level}] {message}")
-
-
-def mask(s: str) -> str:
-    if not s or len(s) <= 4:
-        return "****"
-    return f"{s[:2]}***{s[-2:]}"
-
+def mask(s: str, show: int = 3) -> str:
+    if not s: return "***"
+    s = str(s)
+    if len(s) <= show: return s[0] + "***"
+    return s[:show] + "***"
 
 def mask_email(email_addr: str) -> str:
     if not email_addr or "@" not in email_addr:
-        return mask(email_addr)
-    local, domain = email_addr.rsplit("@", 1)
-    if len(local) <= 4:
-        masked_local = local[0] + "***"
-    else:
-        masked_local = local[:2] + "***" + local[-2:]
-    return f"{masked_local}@{domain}"
+        return "***@***"
+    local, domain = email_addr.split("@", 1)
+    return f"{mask(local, 2)}@{domain}"
 
+def is_linux(): 
+    return platform.system().lower() == "linux"
 
-def get_display_name(account: Dict, for_telegram: bool = False) -> str:
-    index = account.get("index", 0)
-    email_addr = account.get("email", f"账号{index}")
-    
-    if for_telegram:
-        if HIDE_ACCOUNT_IN_TG:
-            return f"[账号{index}]"
-        else:
-            return email_addr
-    else:
-        if HIDE_ACCOUNT_IN_LOG:
-            return f"[账号{index}]"
-        else:
-            return mask_email(email_addr)
-
-
-def screenshot_path(name: str) -> str:
-    safe_name = "".join(c if c.isalnum() or c in "-_" else "_" for c in name)
-    timestamp = datetime.now().strftime("%H%M%S")
-    return str(SCREENSHOT_DIR / f"{timestamp}-{safe_name}.png")
-
-
-def get_imap_server(email_addr: str) -> tuple:
-    """根据邮箱获取 IMAP 服务器"""
-    domain = email_addr.split("@")[-1].lower()
-    return IMAP_SERVERS.get(domain, (f"imap.{domain}", 993))
-
-
-def fetch_otp_from_email(email_addr: str, imap_password: str, max_wait: int = 120) -> Optional[str]:
-    """
-    从邮箱获取 OTP 验证码
-    """
-    imap_server, imap_port = get_imap_server(email_addr)
-    log("INFO", f"📧 连接邮箱服务器: {imap_server}")
-    
-    start_time = datetime.now()
-    check_interval = 5
-    
-    while (datetime.now() - start_time).seconds < max_wait:
+def setup_display():
+    if is_linux() and not os.environ.get("DISPLAY"):
         try:
-            mail = imaplib.IMAP4_SSL(imap_server, imap_port)
-            mail.login(email_addr, imap_password)
-            mail.select("INBOX")
-            
-            since_date = (datetime.now() - timedelta(minutes=5)).strftime("%d-%b-%Y")
-            
-            search_criteria_list = [
-                f'(FROM "kerit" SINCE "{since_date}")',
-                f'(FROM "noreply" SUBJECT "Verification" SINCE "{since_date}")',
-                f'(SUBJECT "Kerit" SINCE "{since_date}")',
-                f'(SUBJECT "Verification Code" SINCE "{since_date}")',
-            ]
-            
-            email_ids = []
-            for criteria in search_criteria_list:
-                try:
-                    status, messages = mail.search(None, criteria)
-                    if status == "OK" and messages[0]:
-                        email_ids = messages[0].split()
-                        if email_ids:
-                            break
-                except:
-                    continue
-            
-            if not email_ids:
-                status, messages = mail.search(None, "ALL")
-                if status == "OK" and messages[0]:
-                    all_ids = messages[0].split()
-                    email_ids = all_ids[-5:] if len(all_ids) > 5 else all_ids
-            
-            if not email_ids:
-                log("INFO", "   等待验证码邮件...")
-                mail.logout()
-                time.sleep(check_interval)
-                continue
-            
-            for email_id in reversed(email_ids):
-                try:
-                    status, msg_data = mail.fetch(email_id, "(RFC822)")
-                    if status != "OK":
-                        continue
-                    
-                    raw_email = msg_data[0][1]
-                    msg = email.message_from_bytes(raw_email)
-                    
-                    from_addr = msg.get("From", "").lower()
-                    subject = msg.get("Subject", "").lower()
-                    
-                    is_kerit_mail = (
-                        "kerit" in from_addr or 
-                        "kerit" in subject or
-                        "verification" in subject
-                    )
-                    
-                    if not is_kerit_mail:
-                        continue
-                    
-                    body = ""
-                    if msg.is_multipart():
-                        for part in msg.walk():
-                            content_type = part.get_content_type()
-                            if content_type in ["text/html", "text/plain"]:
-                                try:
-                                    payload = part.get_payload(decode=True)
-                                    charset = part.get_content_charset() or "utf-8"
-                                    body += payload.decode(charset, errors="ignore")
-                                except:
-                                    pass
-                    else:
-                        try:
-                            payload = msg.get_payload(decode=True)
-                            charset = msg.get_content_charset() or "utf-8"
-                            body = payload.decode(charset, errors="ignore")
-                        except:
-                            pass
-                    
-                    otp_patterns = [
-                        r'YOUR VERIFICATION CODE[^0-9]*(\d{4})',
-                        r'verification code[^0-9]*(\d{4})',
-                        r'letter-spacing[^>]*>[\s]*(\d{4})[\s]*<',
-                        r'>[\s]*(\d{4})[\s]*</div>',
-                        r'font-size:\s*36px[^>]*>[\s]*(\d{4})',
-                        r'code[^0-9]{0,20}(\d{4})',
-                    ]
-                    
-                    for pattern in otp_patterns:
-                        match = re.search(pattern, body, re.IGNORECASE | re.DOTALL)
-                        if match:
-                            otp = match.group(1)
-                            # 🔧 修复1：隐藏验证码
-                            log("INFO", "✅ 获取到验证码: ****")
-                            mail.logout()
-                            return otp
-                    
-                    all_4digits = re.findall(r'\b(\d{4})\b', body)
-                    valid_codes = [d for d in all_4digits if not d.startswith("20") and not d.startswith("19")]
-                    
-                    if valid_codes:
-                        otp = valid_codes[0]
-                        # 🔧 修复2：隐藏验证码（原来这里暴露了）
-                        log("INFO", "✅ 获取到验证码: ****")
-                        mail.logout()
-                        return otp
-                        
-                except Exception as e:
-                    log("WARN", f"解析邮件异常: {e}")
-                    continue
-            
-            mail.logout()
-            log("INFO", "   邮件中未找到验证码，继续等待...")
-            time.sleep(check_interval)
-            
-        except imaplib.IMAP4.error as e:
-            error_msg = str(e).lower()
-            if "authentication" in error_msg or "login" in error_msg:
-                log("ERROR", f"❌ IMAP 登录失败: {e}")
-                log("INFO", "💡 提示:")
-                log("INFO", "   - Gmail 需要使用「应用专用密码」")
-                log("INFO", "   - 需要在邮箱设置中开启 IMAP")
-                return None
-            log("WARN", f"IMAP 错误: {e}")
-            time.sleep(check_interval)
+            from pyvirtualdisplay import Display
+            d = Display(visible=False, size=(1920, 1080))
+            d.start()
+            os.environ["DISPLAY"] = d.new_display_var
+            log("INFO", "虚拟显示已启动")
+            return d
         except Exception as e:
-            log("WARN", f"读取邮件异常: {e}")
-            time.sleep(check_interval)
-    
-    log("ERROR", f"⏰ 等待验证码超时 ({max_wait}秒)")
+            log("ERROR", f"虚拟显示失败: {e}")
+            sys.exit(1)
     return None
 
+def shot(idx: int, name: str) -> str:
+    return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
-def discover_accounts() -> List[Dict]:
-    """解析账号配置"""
+# ============== 通知函数 ==============
+def notify(ok: bool, account: str, info: str, img: str = None):
+    """发送 Telegram 通知（带截图）"""
+    token = os.environ.get("TG_BOT_TOKEN")
+    chat = os.environ.get("TG_CHAT_ID")
+    if not token or not chat:
+        return
+    
+    try:
+        icon = "✅" if ok else "❌"
+        result = "续订成功" if ok else "续订失败"
+        
+        text = f"""{icon} Kerit Cloud {result}
+
+账号：{account}
+信息：{info}
+时间：{cn_time_str()}"""
+        
+        if img and Path(img).exists():
+            with open(img, "rb") as f:
+                requests.post(
+                    f"https://api.telegram.org/bot{token}/sendPhoto",
+                    data={"chat_id": chat, "caption": text},
+                    files={"photo": f},
+                    timeout=60
+                )
+        else:
+            requests.post(
+                f"https://api.telegram.org/bot{token}/sendMessage",
+                json={"chat_id": chat, "text": text},
+                timeout=30
+            )
+    except Exception as e:
+        log("WARN", f"通知发送失败: {e}")
+
+# ============== 账号解析 ==============
+def parse_accounts(s: str) -> List[Dict[str, str]]:
+    """解析账号配置：邮箱----IMAP密码----邮箱2----IMAP密码2"""
     accounts = []
-    
-    value = os.environ.get("BILLING_KERIT_MAIL", "").strip()
-    if not value:
-        return accounts
-    
-    parts = value.split("----")
+    parts = [p.strip() for p in s.replace('\n', '----').split('----') if p.strip()]
     
     for i in range(0, len(parts) - 1, 2):
-        email_addr = parts[i].strip()
-        imap_password = parts[i + 1].strip() if i + 1 < len(parts) else ""
-        
-        if email_addr and imap_password and "@" in email_addr:
+        email_addr = parts[i]
+        imap_pwd = parts[i + 1]
+        if "@" in email_addr:
             accounts.append({
                 "index": len(accounts) + 1,
                 "email": email_addr,
-                "imap_password": imap_password,
+                "imap_password": imap_pwd
             })
     
     return accounts
 
+def get_imap_server(email_addr: str) -> Tuple[str, int]:
+    """获取 IMAP 服务器配置"""
+    domain = email_addr.split("@")[1].lower()
+    servers = {
+        "gmail.com": ("imap.gmail.com", 993),
+        "outlook.com": ("outlook.office365.com", 993),
+        "hotmail.com": ("outlook.office365.com", 993),
+        "yahoo.com": ("imap.mail.yahoo.com", 993),
+        "163.com": ("imap.163.com", 993),
+        "qq.com": ("imap.qq.com", 993),
+    }
+    return servers.get(domain, (f"imap.{domain}", 993))
 
-def send_text_only(text: str):
-    if not TG_BOT_TOKEN or not TG_CHAT_ID:
-        return
-    try:
-        url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendMessage"
-        data = {"chat_id": TG_CHAT_ID, "text": text, "parse_mode": "Markdown"}
-        requests.post(url, data=data, timeout=15)
-    except Exception as e:
-        log("ERROR", f"发送文本失败: {e}")
-
-
-def notify_telegram(success: bool, title: str, message: str, image_path: str = None):
-    if not TG_BOT_TOKEN or not TG_CHAT_ID:
-        return
+# ============== 邮箱验证码 ==============
+def fetch_otp_from_email(email_addr: str, imap_pwd: str, timeout: int = 120) -> Optional[str]:
+    """从邮箱获取 OTP 验证码"""
+    log("INFO", f"📧 连接邮箱: {mask_email(email_addr)}")
     
-    emoji = "✅" if success else "❌"
-    text = f"{emoji} *{title}*\n\n{message}\n\n_Kerit Auto Renewal_"
+    server, port = get_imap_server(email_addr)
+    start_time = time.time()
     
-    try:
-        if image_path and Path(image_path).exists():
-            url = f"https://api.telegram.org/bot{TG_BOT_TOKEN}/sendPhoto"
-            with open(image_path, "rb") as f:
-                resp = requests.post(
-                    url, 
-                    data={"chat_id": TG_CHAT_ID, "caption": text[:1024], "parse_mode": "Markdown"},
-                    files={"photo": f}, 
-                    timeout=30
-                )
-                if resp.status_code != 200:
-                    send_text_only(text)
-        else:
-            send_text_only(text)
-    except Exception as e:
-        log("ERROR", f"Telegram 通知失败: {e}")
-
-
-def handle_turnstile(sb, max_attempts: int = 15) -> bool:
-    """处理 Cloudflare Turnstile 验证"""
-    log("INFO", "⏳ 等待 Turnstile 验证...")
-    
-    for attempt in range(max_attempts):
+    while time.time() - start_time < timeout:
         try:
-            btn_enabled = sb.execute_script("""
-                var btn = document.getElementById('continue-btn');
-                return btn && !btn.disabled;
-            """)
+            mail = imaplib.IMAP4_SSL(server, port)
+            mail.login(email_addr, imap_pwd)
+            mail.select("INBOX")
             
-            if btn_enabled:
-                log("INFO", "✅ Turnstile 已通过")
-                return True
+            # 搜索 Kerit 邮件
+            _, messages = mail.search(None, '(FROM "kerit" UNSEEN)')
+            if not messages[0]:
+                _, messages = mail.search(None, '(SUBJECT "OTP" UNSEEN)')
+            if not messages[0]:
+                _, messages = mail.search(None, '(SUBJECT "verification" UNSEEN)')
             
-            has_response = sb.execute_script("""
-                var response = document.querySelector('input[name="cf-turnstile-response"]');
-                return response && response.value && response.value.length > 10;
-            """)
+            if messages[0]:
+                msg_ids = messages[0].split()
+                for msg_id in reversed(msg_ids[-5:]):
+                    _, msg_data = mail.fetch(msg_id, "(RFC822)")
+                    msg = email.message_from_bytes(msg_data[0][1])
+                    
+                    # 获取邮件内容
+                    body = ""
+                    if msg.is_multipart():
+                        for part in msg.walk():
+                            if part.get_content_type() == "text/plain":
+                                body = part.get_payload(decode=True).decode(errors="ignore")
+                                break
+                            elif part.get_content_type() == "text/html":
+                                body = part.get_payload(decode=True).decode(errors="ignore")
+                    else:
+                        body = msg.get_payload(decode=True).decode(errors="ignore")
+                    
+                    # 提取 OTP
+                    otp_match = re.search(r'\b(\d{4,6})\b', body)
+                    if otp_match:
+                        otp = otp_match.group(1)
+                        mail.store(msg_id, '+FLAGS', '\\Seen')
+                        mail.logout()
+                        log("INFO", "✅ 获取到验证码: ****")
+                        return otp
             
-            if has_response:
-                log("INFO", "✅ Turnstile 已通过")
-                return True
-            
-            if attempt == 5 or attempt == 10:
-                try:
-                    sb.uc_gui_click_captcha()
-                except:
-                    pass
-            
-            time.sleep(2)
+            mail.logout()
             
         except Exception as e:
-            log("WARN", f"Turnstile 检测异常: {e}")
-            time.sleep(2)
+            log("WARN", f"邮箱连接失败: {e}")
+        
+        time.sleep(5)
     
-    log("WARN", "⚠️ Turnstile 验证超时")
-    return False
+    log("ERROR", "❌ 获取验证码超时")
+    return None
 
-
-def perform_login(sb, email_addr: str, imap_password: str, display_name: str) -> bool:
-    """执行自动登录流程"""
-    log("INFO", f"🔐 开始登录: {display_name}")
+# ============== 登录流程 ==============
+def login(sb, email_addr: str, imap_pwd: str, idx: int) -> Tuple[bool, Optional[str]]:
+    """登录，返回 (成功, 截图路径)"""
+    email_masked = mask_email(email_addr)
+    log("INFO", f"\n{'='*50}")
+    log("INFO", f"账号 {idx}: 登录 {email_masked}")
+    log("INFO", f"{'='*50}")
+    
+    last_shot = None
     
     try:
-        log("INFO", "📄 访问登录页面...")
+        # 打开登录页
+        log("INFO", "打开登录页...")
         sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=10)
+        time.sleep(5)
         
-        for _ in range(20):
-            ready = sb.execute_script("""
-                return document.getElementById('email-input') !== null;
-            """)
-            if ready:
-                break
-            time.sleep(1)
+        last_shot = shot(idx, "01-login-page")
+        sb.save_screenshot(last_shot)
         
-        time.sleep(3)
+        # 检查是否已登录
+        current_url = sb.get_current_url()
+        if "/session" in current_url:
+            log("INFO", "✅ 已登录")
+            return True, last_shot
         
-        if not handle_turnstile(sb):
-            log("WARN", "Turnstile 可能未通过，继续尝试...")
+        # 检查访问是否被阻止
+        src = sb.get_page_source()
+        if "Access Blocked" in src or "blocked" in src.lower():
+            log("ERROR", "⚠️ 访问被阻止")
+            return False, last_shot
         
-        log("INFO", "📝 输入邮箱...")
-        sb.execute_script(f"""
-            var input = document.getElementById('email-input');
-            if (input) {{
-                input.focus();
-                input.value = '';
-                input.value = '{email_addr}';
-                input.dispatchEvent(new Event('input', {{ bubbles: true }}));
-                input.dispatchEvent(new Event('change', {{ bubbles: true }}));
-            }}
-        """)
-        
-        time.sleep(2)
-        
-        log("INFO", "⏳ 等待发送按钮...")
-        btn_ready = False
-        for _ in range(30):
-            btn_ready = sb.execute_script("""
-                var btn = document.getElementById('continue-btn');
-                return btn && !btn.disabled;
-            """)
-            if btn_ready:
-                break
-            time.sleep(1)
-        
-        if not btn_ready:
-            log("ERROR", "❌ 发送按钮未启用，可能 Turnstile 未通过")
-            return False
-        
-        log("INFO", "📤 发送验证码...")
-        sb.execute_script("""
-            var btn = document.getElementById('continue-btn');
-            if (btn && !btn.disabled) {
-                btn.click();
-            }
-        """)
-        
-        time.sleep(3)
-        
-        log("INFO", "⏳ 等待验证码输入界面...")
-        otp_visible = False
-        for _ in range(20):
-            otp_visible = sb.execute_script("""
-                var otpView = document.getElementById('otp-view');
-                return otpView && !otpView.classList.contains('hidden');
-            """)
-            if otp_visible:
-                break
-            
-            has_error = sb.execute_script("""
-                var alert = document.getElementById('custom-alert');
-                return alert && !alert.classList.contains('hidden');
-            """)
-            if has_error:
-                error_msg = sb.execute_script("""
-                    var msg = document.getElementById('alert-message');
-                    return msg ? msg.textContent : '';
-                """)
-                log("ERROR", f"❌ 登录错误: {error_msg}")
-                return False
-            
-            time.sleep(1)
-        
-        if not otp_visible:
-            log("ERROR", "❌ 验证码输入界面未显示")
-            return False
-        
-        log("INFO", "✅ 验证码已发送到邮箱")
-        
-        log("INFO", "📧 正在从邮箱获取验证码...")
-        otp = fetch_otp_from_email(email_addr, imap_password, max_wait=120)
-        
-        if not otp:
-            log("ERROR", "❌ 无法获取验证码")
-            return False
-        
-        # 🔧 修复3：隐藏验证码（原来这里暴露了）
-        log("INFO", "📝 输入验证码: ****")
-        sb.execute_script(f"""
-            var otpInputs = document.querySelectorAll('.otp-input');
-            var otp = '{otp}';
-            for (var i = 0; i < otpInputs.length && i < otp.length; i++) {{
-                otpInputs[i].value = otp[i];
-                otpInputs[i].dispatchEvent(new Event('input', {{ bubbles: true }}));
-            }}
-        """)
+        # 输入邮箱
+        log("INFO", "输入邮箱...")
+        for sel in ['input[name="email"]', 'input[type="email"]', 'input[type="text"]']:
+            try:
+                if sb.is_element_visible(sel):
+                    sb.type(sel, email_addr)
+                    log("INFO", "✅ 已输入邮箱")
+                    break
+            except:
+                continue
         
         time.sleep(1)
         
-        log("INFO", "🔘 提交验证码...")
-        sb.execute_script("""
-            var buttons = document.querySelectorAll('#otp-view button');
-            for (var btn of buttons) {
-                if (btn.textContent.includes('Verify')) {
-                    btn.click();
-                    break;
-                }
-            }
-        """)
+        # 点击发送 OTP
+        log("INFO", "点击发送验证码...")
+        sb.execute_script('''
+            var btn = document.querySelector('button[type="submit"], button');
+            if (btn) btn.click();
+        ''')
+        
+        time.sleep(3)
+        last_shot = shot(idx, "02-otp-sent")
+        sb.save_screenshot(last_shot)
+        
+        # 处理 Turnstile
+        log("INFO", "处理 Turnstile...")
+        try:
+            sb.uc_gui_click_captcha()
+        except:
+            pass
+        time.sleep(3)
+        
+        # 获取 OTP
+        log("INFO", "获取邮箱验证码...")
+        otp = fetch_otp_from_email(email_addr, imap_pwd, timeout=120)
+        
+        if not otp:
+            log("ERROR", "❌ 获取验证码失败")
+            last_shot = shot(idx, "03-otp-failed")
+            sb.save_screenshot(last_shot)
+            return False, last_shot
+        
+        # 输入 OTP
+        log("INFO", "输入验证码: ****")
+        for sel in ['input[name="otp"]', 'input[type="text"]:not([name="email"])']:
+            try:
+                if sb.is_element_visible(sel):
+                    sb.type(sel, otp)
+                    break
+            except:
+                continue
+        
+        time.sleep(1)
+        last_shot = shot(idx, "04-otp-input")
+        sb.save_screenshot(last_shot)
+        
+        # 提交验证码
+        log("INFO", "提交验证码...")
+        sb.execute_script('''
+            var btn = document.querySelector('button[type="submit"], button');
+            if (btn) btn.click();
+        ''')
         
         time.sleep(5)
+        last_shot = shot(idx, "05-login-result")
+        sb.save_screenshot(last_shot)
         
+        # 验证登录结果
         current_url = sb.get_current_url()
-        log("INFO", f"   当前 URL: {current_url}")
+        log("INFO", f"当前 URL: {current_url}")
         
-        is_logged_in = (
-            "/session" in current_url or 
-            "/free_panel" in current_url or
-            (LOGIN_URL in current_url and "expired" not in current_url)
-        )
+        if "/session" in current_url or "billing.kerit.cloud" in current_url:
+            log("INFO", "✅ 登录成功")
+            return True, last_shot
         
-        if not is_logged_in:
-            is_logged_in = sb.execute_script("""
-                var body = document.body.innerText || '';
-                return body.includes('Free Plans') || 
-                       body.includes('Dashboard') ||
-                       body.includes('Renewal') ||
-                       document.querySelector('[href*="logout"]') !== null ||
-                       document.querySelector('[href*="free_panel"]') !== null;
-            """)
-        
-        # 🔧 即使 URL 包含 expired=true，只要能检测到已登录状态也算成功
-        if not is_logged_in and "billing.kerit.cloud" in current_url:
-            # 额外检查：尝试访问 free_panel 看是否能进入
-            is_logged_in = True
-        
-        if is_logged_in:
-            log("INFO", "✅ 登录成功!")
-            return True
-        else:
-            log("ERROR", "❌ 登录失败")
-            return False
+        log("ERROR", "❌ 登录失败")
+        return False, last_shot
         
     except Exception as e:
-        log("ERROR", f"❌ 登录异常: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
+        log("ERROR", f"登录异常: {e}")
+        if last_shot is None:
+            last_shot = shot(idx, "login-error")
+            try:
+                sb.save_screenshot(last_shot)
+            except:
+                pass
+        return False, last_shot
 
-
-def get_renewal_count(sb) -> int:
-    """获取续订次数"""
+# ============== 续订流程 ==============
+def get_renewal_info(sb) -> Tuple[int, int]:
+    """获取续订信息：(已续订次数, 剩余天数)"""
     try:
-        count = sb.execute_script("""
+        count = sb.execute_script('''
             var el = document.getElementById('renewal-count');
-            if (el) return parseInt(el.textContent.trim()) || 0;
+            if (el) return parseInt(el.textContent) || 0;
             var text = document.body.innerText;
             var match = text.match(/(\\d+)\\s*\\/\\s*7/);
             return match ? parseInt(match[1]) : 0;
-        """)
-        return int(count) if count else 0
+        ''') or 0
+        
+        days = sb.execute_script('''
+            var el = document.getElementById('expiry-display');
+            if (el) return parseInt(el.textContent) || 0;
+            return 0;
+        ''') or 0
+        
+        return count, days
     except:
-        return 0
+        return 0, 0
 
-
-def get_days_remaining(sb) -> int:
-    """获取剩余天数"""
-    try:
-        days = sb.execute_script("""
-            var text = document.body.innerText;
-            var match = text.match(/(\\d+)\\s*Days?/i);
-            return match ? parseInt(match[1]) : 0;
-        """)
-        return int(days) if days else 0
-    except:
-        return 0
-
-
-def check_access_blocked(sb) -> bool:
-    """检查是否被阻止访问"""
-    try:
-        blocked = sb.execute_script("""
-            var bodyText = (document.body.innerText || '').toLowerCase();
-            return bodyText.includes('access denied') ||
-                   bodyText.includes('blocked') ||
-                   bodyText.includes('forbidden') ||
-                   bodyText.includes('rate limit');
-        """)
-        return blocked
-    except:
-        return False
-
-def do_renewal(sb, display_name: str) -> Dict:
-    """执行续订操作"""
+def do_renewal(sb, idx: int, email_masked: str) -> Dict[str, Any]:
+    """执行续订"""
     result = {
+        "success": False,
+        "message": "",
+        "screenshot": None,
         "initial_count": 0,
         "final_count": 0,
         "final_days": 0,
-        "total_renewed": 0,
-        "success": False,
-        "message": ""
+        "renewed": 0
     }
     
     try:
-        # ============================================
-        # 步骤1：先访问 /session 确保会话建立
-        # ============================================
-        log("INFO", "📋 访问 Session 页面确保会话有效...")
+        # ========== 步骤1：访问 Session 页面 ==========
+        log("INFO", "📋 访问 Session 页面...")
         sb.uc_open_with_reconnect(SESSION_URL, reconnect_time=8)
         time.sleep(5)
         
         current_url = sb.get_current_url()
         log("INFO", f"   当前 URL: {current_url}")
         
-        # 验证是否在 session 页面
-        if "/session" not in current_url:
-            # 检查是否有 Free Plans 侧边栏（说明已登录）
-            has_sidebar = sb.execute_script("""
-                return document.querySelector('[onclick*="showFreeServers"]') !== null ||
-                       document.querySelector('.sidebar-item') !== null;
-            """)
-            
-            if not has_sidebar:
-                log("ERROR", "❌ 会话无效，未能进入 Session 页面")
-                result["message"] = "会话无效，请重新登录"
-                return result
+        result["screenshot"] = shot(idx, "10-session")
+        sb.save_screenshot(result["screenshot"])
         
-        log("INFO", "✅ Session 页面加载成功")
+        # 验证会话
+        has_sidebar = sb.execute_script('''
+            return document.querySelector('[onclick*="showFreeServers"]') !== null ||
+                   document.body.innerText.includes('Free Plans');
+        ''')
         
-        # ============================================
-        # 步骤2：模拟点击侧边栏 Free Plans 按钮
-        # ============================================
-        log("INFO", "🎁 点击侧边栏 Free Plans 按钮...")
+        if not has_sidebar and "/session" not in current_url:
+            log("ERROR", "❌ 会话无效")
+            result["message"] = "会话无效"
+            notify(False, email_masked, "⚠️ 会话无效", result["screenshot"])
+            return result
         
-        # 方法1：直接调用页面的 showFreeServers 函数
-        clicked = sb.execute_script("""
-            // 尝试调用 showFreeServers 函数
+        log("INFO", "✅ Session 页面正常")
+        
+        # ========== 步骤2：点击侧边栏进入 Free Plans ==========
+        log("INFO", "🎁 点击侧边栏 Free Plans...")
+        
+        sb.execute_script('''
             if (typeof showFreeServers === 'function') {
                 showFreeServers();
-                return true;
-            }
-            
-            // 备用：查找并点击侧边栏按钮
-            var items = document.querySelectorAll('.sidebar-item');
-            for (var item of items) {
-                if (item.textContent.includes('Free Plans') || 
-                    item.getAttribute('onclick')?.includes('showFreeServers')) {
-                    item.click();
-                    return true;
+            } else {
+                var items = document.querySelectorAll('.sidebar-item');
+                for (var item of items) {
+                    if (item.textContent.includes('Free Plans')) {
+                        item.click();
+                        break;
+                    }
                 }
             }
-            
-            // 再备用：直接跳转
-            window.location.href = '/free_panel';
-            return true;
-        """)
+        ''')
         
-        log("INFO", "   等待页面跳转...")
         time.sleep(5)
-        
-        # ============================================
-        # 步骤3：验证是否成功进入 Free Plans 页面
-        # ============================================
         current_url = sb.get_current_url()
         log("INFO", f"   当前 URL: {current_url}")
         
-        # 重试机制
-        max_attempts = 3
-        for attempt in range(max_attempts):
-            if "/free_panel" in current_url:
-                log("INFO", "✅ 成功进入 Free Plans 页面")
-                break
-            
-            log("WARN", f"   尝试 {attempt + 1}/{max_attempts}，未能进入 Free Plans")
-            
-            # 检查是否被阻止
-            if check_access_blocked(sb):
-                log("ERROR", "❌ 访问被阻止")
-                result["message"] = "IP 被限制，请更换代理"
-                return result
-            
-            # 重试：回到 session 再点击
-            if attempt < max_attempts - 1:
-                log("INFO", "   返回 Session 页面重试...")
-                sb.uc_open_with_reconnect(SESSION_URL, reconnect_time=5)
-                time.sleep(3)
-                
-                # 再次点击侧边栏
-                sb.execute_script("""
-                    if (typeof showFreeServers === 'function') {
-                        showFreeServers();
-                    } else {
-                        window.location.href = '/free_panel';
-                    }
-                """)
-                time.sleep(5)
-                current_url = sb.get_current_url()
-                log("INFO", f"   当前 URL: {current_url}")
+        # 如果没跳转，直接访问
+        if "/free_panel" not in current_url:
+            log("INFO", "   直接访问 /free_panel...")
+            sb.uc_open_with_reconnect(FREE_PANEL_URL, reconnect_time=8)
+            time.sleep(5)
+            current_url = sb.get_current_url()
+            log("INFO", f"   当前 URL: {current_url}")
+        
+        result["screenshot"] = shot(idx, "11-free-panel")
+        sb.save_screenshot(result["screenshot"])
         
         if "/free_panel" not in current_url:
-            log("ERROR", "❌ 无法进入 Free Plans 页面")
-            result["message"] = f"无法进入 Free Plans 页面\n当前: {current_url}"
+            log("ERROR", "❌ 无法进入 Free Plans")
+            result["message"] = f"无法进入 Free Plans\n当前: {current_url}"
+            notify(False, email_masked, "⚠️ 无法进入 Free Plans", result["screenshot"])
             return result
         
-        # ============================================
-        # 步骤4：获取初始状态
-        # ============================================
-        initial_count = get_renewal_count(sb)
-        initial_days = get_days_remaining(sb)
+        log("INFO", "✅ 成功进入 Free Plans")
+        
+        # ========== 步骤3：获取初始状态 ==========
+        initial_count, initial_days = get_renewal_info(sb)
         result["initial_count"] = initial_count
         
         log("INFO", f"📊 当前状态: 续订 {initial_count}/7, 剩余 {initial_days} 天")
         
-        # 检查是否已达上限
         if initial_count >= 7 or initial_days >= 7:
             log("INFO", "🎉 已达上限，无需续订")
             result["success"] = True
             result["final_count"] = initial_count
             result["final_days"] = initial_days
-            result["message"] = f"🎉 已达上限\n续订: {initial_count}/7\n剩余: {initial_days} 天"
+            result["message"] = f"已达上限 | {initial_count}/7 | {initial_days}天"
+            notify(True, email_masked, result["message"], result["screenshot"])
             return result
         
-        # ============================================
-        # 步骤5：循环续订
-        # ============================================
+        # ========== 步骤4：循环续订 ==========
         total_renewed = 0
-        max_renewals = 7
         
-        for renewal_round in range(1, max_renewals + 1):
-            log("INFO", f"{'='*15} 第 {renewal_round} 轮续订 {'='*15}")
+        for round_num in range(1, 8):
+            log("INFO", f"{'='*15} 第 {round_num} 轮 {'='*15}")
             
-            # 检查当前状态
-            current_count = get_renewal_count(sb)
-            current_days = get_days_remaining(sb)
-            
-            if current_count >= 7:
-                log("INFO", "🎉 已达到 7/7，停止续订")
+            current_count, current_days = get_renewal_info(sb)
+            if current_count >= 7 or current_days >= 7:
+                log("INFO", "🎉 已达上限")
                 break
             
-            if current_days >= 7:
-                log("INFO", "🎉 剩余天数已达 7 天，停止续订")
-                break
-            
-            # 检查续订按钮是否可用
-            renew_btn_disabled = sb.execute_script("""
+            # 检查按钮是否可用
+            btn_disabled = sb.execute_script('''
                 var btn = document.getElementById('renewServerBtn');
-                if (!btn) return true;
-                return btn.disabled || btn.hasAttribute('disabled');
-            """)
+                return !btn || btn.disabled;
+            ''')
             
-            if renew_btn_disabled:
-                log("INFO", "⏸️ 续订按钮不可用，停止续订")
+            if btn_disabled:
+                log("INFO", "⏸️ 续订按钮不可用")
                 break
             
-            # 点击 Renew Server 按钮
-            sb.execute_script("""
+            # 点击 Renew Server
+            log("INFO", "   点击 Renew Server...")
+            sb.execute_script('''
                 var btn = document.getElementById('renewServerBtn');
                 if (btn && !btn.disabled) btn.click();
-            """)
-            log("INFO", "   点击 Renew Server")
+            ''')
             time.sleep(3)
             
-            # 等待模态框出现
-            modal_visible = sb.execute_script("""
+            result["screenshot"] = shot(idx, f"12-modal-{round_num}")
+            sb.save_screenshot(result["screenshot"])
+            
+            # 检查模态框
+            modal_visible = sb.execute_script('''
                 var modal = document.getElementById('renewalModal');
-                if (!modal) return false;
-                return !modal.classList.contains('hidden');
-            """)
+                return modal && !modal.classList.contains('hidden');
+            ''')
             
             if not modal_visible:
-                log("WARN", "   模态框未出现，重试点击...")
-                sb.execute_script("""
-                    var btn = document.getElementById('renewServerBtn');
-                    if (btn) btn.click();
-                """)
-                time.sleep(3)
-                
-                # 再次检查
-                modal_visible = sb.execute_script("""
-                    var modal = document.getElementById('renewalModal');
-                    return modal && !modal.classList.contains('hidden');
-                """)
-                
-                if not modal_visible:
-                    log("WARN", "   模态框仍未出现，跳过本轮")
-                    continue
+                log("WARN", "   模态框未出现")
+                continue
             
-            # 处理 Turnstile 验证
-            log("INFO", "   ⏳ 处理 Turnstile 验证...")
+            # 处理 Turnstile
+            log("INFO", "   处理 Turnstile...")
             try:
                 sb.uc_gui_click_captcha()
             except:
                 pass
             time.sleep(3)
             
-            # 点击广告横幅
-            log("INFO", "   🖱️ 点击广告横幅...")
+            # 点击广告
+            log("INFO", "   🖱️ 点击广告...")
             main_window = sb.driver.current_window_handle
             original_windows = set(sb.driver.window_handles)
             
-            sb.execute_script("""
-                // 调用页面的 openAdLink 函数
+            sb.execute_script('''
                 if (typeof openAdLink === 'function') {
                     openAdLink();
                 } else {
-                    // 备用：直接点击广告图片
-                    var adBanner = document.getElementById('adBanner');
-                    if (adBanner) {
-                        adBanner.click();
-                    }
+                    var ad = document.getElementById('adBanner');
+                    if (ad) ad.click();
                 }
-            """)
-            
+            ''')
             time.sleep(3)
             
-            # 关闭广告弹出窗口
+            # 关闭广告窗口
             new_windows = set(sb.driver.window_handles) - original_windows
             if new_windows:
                 log("INFO", f"   关闭 {len(new_windows)} 个广告窗口")
@@ -794,343 +506,218 @@ def do_renewal(sb, display_name: str) -> Dict:
             
             time.sleep(2)
             
-            # 等待续订按钮可用
-            log("INFO", "   ⏳ 等待续订按钮可用...")
+            # 等待按钮可用
             for _ in range(10):
-                btn_enabled = sb.execute_script("""
+                btn_ok = sb.execute_script('''
                     var btn = document.getElementById('renewBtn');
                     return btn && !btn.disabled;
-                """)
-                if btn_enabled:
+                ''')
+                if btn_ok:
                     break
                 time.sleep(1)
             
-            # 点击最终续订按钮
-            log("INFO", "   🔘 点击 Complete Renewal 按钮...")
-            sb.execute_script("""
+            # 点击 Complete Renewal
+            log("INFO", "   🔘 点击 Complete Renewal...")
+            sb.execute_script('''
                 var btn = document.getElementById('renewBtn');
-                if (btn && !btn.disabled) {
-                    btn.click();
-                }
-            """)
-            
+                if (btn && !btn.disabled) btn.click();
+            ''')
             time.sleep(4)
             
-            # 检查是否达到限制
-            limit_reached = sb.execute_script("""
-                var bodyText = document.body.innerText || '';
-                return bodyText.includes('Cannot exceed 7 days') ||
-                       bodyText.includes('exceed 7 days') ||
-                       bodyText.includes('limit reached') ||
-                       bodyText.includes('Weekly limit');
-            """)
+            result["screenshot"] = shot(idx, f"13-result-{round_num}")
+            sb.save_screenshot(result["screenshot"])
             
-            if limit_reached:
-                log("INFO", "   ⚠️ 已达续订限制")
+            # 检查限制
+            limit_hit = sb.execute_script('''
+                return document.body.innerText.includes('limit') ||
+                       document.body.innerText.includes('exceed');
+            ''')
+            
+            if limit_hit:
+                log("INFO", "   ⚠️ 达到限制")
                 break
             
-            # 检查是否有成功提示
-            success_msg = sb.execute_script("""
-                var successModal = document.querySelector('.success-modal');
-                return successModal !== null;
-            """)
+            total_renewed += 1
+            log("INFO", f"   ✅ 第 {round_num} 轮完成")
             
-            if success_msg:
-                total_renewed += 1
-                log("INFO", f"   ✅ 第 {renewal_round} 轮续订成功")
-            else:
-                log("INFO", f"   ✅ 第 {renewal_round} 轮完成")
-                total_renewed += 1
-            
-            # 关闭模态框
-            sb.execute_script("""
-                // 调用页面的关闭函数
-                if (typeof closeRenewalModal === 'function') {
-                    closeRenewalModal();
-                } else {
-                    var modal = document.getElementById('renewalModal');
-                    if (modal) modal.classList.add('hidden');
-                }
-            """)
-            
+            # 关闭模态框并刷新
+            sb.execute_script('''
+                if (typeof closeRenewalModal === 'function') closeRenewalModal();
+            ''')
             time.sleep(2)
-            
-            # 刷新页面获取最新状态
             sb.refresh()
             time.sleep(4)
             
-            # 检查更新后的状态
-            new_count = get_renewal_count(sb)
-            new_days = get_days_remaining(sb)
-            
-            log("INFO", f"   当前状态: 续订 {new_count}/7, 剩余 {new_days} 天")
+            new_count, new_days = get_renewal_info(sb)
+            log("INFO", f"   状态: {new_count}/7, {new_days}天")
             
             if new_days >= 7 or new_count >= 7:
-                log("INFO", "🎉 已达到上限!")
                 break
         
-        # ============================================
-        # 步骤6：获取最终状态
-        # ============================================
+        # ========== 步骤5：获取最终状态 ==========
         time.sleep(2)
-        final_count = get_renewal_count(sb)
-        final_days = get_days_remaining(sb)
-        
+        final_count, final_days = get_renewal_info(sb)
         result["final_count"] = final_count
         result["final_days"] = final_days
-        result["total_renewed"] = total_renewed
+        result["renewed"] = total_renewed
         
-        log("INFO", f"📊 最终状态: 续订 {final_count}/7, 剩余 {final_days} 天")
-        log("INFO", f"   本次续订: {total_renewed} 次")
+        result["screenshot"] = shot(idx, "14-final")
+        sb.save_screenshot(result["screenshot"])
         
-        # 判断成功与否
-        if final_count >= 7 or final_days >= 7:
+        log("INFO", f"📊 最终: {final_count}/7, {final_days}天, 本次续订 {total_renewed} 次")
+        
+        if final_count >= 7 or final_days >= 7 or total_renewed > 0:
             result["success"] = True
-            result["message"] = (
-                f"🎉 续订成功\n\n"
-                f"本次续订: {total_renewed} 次\n"
-                f"续订: {initial_count} → {final_count}/7\n"
-                f"剩余: {final_days} 天"
-            )
-        elif total_renewed > 0:
-            result["success"] = True
-            result["message"] = (
-                f"本次续订: {total_renewed} 次\n"
-                f"续订: {initial_count} → {final_count}/7\n"
-                f"剩余: {final_days} 天"
-            )
+            result["message"] = f"续订 {total_renewed} 次 | {final_count}/7 | {final_days}天"
         else:
-            result["message"] = f"续订: {final_count}/7\n剩余: {final_days} 天\n\n⚠️ 未能续订"
+            result["message"] = f"未能续订 | {final_count}/7 | {final_days}天"
         
     except Exception as e:
         log("ERROR", f"续订异常: {e}")
-        import traceback
-        traceback.print_exc()
-        result["message"] = f"续订异常: {str(e)[:100]}"
-    
-    return result
-
-
-def process_account(sb, account: Dict) -> Dict:
-    """处理单个账号"""
-    index = account["index"]
-    email_addr = account["email"]
-    imap_password = account["imap_password"]
-    display_name = get_display_name(account)
-    
-    result = {
-        "index": index,
-        "email": email_addr,
-        "display_name": display_name,
-        "success": False,
-        "message": "",
-        "screenshot": None,
-        "initial_count": 0,
-        "final_count": 0,
-        "final_days": 0,
-        "total_renewed": 0,
-    }
-    
-    log("INFO", "=" * 55)
-    log("INFO", f"🔄 处理账号 {index}: {display_name}")
-    log("INFO", "=" * 55)
-    
-    try:
-        # 清除旧 Cookie
-        sb.delete_all_cookies()
-        
-        # 1. 执行登录
-        login_success = perform_login(sb, email_addr, imap_password, display_name)
-        
-        if not login_success:
-            result["message"] = "❌ 登录失败\n\n请检查:\n- 邮箱地址是否正确\n- IMAP 密码是否正确\n- 是否开启了 IMAP"
-            result["screenshot"] = screenshot_path(f"acc{index}-login-failed")
+        result["message"] = f"异常: {str(e)[:50]}"
+        if not result["screenshot"]:
+            result["screenshot"] = shot(idx, "error")
             try:
                 sb.save_screenshot(result["screenshot"])
             except:
                 pass
-            return result
-        
-        # 2. 执行续订
-        renewal_result = do_renewal(sb, display_name)
-        
-        result["success"] = renewal_result["success"]
-        result["message"] = renewal_result["message"]
-        result["initial_count"] = renewal_result.get("initial_count", 0)
-        result["final_count"] = renewal_result.get("final_count", 0)
-        result["final_days"] = renewal_result.get("final_days", 0)
-        result["total_renewed"] = renewal_result.get("total_renewed", 0)
-        
-        # 截图
-        result["screenshot"] = screenshot_path(f"acc{index}-final")
-        try:
-            sb.save_screenshot(result["screenshot"])
-        except:
-            pass
-        
-    except Exception as e:
-        log("ERROR", f"处理账号异常: {e}")
-        import traceback
-        traceback.print_exc()
-        result["message"] = f"处理异常: {str(e)[:100]}"
-        try:
-            result["screenshot"] = screenshot_path(f"acc{index}-error")
-            sb.save_screenshot(result["screenshot"])
-        except:
-            pass
     
     return result
 
-
-def test_proxy(proxy_url: str) -> bool:
-    """测试代理连接"""
-    if not proxy_url:
-        return False
+# ============== 主流程 ==============
+def process(sb, account: Dict, idx: int) -> Dict[str, Any]:
+    """处理单个账号"""
+    email_addr = account["email"]
+    imap_pwd = account["imap_password"]
+    email_masked = mask_email(email_addr)
+    
+    result = {
+        "email": email_addr,
+        "email_masked": email_masked,
+        "success": False,
+        "message": "",
+        "screenshot": None
+    }
+    
+    # 清除 Cookie
     try:
-        proxies = {"http": proxy_url, "https": proxy_url}
-        resp = requests.get("https://api.ipify.org", proxies=proxies, timeout=15)
-        ip = resp.text.strip()
-        parts = ip.split(".")
-        if len(parts) == 4:
-            masked_ip = f"{parts[0]}.***.***.{parts[3]}"
-        else:
-            masked_ip = "***"
-        log("INFO", f"   代理 IP: {masked_ip}")
-        return True
-    except Exception as e:
-        log("WARN", f"   代理测试失败: {e}")
-        return False
-
+        sb.delete_all_cookies()
+    except:
+        pass
+    
+    # 登录
+    login_ok, login_shot = login(sb, email_addr, imap_pwd, idx)
+    result["screenshot"] = login_shot
+    
+    if not login_ok:
+        result["message"] = "登录失败"
+        notify(False, email_masked, "⚠️ 登录失败", login_shot)
+        return result
+    
+    # 续订
+    renewal = do_renewal(sb, idx, email_masked)
+    result["success"] = renewal["success"]
+    result["message"] = renewal["message"]
+    result["screenshot"] = renewal["screenshot"]
+    
+    # 发送通知
+    if renewal["success"]:
+        notify(True, email_masked, renewal["message"], renewal["screenshot"])
+    else:
+        notify(False, email_masked, renewal["message"], renewal["screenshot"])
+    
+    return result
 
 def main():
-    """主函数"""
     log("INFO", "=" * 55)
-    log("INFO", "🚀 Kerit Cloud 自动续订脚本 (IMAP 自动登录版)")
+    log("INFO", "🚀 Kerit Cloud 自动续订脚本")
     log("INFO", "=" * 55)
     
-    # 发现账号
-    accounts = discover_accounts()
+    # 解析账号
+    acc_str = os.environ.get("BILLING_KERIT_MAIL", "")
+    if not acc_str:
+        log("ERROR", "缺少 BILLING_KERIT_MAIL 环境变量")
+        notify(False, "系统", "⚠️ 缺少账号配置", None)
+        sys.exit(1)
     
+    accounts = parse_accounts(acc_str)
     if not accounts:
-        log("ERROR", "❌ 未找到账号配置")
-        log("INFO", "")
-        log("INFO", "📝 配置说明:")
-        log("INFO", "   环境变量: BILLING_KERIT_MAIL")
-        log("INFO", "   格式: 邮箱1----IMAP密码1----邮箱2----IMAP密码2")
-        log("INFO", "")
-        log("INFO", "💡 提示:")
-        log("INFO", "   - Gmail 需要使用「应用专用密码」")
-        log("INFO", "   - 需要在邮箱设置中开启 IMAP 访问")
-        
-        notify_telegram(False, "配置错误", 
-            "未找到账号配置\n\n"
-            "请设置环境变量:\n"
-            "`BILLING_KERIT_MAIL`\n\n"
-            "格式:\n"
-            "`邮箱----IMAP密码----邮箱2----IMAP密码2`"
-        )
-        return
+        log("ERROR", "无有效账号")
+        notify(False, "系统", "⚠️ 无有效账号", None)
+        sys.exit(1)
     
-    log("INFO", f"📋 发现 {len(accounts)} 个账号:")
+    log("INFO", f"📋 发现 {len(accounts)} 个账号")
     for acc in accounts:
-        log("INFO", f"   {acc['index']}. {get_display_name(acc)}")
+        log("INFO", f"   {acc['index']}. {mask_email(acc['email'])}")
     
-    # 检查代理
-    proxy_url = PROXY_SOCKS5 or PROXY_HTTP
-    if proxy_url:
-        log("INFO", "🌐 使用代理...")
-        if test_proxy(proxy_url):
-            log("INFO", "   ✅ 代理连接正常")
-        else:
-            log("WARN", "   ⚠️ 代理测试失败，继续尝试...")
-    else:
-        log("INFO", "🌐 直连模式")
-    
-    # Linux 下启动虚拟显示
-    display = None
-    if sys.platform.startswith("linux"):
+    # 代理
+    proxy = os.environ.get("PROXY_SOCKS5") or os.environ.get("PROXY_HTTP", "")
+    if proxy:
+        log("INFO", f"🌐 使用代理: {mask(proxy, 10)}")
         try:
-            from pyvirtualdisplay import Display
-            display = Display(visible=False, size=(1920, 1080))
-            display.start()
-            log("INFO", "🖥️ 虚拟显示已启动")
+            requests.get("https://api.ipify.org", proxies={"http": proxy, "https": proxy}, timeout=10)
+            log("INFO", "   ✅ 代理正常")
         except Exception as e:
-            log("WARN", f"虚拟显示启动失败: {e}")
+            log("WARN", f"   代理测试失败: {e}")
     
+    # 虚拟显示
+    display = setup_display()
     results = []
     
     try:
-        log("INFO", "🌐 启动浏览器...")
-        
-        sb_kwargs = {
+        opts = {
             "uc": True,
-            "headless": False,
-            "locale_code": "en",
             "test": True,
+            "locale_code": "en",
+            "headless": False
         }
+        if proxy:
+            opts["proxy"] = proxy.replace("socks5://", "socks5h://")
         
-        if proxy_url:
-            if proxy_url.startswith("socks"):
-                sb_kwargs["proxy"] = proxy_url.replace("socks5://", "socks5h://")
-            else:
-                sb_kwargs["proxy"] = proxy_url
-        
-        with SB(**sb_kwargs) as sb:
-            log("INFO", "   ✅ 浏览器已启动")
+        with SB(**opts) as sb:
+            log("INFO", "🌐 浏览器已启动")
             
-            for idx, account in enumerate(accounts):
-                # 处理账号
-                result = process_account(sb, account)
-                results.append(result)
-                
-                # 发送通知
-                tg_name = get_display_name(account, for_telegram=True)
-                
-                if result["success"]:
-                    notify_telegram(True, f"{tg_name} 续订成功", result["message"], result["screenshot"])
-                else:
-                    notify_telegram(False, f"{tg_name} 续订失败", result["message"], result["screenshot"])
-                
-                # 账号间间隔
-                if idx < len(accounts) - 1:
-                    log("INFO", "⏳ 等待 10 秒后处理下一个账号...")
-                    time.sleep(10)
-        
-        # 汇总
-        log("INFO", "")
-        log("INFO", "=" * 55)
-        log("INFO", "📊 执行汇总:")
-        log("INFO", "=" * 55)
-        
-        success_count = 0
-        for r in results:
-            status = "✅" if r["success"] else "❌"
-            if r["success"]:
-                success_count += 1
-            
-            final_count = r.get("final_count", 0)
-            final_days = r.get("final_days", 0)
-            log("INFO", f"   {status} {r['display_name']}: {final_count}/7, {final_days} 天")
-        
-        log("INFO", "")
-        log("INFO", f"   成功: {success_count}/{len(results)}")
-        log("INFO", "=" * 55)
-        log("INFO", "✅ 脚本执行完成")
-        
+            for acc in accounts:
+                try:
+                    r = process(sb, acc, acc["index"])
+                    results.append(r)
+                    time.sleep(5)
+                except Exception as e:
+                    err_shot = shot(acc["index"], "fatal")
+                    try:
+                        sb.save_screenshot(err_shot)
+                    except:
+                        err_shot = None
+                    log("ERROR", f"账号 {mask_email(acc['email'])} 异常: {e}")
+                    results.append({
+                        "email_masked": mask_email(acc["email"]),
+                        "success": False,
+                        "message": str(e)
+                    })
+                    notify(False, mask_email(acc["email"]), f"⚠️ {e}", err_shot)
+    
     except Exception as e:
-        log("ERROR", f"执行异常: {e}")
-        import traceback
-        traceback.print_exc()
-        notify_telegram(False, "脚本异常", f"`{str(e)[:200]}`")
+        log("ERROR", f"脚本异常: {e}")
+        notify(False, "系统", f"⚠️ 脚本异常: {e}", None)
+        sys.exit(1)
     
     finally:
         if display:
-            try:
-                display.stop()
-                log("INFO", "🖥️ 虚拟显示已关闭")
-            except:
-                pass
-
+            display.stop()
+    
+    # 汇总
+    ok_count = sum(1 for r in results if r.get("success"))
+    
+    log("INFO", "")
+    log("INFO", "=" * 55)
+    log("INFO", f"📊 汇总: {ok_count}/{len(results)} 成功")
+    log("INFO", "-" * 55)
+    for r in results:
+        icon = "✅" if r.get("success") else "❌"
+        log("INFO", f"   {icon} {r.get('email_masked', '***')}: {r.get('message', '')}")
+    log("INFO", "=" * 55)
+    
+    sys.exit(0 if ok_count > 0 else 1)
 
 if __name__ == "__main__":
     main()
