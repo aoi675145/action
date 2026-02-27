@@ -40,7 +40,7 @@ jobs:
 
       - name: 执行重启脚本
         env:
-          BILLING_KERIT_COOKIES_1: ${{ secrets.KERIT_ACCOUNT }}
+          BILLING_KERIT_COOKIES_1: ${{ secrets.BILLING_KERIT_COOKIES_1 }}
           BILLING_KERIT_COOKIES_2: ${{ secrets.BILLING_KERIT_COOKIES_2 }}
           BILLING_KERIT_COOKIES_3: ${{ secrets.BILLING_KERIT_COOKIES_3 }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
