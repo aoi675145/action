@@ -29,7 +29,15 @@ def log(level: str, msg: str):
 
 def mask(s: str, show: int = 3) -> str:
     if not s: return "***"
-    return s[:show] + "***" if len(s) > show else s[0] + "***"
+    s = str(s)
+    if len(s) <= show: return s[0] + "***"
+    return s[:show] + "***"
+
+def mask_email(email_addr: str) -> str:
+    if not email_addr or "@" not in email_addr:
+        return "***@***"
+    local, domain = email_addr.split("@", 1)
+    return f"{mask(local, 2)}@{domain}"
 
 def is_linux(): 
     return platform.system().lower() == "linux"
@@ -42,17 +50,16 @@ def setup_display():
             d.start()
             os.environ["DISPLAY"] = d.new_display_var
             return d
-        except Exception as e:
-            log("ERROR", f"虚拟显示失败: {e}")
+        except:
             sys.exit(1)
     return None
 
 def shot(idx: int, name: str) -> str:
     return str(OUTPUT_DIR / f"acc{idx}-{cn_now().strftime('%H%M%S')}-{name}.png")
 
-# ============== 通知函数（优化）==============
+# ============== 通知函数 ==============
 def notify(ok: bool, email_full: str, info: str, img: str = None):
-    """发送TG通知 - 完整显示邮箱"""
+    """发送TG通知 - 显示完整邮箱"""
     token = os.environ.get("TG_BOT_TOKEN")
     chat = os.environ.get("TG_CHAT_ID")
     if not token or not chat:
@@ -66,9 +73,7 @@ def notify(ok: bool, email_full: str, info: str, img: str = None):
 
 账号：{email_full}
 信息：{info}
-时间：{cn_time_str()}
-
-Billing Kerit Auto Renewal"""
+时间：{cn_time_str()}"""
         
         if img and Path(img).exists():
             with open(img, "rb") as f:
@@ -84,8 +89,8 @@ Billing Kerit Auto Renewal"""
                 json={"chat_id": chat, "text": text},
                 timeout=30
             )
-    except Exception as e:
-        log("WARN", f"通知发送失败: {e}")
+    except:
+        pass
 
 # ============== 账号解析 ==============
 def parse_accounts(s: str) -> List[Dict[str, str]]:
@@ -116,8 +121,28 @@ def get_imap_server(email_addr: str) -> Tuple[str, int]:
     }
     return servers.get(domain, (f"imap.{domain}", 993))
 
+# ============== 页面处理 ==============
+def handle_page_errors(sb) -> bool:
+    try:
+        body_text = sb.execute_script("return document.body.innerText || ''") or ""
+        if "Access Restricted" in body_text:
+            return False
+        if "Server error" in body_text:
+            sb.execute_script('''
+                var buttons = document.querySelectorAll('button');
+                for (var btn of buttons) {
+                    if (['Got it', 'Try Again', 'OK'].includes(btn.textContent.trim())) {
+                        btn.click(); break;
+                    }
+                }
+            ''')
+            time.sleep(2)
+        return True
+    except:
+        return True
+
 # ============== 邮箱验证码 ==============
-def fetch_otp(email_addr: str, imap_pwd: str, timeout: int = 120) -> Optional[str]:
+def fetch_otp_from_email(email_addr: str, imap_pwd: str, timeout: int = 120) -> Optional[str]:
     server, port = get_imap_server(email_addr)
     start_time = time.time()
     
@@ -153,129 +178,107 @@ def fetch_otp(email_addr: str, imap_pwd: str, timeout: int = 120) -> Optional[st
                     continue
             
             mail.logout()
-        except Exception as e:
+        except:
             pass
         
-        elapsed = int(time.time() - start_time)
-        log("INFO", f"   等待验证码... ({elapsed}s)")
         time.sleep(5)
     
     return None
 
-# ============== 登录流程（修复首次失败）==============
+# ============== 登录流程 ==============
 def login(sb, email_addr: str, imap_pwd: str, idx: int) -> Tuple[bool, Optional[str]]:
-    log("INFO", f"🔐 登录账号: {email_addr}")
+    email_masked = mask_email(email_addr)
+    log("INFO", f"🔐 [{idx}] 登录 {email_masked}")
     
     last_shot = None
     
     for attempt in range(3):
         try:
-            log("INFO", f"   尝试 {attempt + 1}/3")
             sb.uc_open_with_reconnect(LOGIN_URL, reconnect_time=10)
             time.sleep(5)
             
-            # 检查是否已登录
-            if "/session" in sb.get_current_url() or "/free" in sb.get_current_url():
-                log("INFO", "   ✅ 已登录")
-                return True, shot(idx, "logged")
+            last_shot = shot(idx, "login")
+            sb.save_screenshot(last_shot)
             
-            # 等待登录表单（增加等待时间）
-            for _ in range(20):
+            if not handle_page_errors(sb):
+                continue
+            
+            current_url = sb.get_current_url()
+            if "/session" in current_url or "/free" in current_url:
+                log("INFO", f"   ✅ 已登录")
+                return True, last_shot
+            
+            # 等待并输入邮箱
+            for _ in range(15):
                 if sb.execute_script('return document.querySelector(\'input[type="email"]\') !== null'):
                     break
                 time.sleep(1)
             
-            # 输入邮箱
             sb.execute_script(f'''
-                var input = document.querySelector('input[type="email"], input[placeholder*="email"]');
+                var input = document.querySelector('input[type="email"]');
                 if (input) {{
                     input.value = "{email_addr}";
                     input.dispatchEvent(new Event('input', {{ bubbles: true }}));
                 }}
             ''')
+            
             time.sleep(2)
             
-            # 处理 Turnstile（增加等待时间）
-            log("INFO", "   处理 Turnstile...")
+            # 处理 Turnstile
             try:
                 sb.uc_gui_click_captcha()
             except:
                 pass
             
-            # 等待 Turnstile 完成（增加到30秒）
-            turnstile_ok = False
-            for _ in range(30):
+            for _ in range(20):
                 if sb.execute_script("return document.body.innerText.includes('Success!')"):
-                    turnstile_ok = True
-                    log("INFO", "   ✅ Turnstile 通过")
                     break
                 time.sleep(1)
             
-            if not turnstile_ok:
-                log("WARN", "   Turnstile 未通过，重试...")
-                continue
-            
-            # 点击 Continue（确保按钮可点击）
-            time.sleep(2)
+            # 点击 Continue
             sb.execute_script('''
                 var buttons = document.querySelectorAll('button');
                 for (var btn of buttons) {
-                    if (btn.textContent.includes('Continue with Email') && !btn.disabled) {
-                        btn.click();
-                        return true;
+                    if (btn.textContent.includes('Continue with Email')) {
+                        btn.click(); return;
                     }
                 }
-                return false;
             ''')
             
-            # 等待页面响应（增加到10秒）
-            time.sleep(10)
+            time.sleep(5)
+            handle_page_errors(sb)
             
-            last_shot = shot(idx, f"after-continue-{attempt}")
-            sb.save_screenshot(last_shot)
-            
-            # 多次检查 OTP 页面
-            otp_page = False
-            for _ in range(5):
-                if sb.execute_script("return document.body.innerText.includes('Check Your Inbox')"):
-                    otp_page = True
-                    break
-                # 也检查是否直接登录成功
-                if "/session" in sb.get_current_url():
-                    log("INFO", "   ✅ 直接登录成功")
-                    return True, last_shot
-                time.sleep(2)
-            
-            if not otp_page:
-                log("WARN", "   未进入 OTP 页面，重试...")
+            # 检查 OTP 页面
+            if not sb.execute_script("return document.body.innerText.includes('Check Your Inbox')"):
                 continue
             
-            log("INFO", "   📧 获取验证码...")
-            otp = fetch_otp(email_addr, imap_pwd, timeout=120)
+            log("INFO", f"   📧 获取验证码...")
+            otp = fetch_otp_from_email(email_addr, imap_pwd, timeout=120)
             if not otp:
-                log("ERROR", "   ❌ 获取验证码超时")
+                log("ERROR", f"   ❌ 验证码超时")
                 return False, last_shot
-            
-            log("INFO", f"   ✅ 获取到验证码")
             
             # 输入 OTP
             sb.execute_script(f'''
-                var otp = "{otp}";
-                var inputs = document.querySelectorAll('input');
-                var otpInputs = [];
-                for (var input of inputs) {{
-                    var rect = input.getBoundingClientRect();
-                    if (rect.width > 30 && rect.width < 100 && rect.height > 30) {{
-                        otpInputs.push(input);
+                (function() {{
+                    var otp = "{otp}";
+                    var inputs = document.querySelectorAll('input');
+                    var otpInputs = [];
+                    for (var input of inputs) {{
+                        var rect = input.getBoundingClientRect();
+                        if (rect.width > 30 && rect.width < 100 && rect.height > 30) {{
+                            otpInputs.push(input);
+                        }}
                     }}
-                }}
-                if (otpInputs.length >= 4) {{
-                    for (var j = 0; j < 4; j++) {{
-                        otpInputs[j].value = otp[j];
-                        otpInputs[j].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                    if (otpInputs.length >= 4) {{
+                        for (var j = 0; j < 4; j++) {{
+                            otpInputs[j].value = otp[j];
+                            otpInputs[j].dispatchEvent(new Event('input', {{ bubbles: true }}));
+                        }}
                     }}
-                }}
+                }})()
             ''')
+            
             time.sleep(2)
             
             # 点击 Verify
@@ -283,32 +286,25 @@ def login(sb, email_addr: str, imap_pwd: str, idx: int) -> Tuple[bool, Optional[
                 var buttons = document.querySelectorAll('button');
                 for (var btn of buttons) {
                     if (btn.textContent.includes('Verify')) {
-                        btn.click();
-                        return;
+                        btn.click(); return;
                     }
                 }
             ''')
             
             time.sleep(5)
+            last_shot = shot(idx, "verify")
+            sb.save_screenshot(last_shot)
             
-            # 检查登录结果
-            if "/session" in sb.get_current_url() or "/free" in sb.get_current_url():
-                log("INFO", "   ✅ 登录成功")
-                last_shot = shot(idx, "login-ok")
-                sb.save_screenshot(last_shot)
-                return True, last_shot
-            
-            # 再等待一下
-            time.sleep(3)
-            if "/session" in sb.get_current_url():
-                log("INFO", "   ✅ 登录成功")
+            current_url = sb.get_current_url()
+            if "/session" in current_url or "/free" in current_url:
+                log("INFO", f"   ✅ 登录成功")
                 return True, last_shot
             
         except Exception as e:
-            log("ERROR", f"   异常: {e}")
+            log("WARN", f"   尝试 {attempt+1} 失败: {str(e)[:30]}")
             continue
     
-    log("ERROR", "   ❌ 登录失败")
+    log("ERROR", f"   ❌ 登录失败")
     return False, last_shot
 
 # ============== 续订辅助函数 ==============
@@ -317,8 +313,10 @@ def get_renewal_count(sb) -> int:
         return sb.execute_script("""
             var el = document.getElementById('renewal-count');
             if (el) return parseInt(el.textContent) || 0;
-            var match = document.body.innerText.match(/(\\d+)\\s*\\/\\s*7/);
-            return match ? parseInt(match[1]) : 0;
+            var bodyText = document.body.innerText;
+            var match = bodyText.match(/(\\d+)\\s*\\/\\s*7/);
+            if (match) return parseInt(match[1]);
+            return 0;
         """) or 0
     except:
         return 0
@@ -328,14 +326,26 @@ def get_days_remaining(sb) -> int:
         return sb.execute_script("""
             var el = document.getElementById('expiry-display');
             if (el) return parseInt(el.textContent) || 0;
-            var match = document.body.innerText.match(/(\\d+)\\s*Days?/i);
-            return match ? parseInt(match[1]) : 0;
+            var bodyText = document.body.innerText;
+            var match = bodyText.match(/(\\d+)\\s*Days?/i);
+            if (match) return parseInt(match[1]);
+            return 0;
         """) or 0
     except:
         return 0
 
+def handle_turnstile(sb):
+    try:
+        for _ in range(10):
+            if sb.execute_script("return document.body.innerText.includes('Success!')"):
+                return True
+            time.sleep(1)
+    except:
+        pass
+    return False
+
 # ============== 续订流程 ==============
-def do_renewal(sb, idx: int, email_full: str) -> Dict[str, Any]:
+def do_renewal(sb, idx: int, email_full: str, email_masked: str) -> Dict[str, Any]:
     result = {
         "success": False,
         "message": "",
@@ -344,24 +354,21 @@ def do_renewal(sb, idx: int, email_full: str) -> Dict[str, Any]:
     }
     
     try:
-        # 进入 Free Panel
-        log("INFO", "📋 进入续订页面...")
         sb.uc_open_with_reconnect(FREE_PANEL_URL, reconnect_time=8)
         time.sleep(5)
         
         result["screenshot"] = shot(idx, "panel")
         sb.save_screenshot(result["screenshot"])
         
-        # 获取状态
-        count = get_renewal_count(sb)
-        days = get_days_remaining(sb)
+        initial_count = get_renewal_count(sb)
+        initial_days = get_days_remaining(sb)
         
-        log("INFO", f"   状态: {count}/7, {days}天")
+        log("INFO", f"   📊 状态: {initial_count}/7, {initial_days}天")
         
         # 检查上限
-        if count >= 7 or days >= 7:
+        if initial_count >= 7 or initial_days >= 7:
             result["success"] = True
-            result["message"] = f"🎉 已达上限 | {count}/7 | {days}天"
+            result["message"] = f"🎉 已达上限 | {initial_count}/7 | {initial_days}天"
             log("INFO", f"   {result['message']}")
             return result
         
@@ -373,12 +380,11 @@ def do_renewal(sb, idx: int, email_full: str) -> Dict[str, Any]:
         
         if btn_disabled:
             result["success"] = True
-            result["message"] = f"⏭️ 未到续订时间 | {count}/7 | {days}天"
+            result["message"] = f"⏭️ 未到续订时间 | {initial_count}/7 | {initial_days}天"
             log("INFO", f"   {result['message']}")
             return result
         
         # 循环续订
-        log("INFO", "✨ 开始续订...")
         total_renewed = 0
         
         for round_num in range(1, 8):
@@ -386,15 +392,13 @@ def do_renewal(sb, idx: int, email_full: str) -> Dict[str, Any]:
             current_days = get_days_remaining(sb)
             
             if current_count >= 7 or current_days >= 7:
-                log("INFO", f"   🎉 达到上限: {current_count}/7, {current_days}天")
                 break
             
-            # 检查按钮
-            if sb.execute_script("var b=document.getElementById('renewServerBtn');return !b||b.disabled"):
+            if sb.execute_script("var btn = document.getElementById('renewServerBtn'); return !btn || btn.disabled"):
                 break
             
             # 点击 Renew Server
-            sb.execute_script("var b=document.getElementById('renewServerBtn');if(b&&!b.disabled)b.click()")
+            sb.execute_script("var btn = document.getElementById('renewServerBtn'); if (btn) btn.click();")
             time.sleep(3)
             
             # 处理 Turnstile
@@ -403,11 +407,7 @@ def do_renewal(sb, idx: int, email_full: str) -> Dict[str, Any]:
                 time.sleep(2)
             except:
                 pass
-            
-            for _ in range(15):
-                if sb.execute_script("return document.body.innerText.includes('Success!')"):
-                    break
-                time.sleep(1)
+            handle_turnstile(sb)
             
             # 点击广告
             main_window = sb.driver.current_window_handle
@@ -416,10 +416,11 @@ def do_renewal(sb, idx: int, email_full: str) -> Dict[str, Any]:
             sb.execute_script("""
                 var ad = document.getElementById('adBanner');
                 if (ad) {
-                    var p = ad.closest('[onclick]') || ad.parentElement;
-                    if (p) p.click(); else ad.click();
+                    var parent = ad.closest('[onclick]') || ad.parentElement;
+                    if (parent) parent.click(); else ad.click();
                 }
             """)
+            
             time.sleep(3)
             
             # 关闭广告窗口
@@ -431,50 +432,47 @@ def do_renewal(sb, idx: int, email_full: str) -> Dict[str, Any]:
                 except:
                     pass
             sb.driver.switch_to.window(main_window)
+            
             time.sleep(1)
             
             # 等待并点击 renewBtn
             for _ in range(10):
-                if sb.execute_script("var b=document.getElementById('renewBtn');return b&&!b.disabled"):
+                if sb.execute_script("var btn = document.getElementById('renewBtn'); return btn && !btn.disabled"):
                     break
                 time.sleep(1)
             
-            sb.execute_script("var b=document.getElementById('renewBtn');if(b&&!b.disabled)b.click()")
+            sb.execute_script("var btn = document.getElementById('renewBtn'); if (btn && !btn.disabled) btn.click();")
             time.sleep(3)
             
-            result["screenshot"] = shot(idx, f"round-{round_num}")
+            result["screenshot"] = shot(idx, f"renew-{round_num}")
             sb.save_screenshot(result["screenshot"])
             
             # 检查限制
-            if sb.execute_script("return document.body.innerText.includes('Cannot exceed')"):
-                log("INFO", f"   达到续订限制")
+            if sb.execute_script("return document.body.innerText.includes('Cannot exceed') || document.body.innerText.includes('limit')"):
                 break
             
             total_renewed += 1
             log("INFO", f"   ✅ 第 {round_num} 轮完成")
             
-            # 关闭模态框
+            # 关闭模态框并刷新
             sb.execute_script("""
-                var c=document.querySelector('#renewalModal .close,[data-dismiss="modal"]');
-                if(c)c.click();
-                var m=document.getElementById('renewalModal');if(m)m.style.display='none';
-                var b=document.querySelector('.modal-backdrop');if(b)b.remove();
-                document.body.classList.remove('modal-open');
+                var close = document.querySelector('#renewalModal .close, .btn-close');
+                if (close) close.click();
+                var modal = document.getElementById('renewalModal');
+                if (modal) modal.style.display = 'none';
             """)
-            time.sleep(2)
             
+            time.sleep(2)
             sb.refresh()
             time.sleep(3)
         
         # 最终状态
         final_count = get_renewal_count(sb)
         final_days = get_days_remaining(sb)
-        result["renewed"] = total_renewed
         
         result["screenshot"] = shot(idx, "final")
         sb.save_screenshot(result["screenshot"])
-        
-        log("INFO", f"📊 结果: {total_renewed}次续订 | {final_count}/7 | {final_days}天")
+        result["renewed"] = total_renewed
         
         if total_renewed > 0:
             result["success"] = True
@@ -485,9 +483,11 @@ def do_renewal(sb, idx: int, email_full: str) -> Dict[str, Any]:
         else:
             result["message"] = f"❌ 未能续订 | {final_count}/7 | {final_days}天"
         
+        log("INFO", f"   {result['message']}")
+        
     except Exception as e:
-        log("ERROR", f"续订异常: {e}")
-        result["message"] = f"异常: {str(e)[:50]}"
+        result["message"] = f"异常: {str(e)[:30]}"
+        log("ERROR", f"   {result['message']}")
     
     return result
 
@@ -495,9 +495,11 @@ def do_renewal(sb, idx: int, email_full: str) -> Dict[str, Any]:
 def process(sb, account: Dict, idx: int) -> Dict[str, Any]:
     email_addr = account["email"]
     imap_pwd = account["imap_password"]
+    email_masked = mask_email(email_addr)
     
     result = {
         "email": email_addr,
+        "email_masked": email_masked,
         "success": False,
         "message": "",
         "screenshot": None
@@ -508,19 +510,22 @@ def process(sb, account: Dict, idx: int) -> Dict[str, Any]:
     except:
         pass
     
+    # 登录
     login_ok, login_shot = login(sb, email_addr, imap_pwd, idx)
     result["screenshot"] = login_shot
     
     if not login_ok:
         result["message"] = "登录失败"
-        notify(False, email_addr, "⚠️ 登录失败", login_shot)
+        notify(False, email_addr, "⚠️ 登录失败", login_shot)  # TG用完整邮箱
         return result
     
-    renewal = do_renewal(sb, idx, email_addr)
+    # 续订
+    renewal = do_renewal(sb, idx, email_addr, email_masked)
     result["success"] = renewal["success"]
     result["message"] = renewal["message"]
     result["screenshot"] = renewal["screenshot"]
     
+    # 发送通知 - 使用完整邮箱
     notify(renewal["success"], email_addr, renewal["message"], renewal["screenshot"])
     
     return result
@@ -531,7 +536,6 @@ def main():
     acc_str = os.environ.get("BILLING_KERIT_MAIL", "")
     if not acc_str:
         log("ERROR", "缺少 BILLING_KERIT_MAIL")
-        notify(False, "系统", "⚠️ 缺少账号配置", None)
         sys.exit(1)
     
     accounts = parse_accounts(acc_str)
@@ -539,11 +543,9 @@ def main():
         log("ERROR", "无有效账号")
         sys.exit(1)
     
-    log("INFO", f"📋 {len(accounts)} 个账号")
+    log("INFO", f"📋 账号: {len(accounts)} 个")
     
     proxy = os.environ.get("PROXY_SOCKS5") or os.environ.get("PROXY_HTTP", "")
-    if proxy:
-        log("INFO", f"🌐 代理: {mask(proxy, 10)}")
     
     display = setup_display()
     results = []
@@ -558,11 +560,15 @@ def main():
                 try:
                     r = process(sb, acc, acc["index"])
                     results.append(r)
-                    time.sleep(5)
+                    time.sleep(3)
                 except Exception as e:
-                    log("ERROR", f"账号异常: {e}")
-                    results.append({"email": acc["email"], "success": False, "message": str(e)})
-                    notify(False, acc["email"], f"⚠️ {e}", None)
+                    log("ERROR", f"[{acc['index']}] {mask_email(acc['email'])}: {str(e)[:30]}")
+                    results.append({
+                        "email_masked": mask_email(acc["email"]),
+                        "success": False,
+                        "message": str(e)[:30]
+                    })
+                    notify(False, acc["email"], f"⚠️ {str(e)[:30]}", None)
     
     except Exception as e:
         log("ERROR", f"脚本异常: {e}")
@@ -574,10 +580,10 @@ def main():
     
     # 汇总
     ok = sum(1 for r in results if r.get("success"))
-    log("INFO", f"📊 汇总: {ok}/{len(results)} 成功")
+    log("INFO", f"📊 结果: {ok}/{len(results)} 成功")
     for r in results:
         icon = "✅" if r.get("success") else "❌"
-        log("INFO", f"   {icon} {r.get('email')}: {r.get('message')}")
+        log("INFO", f"   {icon} {r.get('email_masked')}: {r.get('message')}")
     
     sys.exit(0 if ok > 0 else 1)
 
