@@ -371,8 +371,8 @@ jobs:
           BILLING_KERIT_MAIL: ${{ secrets.BILLING_KERIT_MAIL }}
           # 其他配置
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
           PROXY_HTTP: ${{ env.PROXY_HTTP }}
@@ -380,13 +380,13 @@ jobs:
           export DISPLAY=:99
           python scripts/BillingKerit/BillingKerit_Renew.py
       
-      - name: 上传截图
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshots-${{ github.run_number }}
-          path: output/screenshots/
-          retention-days: 3
+#      - name: 上传截图
+#        uses: actions/upload-artifact@v4
+#        if: always()
+#        with:
+#          name: screenshots-${{ github.run_number }}
+#          path: output/screenshots/
+#          retention-days: 3
       
       - name: 清理旧运行记录
         uses: Mattraks/delete-workflow-runs@v2
