@@ -368,13 +368,7 @@ jobs:
         env:
           DISPLAY: ":99"
           # 多账号配置
-          BILLING_KERIT_COOKIES_1: ${{ secrets.BILLING_KERIT_COOKIES_1 }}
-          BILLING_KERIT_COOKIES_2: ${{ secrets.BILLING_KERIT_COOKIES_2 }}
-          BILLING_KERIT_COOKIES_3: ${{ secrets.BILLING_KERIT_COOKIES_3 }}
-          BILLING_KERIT_COOKIES_4: ${{ secrets.BILLING_KERIT_COOKIES_4 }}
-          BILLING_KERIT_COOKIES_5: ${{ secrets.BILLING_KERIT_COOKIES_5 }}
-          # 兼容单账号（可选）
-          BILLING_KERIT_COOKIES: ${{ secrets.BILLING_KERIT_COOKIES }}
+          BILLING_KERIT_MAIL: ${{ secrets.BILLING_KERIT_MAIL }}
           # 其他配置
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
