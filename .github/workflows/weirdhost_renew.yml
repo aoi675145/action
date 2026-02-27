@@ -38,7 +38,7 @@ jobs:
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r actions/requirements.txt
       
       # 5. 缓存 YOLO 模型
       - name: Cache YOLO Model
