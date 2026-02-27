@@ -1,0 +1,59 @@
+name: Billing Kerit 重启
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'  # 每6小时运行一次
+  workflow_dispatch:
+    inputs:
+      account_name:
+        description: '指定账号名（留空运行全部）'
+        required: false
+        default: ''
+        type: string
+
+concurrency:
+  group: Kerit_Restart
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  restart:
+    name: 重启服务器
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 拉取代码仓库
+        uses: actions/checkout@v4
+
+      - name: 配置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          pip install --upgrade pip
+          pip install requests
+
+      - name: 执行重启脚本
+        env:
+          KERIT_ACCOUNT: ${{ secrets.KERIT_ACCOUNT }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          ACCOUNT_NAME: ${{ github.event.inputs.account_name }}
+        run: |
+          python scripts/BillingKerit/BillingKerit_Restart.py
+
+      - name: 清理工作流记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
