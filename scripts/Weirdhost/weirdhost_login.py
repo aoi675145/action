@@ -1,19 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-# scripts/Weirdhost/weirdhost_login.py
 
-"""
-Weirdhost 自动登录 + reCAPTCHA 图片验证 (优化版)
-"""
-
-from ultralytics import YOLO
 from DrissionPage import ChromiumPage, ChromiumOptions
-from PIL import Image
-import io
 import time
 import os
 import random
-from typing import Set, List, Optional
+import requests
+import tempfile
+from typing import Optional
 
 # ============== 配置 ==============
 DEBUG = True
@@ -22,51 +16,81 @@ os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
 
-# 类别映射表 (扩展)
-CATEGORY_MAPPING = {
-    "摩托": ["motorcycle"], "motorcycle": ["motorcycle"],
-    "公交": ["bus"], "巴士": ["bus"], "bus": ["bus"],
-    "自行": ["bicycle"], "bicycle": ["bicycle"],
-    "红绿灯": ["traffic light"], "traffic light": ["traffic light"],
-    "消防": ["fire hydrant"], "hydrant": ["fire hydrant"],
-    "汽车": ["car", "truck"], "轿车": ["car"], "car": ["car", "truck"],
-    "船": ["boat"], "boat": ["boat"],
-    "卡车": ["truck"], "truck": ["truck"],
-}
 
-UNSUPPORTED_KEYWORDS = [
-    "crosswalk", "人行横道", "斑马线",
-    "stair", "楼梯", "bridge", "桥",
-    "chimney", "烟囱", "palm", "棕榈",
-    "mountain", "山", "parking meter", "停车计时器"
-]
-
-
-def crop_image_from_bytes(image_bytes: bytes, crop_box) -> Optional[bytes]:
-    """裁剪图片"""
-    try:
-        img = Image.open(io.BytesIO(image_bytes))
-        if img.mode in ('RGBA', 'P'):
-            img = img.convert('RGB')
-        cropped = img.crop(crop_box)
-        output = io.BytesIO()
-        cropped.save(output, format='JPEG', quality=95)
-        return output.getvalue()
-    except Exception as e:
-        print(f"⚠️ 裁剪出错: {e}")
+class SpeechRecognizer:
+    """语音识别器"""
+    
+    def __init__(self):
+        self.recognizer = None
+        self._init_recognizer()
+    
+    def _init_recognizer(self):
+        """初始化语音识别"""
+        try:
+            # 方案1: 使用 OpenAI Whisper (推荐)
+            import whisper
+            self.model = whisper.load_model("base")
+            self.method = "whisper"
+            print("✅ 使用 Whisper 语音识别")
+        except ImportError:
+            try:
+                # 方案2: 使用 SpeechRecognition
+                import speech_recognition as sr
+                self.recognizer = sr.Recognizer()
+                self.method = "speech_recognition"
+                print("✅ 使用 SpeechRecognition")
+            except ImportError:
+                print("⚠️ 未安装语音识别库，将使用在线 API")
+                self.method = "api"
+    
+    def recognize(self, audio_path: str) -> Optional[str]:
+        """识别音频"""
+        if self.method == "whisper":
+            return self._recognize_whisper(audio_path)
+        elif self.method == "speech_recognition":
+            return self._recognize_sr(audio_path)
+        else:
+            return self._recognize_api(audio_path)
+    
+    def _recognize_whisper(self, audio_path: str) -> Optional[str]:
+        """使用 Whisper 识别"""
+        try:
+            import whisper
+            result = self.model.transcribe(audio_path, language="en")
+            text = result["text"].strip()
+            # 清理文本，只保留数字和字母
+            cleaned = ''.join(c for c in text if c.isalnum() or c.isspace())
+            return cleaned.lower().strip()
+        except Exception as e:
+            print(f"   ⚠️ Whisper 识别失败: {e}")
+            return None
+    
+    def _recognize_sr(self, audio_path: str) -> Optional[str]:
+        """使用 SpeechRecognition 识别"""
+        try:
+            import speech_recognition as sr
+            from pydub import AudioSegment
+            
+            # 转换 MP3 到 WAV
+            wav_path = audio_path.replace('.mp3', '.wav')
+            audio = AudioSegment.from_mp3(audio_path)
+            audio.export(wav_path, format="wav")
+            
+            with sr.AudioFile(wav_path) as source:
+                audio_data = self.recognizer.record(source)
+            
+            # 使用 Google 语音识别
+            text = self.recognizer.recognize_google(audio_data, language="en-US")
+            return text.lower().strip()
+        except Exception as e:
+            print(f"   ⚠️ SpeechRecognition 识别失败: {e}")
+            return None
+    
+    def _recognize_api(self, audio_path: str) -> Optional[str]:
+        """使用在线 API 识别 (备用)"""
+        # 可以集成其他在线 API
+        print("   ⚠️ 在线 API 识别暂未实现")
         return None
-
-
-def get_target_labels(text: str) -> List[str]:
-    """根据题目文本获取目标标签"""
-    text_lower = text.lower()
-    for keyword in UNSUPPORTED_KEYWORDS:
-        if keyword in text_lower:
-            return []
-    for keyword, labels in CATEGORY_MAPPING.items():
-        if keyword in text_lower:
-            return labels
-    return []
 
 
 class WeirdhostLogin:
@@ -74,15 +98,8 @@ class WeirdhostLogin:
     
     def __init__(self, headless: bool = True):
         self.headless = headless
-        self.model = None
         self.page = None
-        self._load_model()
-    
-    def _load_model(self):
-        """加载 YOLO 模型"""
-        print("🚀 正在加载 YOLO 模型...")
-        self.model = YOLO("yolo11x.pt")
-        print("✅ YOLO11x 加载完成")
+        self.speech = SpeechRecognizer()
     
     def _create_browser(self) -> ChromiumPage:
         """创建浏览器"""
@@ -119,6 +136,7 @@ class WeirdhostLogin:
         self.page = self._create_browser()
         
         try:
+            # 1. 打开登录页面
             print("\n[1/5] 打开登录页面...")
             self.page.get(LOGIN_URL)
             self.page.wait.doc_loaded()
@@ -127,6 +145,7 @@ class WeirdhostLogin:
             if DEBUG:
                 self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/01_login_page.png")
             
+            # 2. 填写邮箱
             print("[2/5] 填写邮箱...")
             email_input = self.page.ele('@name=username')
             if email_input:
@@ -137,6 +156,7 @@ class WeirdhostLogin:
             
             time.sleep(0.3)
             
+            # 3. 填写密码
             print("[3/5] 填写密码...")
             password_input = self.page.ele('@name=password')
             if password_input:
@@ -147,6 +167,7 @@ class WeirdhostLogin:
             
             time.sleep(0.3)
             
+            # 4. 勾选条款
             print("[4/5] 勾选条款...")
             checkbox = self.page.ele('@type=checkbox')
             if checkbox:
@@ -158,6 +179,7 @@ class WeirdhostLogin:
             if DEBUG:
                 self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/02_filled.png")
             
+            # 5. 点击登录
             print("[5/5] 点击登录按钮...")
             login_btn = self.page.ele('@tag()=button@@text():로그인')
             if not login_btn:
@@ -174,7 +196,8 @@ class WeirdhostLogin:
             if DEBUG:
                 self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/03_after_click.png")
             
-            success = self._handle_recaptcha()
+            # 6. 处理 reCAPTCHA (语音验证)
+            success = self._handle_audio_captcha()
             
             if success:
                 time.sleep(3)
@@ -194,6 +217,8 @@ class WeirdhostLogin:
             
         except Exception as e:
             print(f"❌ 登录异常: {e}")
+            import traceback
+            traceback.print_exc()
             if DEBUG:
                 self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/error.png")
             return False
@@ -202,112 +227,23 @@ class WeirdhostLogin:
             if self.page:
                 self.page.quit()
     
-    def _detect_targets(self, image_bytes: bytes, target_labels: List[str], 
-                        grid_side: int, conf_threshold: float = 0.20) -> Set[int]:
-        """
-        使用 YOLO 检测目标，返回需要点击的格子索引
-        """
-        img_obj = Image.open(io.BytesIO(image_bytes))
-        results = self.model(img_obj, verbose=False)
-        
-        img_w, img_h = img_obj.size
-        tile_w = img_w / grid_side
-        tile_h = img_h / grid_side
-        
-        click_indices: Set[int] = set()
-        
-        for r in results:
-            for box in r.boxes:
-                cls_name = self.model.names[int(box.cls[0])]
-                conf = float(box.conf[0])
-                
-                if cls_name in target_labels and conf > conf_threshold:
-                    bx1, by1, bx2, by2 = box.xyxy[0].tolist()
-                    
-                    print(f"      🔍 {cls_name} conf={conf:.2f} box=({bx1:.0f},{by1:.0f},{bx2:.0f},{by2:.0f})")
-                    
-                    for row in range(grid_side):
-                        for col in range(grid_side):
-                            tx1 = col * tile_w
-                            ty1 = row * tile_h
-                            tx2 = (col + 1) * tile_w
-                            ty2 = (row + 1) * tile_h
-                            
-                            inter_x1 = max(bx1, tx1)
-                            inter_y1 = max(by1, ty1)
-                            inter_x2 = min(bx2, tx2)
-                            inter_y2 = min(by2, ty2)
-                            
-                            if inter_x2 > inter_x1 and inter_y2 > inter_y1:
-                                inter_area = (inter_x2 - inter_x1) * (inter_y2 - inter_y1)
-                                tile_area = tile_w * tile_h
-                                overlap = inter_area / tile_area
-                                
-                                if overlap > 0.03:  # 降低重叠阈值
-                                    idx = row * grid_side + col
-                                    click_indices.add(idx)
-        
-        return click_indices
+    def _get_recaptcha_frame(self):
+        """获取 reCAPTCHA 弹窗 frame"""
+        frame = self.page.get_frame('@src:recaptcha.net/recaptcha/api2/bframe')
+        if not frame:
+            frame = self.page.get_frame('@src:recaptcha/api2/bframe')
+        if not frame:
+            frame = self.page.get_frame('@src:recaptcha/enterprise/bframe')
+        return frame
     
-    def _capture_challenge_image(self, recaptcha_frame, target_ele, try_num: int) -> Optional[bytes]:
-        """截取验证码图片区域"""
-        try:
-            dpr = self.page.run_js("return window.devicePixelRatio;") or 1
-            iframe_rect = recaptcha_frame.frame_ele.rect
-            ele_rect = target_ele.rect
-            
-            x1 = int((iframe_rect.location[0] + ele_rect.location[0]) * dpr)
-            y1 = int((iframe_rect.location[1] + ele_rect.location[1]) * dpr)
-            x2 = int(x1 + (ele_rect.size[0] * dpr))
-            y2 = int(y1 + (ele_rect.size[1] * dpr))
-            
-            full_screenshot = self.page.get_screenshot(as_bytes=True)
-            
-            if DEBUG:
-                with open(f"{SCREENSHOT_DIR}/full_{try_num}.png", "wb") as f:
-                    f.write(full_screenshot)
-            
-            image_cp = crop_image_from_bytes(full_screenshot, (x1, y1, x2, y2))
-            
-            if DEBUG and image_cp:
-                with open(f"{SCREENSHOT_DIR}/crop_{try_num}.jpg", "wb") as f:
-                    f.write(image_cp)
-            
-            return image_cp
-        except Exception as e:
-            print(f"   ⚠️ 截图失败: {e}")
-            return None
-    
-    def _wait_for_new_images(self, recaptcha_frame, wait_time: float = 3.5):
-        """等待新图片加载完成"""
-        print(f"   ⏳ 等待新图片加载 ({wait_time}s)...")
-        time.sleep(wait_time)
-        
-        # 额外检查是否还有加载动画
-        for _ in range(5):
-            try:
-                # 检查是否有正在加载的图块
-                loading = recaptcha_frame.ele("@class:rc-imageselect-dynamic-selected")
-                if loading:
-                    time.sleep(0.5)
-                else:
-                    break
-            except:
-                break
-    
-    def _handle_recaptcha(self) -> bool:
-        """处理 reCAPTCHA"""
+    def _handle_audio_captcha(self) -> bool:
+        """处理语音验证"""
         print("\n🔍 检测 reCAPTCHA...")
         
-        max_retries = 50  # 增加重试次数
-        current_try = 0
-        clicked_history: Set[int] = set()
-        last_category = None
-        consecutive_empty = 0  # 连续空检测计数
+        max_retries = 10
         
-        while current_try < max_retries:
-            current_try += 1
-            print(f"\n🔄 --- 第 {current_try} 次循环 ---")
+        for attempt in range(max_retries):
+            print(f"\n🔄 --- 第 {attempt + 1} 次尝试 ---")
             
             # 检查是否已跳转
             if "/auth/login" not in self.page.url:
@@ -315,11 +251,7 @@ class WeirdhostLogin:
                 return True
             
             # 查找 reCAPTCHA 弹窗
-            recaptcha_frame = self.page.get_frame('@src:recaptcha.net/recaptcha/api2/bframe')
-            if not recaptcha_frame:
-                recaptcha_frame = self.page.get_frame('@src:recaptcha/api2/bframe')
-            if not recaptcha_frame:
-                recaptcha_frame = self.page.get_frame('@src:recaptcha/enterprise/bframe')
+            recaptcha_frame = self._get_recaptcha_frame()
             
             if not recaptcha_frame:
                 print("   📭 未检测到验证弹窗")
@@ -328,7 +260,8 @@ class WeirdhostLogin:
                 if "/auth/login" not in self.page.url:
                     return True
                 
-                if current_try > 3:
+                # 重新点击登录
+                if attempt > 1:
                     login_btn = self.page.ele('@tag()=button@@text():로그인')
                     if login_btn:
                         login_btn.click()
@@ -337,182 +270,175 @@ class WeirdhostLogin:
             
             print("   🎯 检测到 reCAPTCHA 弹窗!")
             
-            # 等待图片加载
-            target_ele = recaptcha_frame.wait.ele_displayed(
-                "@class=rc-imageselect-challenge", timeout=5
-            )
-            if not target_ele:
-                print("   ⏳ 图片未加载...")
+            if DEBUG:
+                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/captcha_{attempt}.png")
+            
+            # 步骤1: 点击语音按钮
+            print("   🔊 切换到语音验证...")
+            audio_btn = recaptcha_frame.ele("#recaptcha-audio-button")
+            
+            if not audio_btn:
+                print("   ⚠️ 未找到语音按钮")
                 time.sleep(1)
                 continue
             
-            # 获取题目
-            text_str = ""
-            try:
-                desc_ele = recaptcha_frame.ele("@class=rc-imageselect-desc-no-canonical")
-                if desc_ele:
-                    text_str = desc_ele.text.lower()
-            except:
-                pass
+            # 检查是否已经在语音模式
+            audio_challenge = recaptcha_frame.ele("#rc-audio")
+            if not audio_challenge or not audio_challenge.states.is_displayed:
+                audio_btn.click()
+                time.sleep(2)
             
-            if not text_str:
-                try:
-                    desc_ele = recaptcha_frame.ele("@class=rc-imageselect-desc")
-                    if desc_ele:
-                        text_str = desc_ele.text.lower()
-                except:
-                    pass
+            if DEBUG:
+                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/audio_mode_{attempt}.png")
             
-            print(f"   📝 题目: {text_str}")
-            
-            # 获取目标标签
-            target_labels = get_target_labels(text_str)
-            
-            # 检测题目变化，清空历史
-            if str(target_labels) != str(last_category):
-                clicked_history.clear()
-                consecutive_empty = 0
-                last_category = target_labels
-            
-            # 获取网格信息
-            tiles_elements = recaptcha_frame.eles(".rc-image-tile-target")
-            grid_side = 4 if len(tiles_elements) == 16 else 3
-            
-            # 检测是否为动态模式
-            dynamic_keywords = ["直到", "until", "once there are none", "没有新图片", "如果没有", "none left"]
-            is_dynamic = any(kw in text_str for kw in dynamic_keywords)
-            
-            print(f"   📊 网格: {grid_side}x{grid_side}, 动态: {is_dynamic}, 图块数: {len(tiles_elements)}")
-            
-            # 不支持的类别 -> 刷新
-            if not target_labels:
-                print("   ⚠️ 不支持的类别，刷新!")
-                self._click_reload(recaptcha_frame)
-                consecutive_empty = 0
-                continue
-            
-            print(f"   🎯 目标: {target_labels}")
-            
-            # 等待图片稳定
-            time.sleep(0.8)
-            
-            # 截图
-            image_cp = self._capture_challenge_image(recaptcha_frame, target_ele, current_try)
-            if not image_cp:
-                continue
-            
-            # YOLO 检测 - 动态模式使用更低的置信度阈值
-            conf_threshold = 0.15 if is_dynamic else 0.20
-            click_indices = self._detect_targets(image_cp, target_labels, grid_side, conf_threshold)
-            
-            sorted_indices = sorted(list(click_indices))
-            print(f"   🎯 检测到: {sorted_indices}")
-            
-            # 非动态模式：过滤已点击的
-            if not is_dynamic:
-                sorted_indices = [i for i in sorted_indices if i not in clicked_history]
-                print(f"   🎯 需点击(排除已点): {sorted_indices}")
-            
-            # 点击图块
-            if sorted_indices:
-                consecutive_empty = 0
-                print(f"   🖱️ 点击 {len(sorted_indices)} 个图块...")
+            # 步骤2: 检查是否有错误消息（被检测到自动化）
+            error_msg = recaptcha_frame.ele(".rc-audiochallenge-error-message")
+            if error_msg and error_msg.states.is_displayed:
+                error_text = error_msg.text
+                print(f"   ❌ 错误: {error_text}")
                 
-                click_order = sorted_indices.copy()
-                if len(click_order) > 2:
-                    random.shuffle(click_order)
-                
-                for idx in click_order:
-                    if idx < len(tiles_elements):
-                        tiles_elements[idx].click()
-                        if not is_dynamic:
-                            clicked_history.add(idx)
-                        time.sleep(random.uniform(0.15, 0.35))
-                
-                # 动态模式：等待新图片加载
-                if is_dynamic:
-                    self._wait_for_new_images(recaptcha_frame, wait_time=4.0)
+                if "自动" in error_text or "automated" in error_text.lower():
+                    print("   ⚠️ 被检测到自动化，刷新重试...")
+                    reload_btn = recaptcha_frame.ele("#recaptcha-reload-button")
+                    if reload_btn:
+                        reload_btn.click()
+                        time.sleep(2)
+                    continue
+            
+            # 步骤3: 获取音频下载链接
+            print("   📥 获取音频链接...")
+            download_link = recaptcha_frame.ele(".rc-audiochallenge-tdownload-link")
+            
+            if not download_link:
+                # 备用: 从 audio source 获取
+                audio_source = recaptcha_frame.ele("#audio-source")
+                if audio_source:
+                    audio_url = audio_source.attr("src")
+                else:
+                    print("   ⚠️ 未找到音频链接")
                     continue
             else:
-                consecutive_empty += 1
-                print(f"   🤷 未发现目标 (连续{consecutive_empty}次)")
+                audio_url = download_link.attr("href")
             
-            # 检查错误消息
-            error_msg = recaptcha_frame.ele("@class:rc-imageselect-error-select-more")
-            has_error = error_msg and error_msg.states.is_displayed
-            
-            # 也检查 "Please also check the new images"
-            check_new_msg = recaptcha_frame.ele("@class:rc-imageselect-error-dynamic-more")
-            has_check_new = check_new_msg and check_new_msg.states.is_displayed
-            
-            if has_check_new:
-                print("   ⚠️ 提示: 请检查新图片")
-                # 重新扫描而不是刷新
-                time.sleep(1.5)
+            if not audio_url:
+                print("   ⚠️ 音频链接为空")
                 continue
             
-            # 动态模式且连续多次空检测 -> 点击验证
-            if is_dynamic and consecutive_empty >= 1:
-                verify_btn = recaptcha_frame.ele("#recaptcha-verify-button")
-                if verify_btn and verify_btn.states.is_enabled:
-                    print(f"   🖱️ 尝试验证...")
-                    verify_btn.click()
-                    time.sleep(2)
-                    
-                    # 检查是否有错误
-                    error_msg = recaptcha_frame.ele("@class:rc-imageselect-error-select-more")
-                    check_new_msg = recaptcha_frame.ele("@class:rc-imageselect-error-dynamic-more")
-                    
-                    if (error_msg and error_msg.states.is_displayed) or \
-                       (check_new_msg and check_new_msg.states.is_displayed):
-                        print("   ❌ 验证失败，继续扫描...")
-                        
-                        # 连续3次以上空检测才刷新
-                        if consecutive_empty >= 3:
-                            print("   ⚠️ 连续空检测，刷新题目...")
-                            self._click_reload(recaptcha_frame)
-                            consecutive_empty = 0
-                        else:
-                            # 等待更长时间再重试
-                            time.sleep(2)
-                    continue
+            print(f"   🔗 音频URL: {audio_url[:80]}...")
             
-            # 非动态模式：直接点击验证/下一题
-            if not is_dynamic:
-                verify_btn = recaptcha_frame.ele("#recaptcha-verify-button")
-                if verify_btn and verify_btn.states.is_enabled:
-                    btn_text = verify_btn.text
-                    print(f"   🖱️ 点击: {btn_text}")
-                    verify_btn.click()
-                    time.sleep(1.5)
-                    
-                    # 检查错误
-                    error_msg = recaptcha_frame.ele("@class:rc-imageselect-error-select-more")
-                    if error_msg and error_msg.states.is_displayed:
-                        print("   ❌ 需要选择更多...")
-                        if not sorted_indices:
-                            print("   ⚠️ 死局! 刷新...")
-                            self._click_reload(recaptcha_frame)
-                    
-                    time.sleep(1)
+            # 步骤4: 下载音频
+            print("   📥 下载音频文件...")
+            audio_path = self._download_audio(audio_url)
+            
+            if not audio_path:
+                print("   ⚠️ 下载音频失败")
+                continue
+            
+            print(f"   ✅ 音频已保存: {audio_path}")
+            
+            # 步骤5: 语音识别
+            print("   🎤 识别语音内容...")
+            recognized_text = self.speech.recognize(audio_path)
+            
+            if not recognized_text:
+                print("   ⚠️ 语音识别失败，刷新重试...")
+                reload_btn = recaptcha_frame.ele("#recaptcha-reload-button")
+                if reload_btn:
+                    reload_btn.click()
+                    time.sleep(2)
+                continue
+            
+            print(f"   📝 识别结果: {recognized_text}")
+            
+            # 步骤6: 输入识别文字
+            print("   ⌨️ 输入验证答案...")
+            response_input = recaptcha_frame.ele("#audio-response")
+            
+            if not response_input:
+                print("   ⚠️ 未找到输入框")
+                continue
+            
+            response_input.clear()
+            time.sleep(0.2)
+            
+            # 模拟人类输入
+            for char in recognized_text:
+                response_input.input(char)
+                time.sleep(random.uniform(0.05, 0.15))
+            
+            time.sleep(0.5)
+            
+            if DEBUG:
+                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/input_{attempt}.png")
+            
+            # 步骤7: 点击验证
+            print("   🖱️ 点击验证按钮...")
+            verify_btn = recaptcha_frame.ele("#recaptcha-verify-button")
+            
+            if verify_btn:
+                verify_btn.click()
+                time.sleep(3)
+            
+            if DEBUG:
+                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/verify_{attempt}.png")
+            
+            # 检查结果
+            if "/auth/login" not in self.page.url:
+                print("   ✅ 验证成功!")
+                return True
+            
+            # 检查是否还有验证码
+            recaptcha_frame = self._get_recaptcha_frame()
+            if not recaptcha_frame:
+                print("   ✅ 验证码已消失!")
+                time.sleep(2)
+                if "/auth/login" not in self.page.url:
+                    return True
+            
+            # 检查错误
+            if recaptcha_frame:
+                error_msg = recaptcha_frame.ele(".rc-audiochallenge-error-message")
+                if error_msg and error_msg.states.is_displayed:
+                    print(f"   ❌ 验证失败: {error_msg.text}")
+                    # 刷新重试
+                    reload_btn = recaptcha_frame.ele("#recaptcha-reload-button")
+                    if reload_btn:
+                        reload_btn.click()
+                        time.sleep(2)
+            
+            # 清理临时文件
+            try:
+                os.remove(audio_path)
+            except:
+                pass
         
         return False
     
-    def _click_reload(self, frame):
-        """刷新验证码"""
+    def _download_audio(self, url: str) -> Optional[str]:
+        """下载音频文件"""
         try:
-            reload_btn = frame.ele("#recaptcha-reload-button")
-            if reload_btn:
-                reload_btn.click()
-                print("   🔄 已刷新")
-                time.sleep(2.5)
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                'Accept': 'audio/webm,audio/ogg,audio/wav,audio/*;q=0.9,*/*;q=0.8',
+                'Referer': 'https://www.google.com/',
+            }
+            
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+            
+            # 保存到临时文件
+            with tempfile.NamedTemporaryFile(suffix='.mp3', delete=False) as f:
+                f.write(response.content)
+                return f.name
+                
         except Exception as e:
-            print(f"   ⚠️ 刷新失败: {e}")
+            print(f"   ⚠️ 下载失败: {e}")
+            return None
 
 
 def main():
     print("=" * 60)
-    print("🚀 Weirdhost 自动登录 (优化版)")
+    print("🚀 Weirdhost 自动登录 (语音验证版)")
     print("=" * 60)
     
     email = os.environ.get("TEST_EMAIL", "")
