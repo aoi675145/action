@@ -2,10 +2,8 @@
 name: Weirdhost Auto Renew
 
 on:
-  # 每天 UTC 2:00 运行 (北京时间 10:00)
   schedule:
     - cron: '0 2 * * *'
-  # 手动触发
   workflow_dispatch:
 
 jobs:
@@ -14,18 +12,15 @@ jobs:
     timeout-minutes: 30
     
     steps:
-      # 1. 检出代码
       - name: Checkout
         uses: actions/checkout@v4
       
-      # 2. 设置 Python
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
       
-      # 3. 安装 Chrome
       - name: Install Chrome
         run: |
           wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
@@ -34,23 +29,21 @@ jobs:
           sudo apt-get install -y google-chrome-stable
           google-chrome --version
       
-      # 4. 安装 Python 依赖
       - name: Install Dependencies
         run: |
           pip install --upgrade pip
-          pip install -r scripts/requirements.txt
+          pip install -r scripts/Weirdhost/requirements.txt
       
-      # 5. 缓存 YOLO 模型
       - name: Cache YOLO Model
         uses: actions/cache@v4
         with:
           path: |
-            yolo11x.pt
+            scripts/Weirdhost/yolo11x.pt
             ~/.cache/torch
-          key: yolo-model-v1
+          key: yolo-model-weirdhost-v1
       
-      # 6. 下载 YOLO 模型 (如果缓存没有)
       - name: Download YOLO Model
+        working-directory: scripts/Weirdhost
         run: |
           if [ ! -f yolo11x.pt ]; then
             echo "📥 下载 YOLO 模型..."
@@ -59,20 +52,17 @@ jobs:
             echo "✅ 使用缓存的 YOLO 模型"
           fi
       
-      # 7. 运行登录脚本
       - name: Run Login Script
+        working-directory: scripts/Weirdhost
         env:
           TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
-        run: |
-          cd scripts
-          python scripts/weirdhost_login.py
+        run: python weirdhost_login.py
       
-      # 8. 上传调试截图
       - name: Upload Screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: debug-screenshots-${{ github.run_number }}
-          path: scripts/debug_screenshots/
+          path: scripts/Weirdhost/debug_screenshots/
           retention-days: 7
