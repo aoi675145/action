@@ -21,6 +21,11 @@ jobs:
           python-version: '3.11'
           cache: 'pip'
       
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      
       - name: Install Chrome
         run: |
           wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
@@ -29,28 +34,16 @@ jobs:
           sudo apt-get install -y google-chrome-stable
           google-chrome --version
       
-      - name: Install Dependencies
+      - name: Install Python Dependencies
         run: |
           pip install --upgrade pip
           pip install -r scripts/Weirdhost/requirements.txt
       
-      - name: Cache YOLO Model
+      - name: Cache Whisper Model
         uses: actions/cache@v4
         with:
-          path: |
-            scripts/Weirdhost/yolo11x.pt
-            ~/.cache/torch
-          key: yolo-model-weirdhost-v1
-      
-      - name: Download YOLO Model
-        working-directory: scripts/Weirdhost
-        run: |
-          if [ ! -f yolo11x.pt ]; then
-            echo "📥 下载 YOLO 模型..."
-            python -c "from ultralytics import YOLO; YOLO('yolo11x.pt')"
-          else
-            echo "✅ 使用缓存的 YOLO 模型"
-          fi
+          path: ~/.cache/whisper
+          key: whisper-base-v1
       
       - name: Run Login Script
         working-directory: scripts/Weirdhost
