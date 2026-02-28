@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Weirdhost 自动登录 - 带调试输出
+Weirdhost 自动登录 - 支持代理
 """
 
 from DrissionPage import ChromiumPage, ChromiumOptions
@@ -14,27 +14,24 @@ import html
 import sys
 from typing import Optional
 
-# 强制实时输出
 sys.stdout.reconfigure(line_buffering=True)
 
-DEBUG = True
 SCREENSHOT_DIR = "debug_screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
-TIMEOUT = 180  # 总超时 3 分钟
 
 
 def log(msg):
-    """实时打印日志"""
     print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 class RecaptchaSolver:
     """reCAPTCHA 音频验证破解器"""
     
-    def __init__(self, page):
+    def __init__(self, page, proxy=None):
         self.page = page
+        self.proxy = proxy
     
     def get_bframe(self):
         """获取 reCAPTCHA bframe"""
@@ -46,28 +43,51 @@ class RecaptchaSolver:
                 return frame
         return None
     
-    def get_audio_source(self, iframe_ele) -> Optional[str]:
-        """获取音频下载链接"""
+    def check_blocked(self, iframe_ele) -> bool:
+        """检查是否被封锁"""
         try:
+            # 检查 "Try again later" 消息
+            blocked_msg = iframe_ele.ele('css:.rc-doscaptcha-header-text', timeout=2)
+            if blocked_msg and 'try again later' in blocked_msg.text.lower():
+                log("   ⛔ IP 被 Google 封锁!")
+                return True
+            
+            # 检查错误消息
             err_msg = iframe_ele.ele('css:.rc-audiochallenge-error-message')
             if err_msg and err_msg.states.is_displayed:
                 log(f"   ⛔ 被拦截: {err_msg.text}")
+                return True
+            
+            return False
+        except:
+            return False
+    
+    def get_audio_source(self, iframe_ele) -> Optional[str]:
+        """获取音频下载链接"""
+        try:
+            # 先检查是否被封锁
+            if self.check_blocked(iframe_ele):
                 return None
             
-            download_link = iframe_ele.ele('css:.rc-audiochallenge-tdownload-link')
+            # 方法1: 下载链接
+            download_link = iframe_ele.ele('css:.rc-audiochallenge-tdownload-link', timeout=5)
             if download_link:
                 href = download_link.attr('href')
                 if href:
+                    log(f"   📎 找到下载链接")
                     return html.unescape(href)
             
-            audio_tag = iframe_ele.ele('css:#audio-source')
+            # 方法2: audio 标签
+            audio_tag = iframe_ele.ele('css:#audio-source', timeout=3)
             if audio_tag:
                 src = audio_tag.attr('src')
                 if src:
+                    log(f"   📎 找到 audio src")
                     return html.unescape(src)
             
             return None
-        except:
+        except Exception as e:
+            log(f"   ⚠️ 获取音频失败: {e}")
             return None
     
     def download_audio(self, url: str) -> Optional[str]:
@@ -78,7 +98,15 @@ class RecaptchaSolver:
                 'Referer': 'https://www.google.com/',
             }
             
-            r = requests.get(url, headers=headers, timeout=15)
+            proxies = None
+            if self.proxy:
+                proxies = {
+                    'http': self.proxy,
+                    'https': self.proxy
+                }
+                log(f"   🔗 使用代理下载")
+            
+            r = requests.get(url, headers=headers, timeout=30, proxies=proxies)
             r.raise_for_status()
             
             log(f"   📥 下载: {len(r.content)} bytes")
@@ -133,40 +161,48 @@ class RecaptchaSolver:
             
             iframe_ele = self.get_bframe()
             if not iframe_ele:
-                log("   📭 未检测到验证码弹窗")
-                time.sleep(2)
+                log("   📭 未检测到验证码弹窗，等待...")
+                time.sleep(3)
                 continue
             
             log("   🎯 找到 reCAPTCHA")
             
             # 截图
             try:
-                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/attempt_{attempt}.png")
+                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/captcha_{attempt}.png")
             except:
                 pass
             
-            # 点击音频按钮
-            audio_btn = iframe_ele.ele('css:#recaptcha-audio-button', timeout=2)
-            if audio_btn:
-                try:
+            # 检查是否被封锁
+            if self.check_blocked(iframe_ele):
+                log("   ⛔ IP 被封锁，需要更换代理!")
+                return False
+            
+            # 检查是否已经在音频模式
+            audio_response = iframe_ele.ele('css:#audio-response', timeout=2)
+            if not audio_response:
+                # 点击音频按钮
+                audio_btn = iframe_ele.ele('css:#recaptcha-audio-button', timeout=3)
+                if audio_btn and audio_btn.states.is_displayed:
                     log("   🖱️ 点击音频按钮...")
                     audio_btn.click()
-                    time.sleep(random.uniform(2, 3))
-                except:
-                    pass
+                    time.sleep(random.uniform(2, 4))
+                    
+                    # 再次检查封锁
+                    if self.check_blocked(iframe_ele):
+                        log("   ⛔ 切换音频后被封锁!")
+                        return False
             
             # 获取音频链接
             src = self.get_audio_source(iframe_ele)
             
             if not src:
-                log("   ⚠️ 无音频，刷新...")
+                log("   ⚠️ 无音频链接，刷新...")
                 reload_btn = iframe_ele.ele('css:#recaptcha-reload-button', timeout=2)
                 if reload_btn:
                     reload_btn.click()
                     time.sleep(3)
                 continue
-            
-            log(f"   📎 音频URL: {src[:50]}...")
             
             # 下载
             mp3_path = self.download_audio(src)
@@ -182,7 +218,7 @@ class RecaptchaSolver:
                 pass
             
             if not key_text:
-                log("   ❌ 识别失败")
+                log("   ❌ 识别失败，刷新...")
                 reload_btn = iframe_ele.ele('css:#recaptcha-reload-button')
                 if reload_btn:
                     reload_btn.click()
@@ -202,7 +238,7 @@ class RecaptchaSolver:
             
             for char in key_text:
                 input_box.input(char, clear=False)
-                time.sleep(random.uniform(0.03, 0.08))
+                time.sleep(random.uniform(0.05, 0.1))
             
             time.sleep(0.5)
             
@@ -211,7 +247,7 @@ class RecaptchaSolver:
             if verify_btn:
                 log("   🚀 提交...")
                 verify_btn.click()
-                time.sleep(3)
+                time.sleep(4)
             
             if "/auth/login" not in self.page.url:
                 log("✅ 验证通过!")
@@ -220,7 +256,7 @@ class RecaptchaSolver:
         return False
 
 
-def create_browser() -> ChromiumPage:
+def create_browser(proxy_socks5: str = None) -> ChromiumPage:
     """创建浏览器"""
     log("🌐 启动 Chrome...")
     
@@ -228,7 +264,6 @@ def create_browser() -> ChromiumPage:
     co.auto_port()
     co.headless()
     
-    # 关键参数
     co.set_argument('--no-sandbox')
     co.set_argument('--disable-dev-shm-usage')
     co.set_argument('--disable-gpu')
@@ -236,10 +271,15 @@ def create_browser() -> ChromiumPage:
     co.set_argument('--window-size=1280,900')
     co.set_argument('--disable-blink-features=AutomationControlled')
     
-    # 设置超时
+    # 设置代理
+    if proxy_socks5:
+        # 从 socks5://127.0.0.1:10808 提取
+        proxy_addr = proxy_socks5.replace('socks5://', '').replace('socks://', '')
+        co.set_argument(f'--proxy-server=socks5://{proxy_addr}')
+        log(f"   🔗 代理: socks5://{proxy_addr}")
+    
     co.set_timeouts(base=30, page_load=60, script=30)
     
-    # Chrome 路径
     for path in ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium']:
         if os.path.exists(path):
             co.set_browser_path(path)
@@ -264,27 +304,36 @@ def main():
     
     email = os.environ.get("TEST_EMAIL", "")
     password = os.environ.get("TEST_PASSWORD", "")
+    proxy_socks5 = os.environ.get("PROXY_SOCKS5", "")
     
     if not all([email, password]):
         log("❌ 缺少 TEST_EMAIL 或 TEST_PASSWORD")
         sys.exit(1)
     
     log(f"📧 邮箱: {email[:3]}***")
+    if proxy_socks5:
+        log(f"🔗 代理: {proxy_socks5}")
+    else:
+        log("⚠️ 未配置代理，可能被 Google 封锁!")
     
     start_time = time.time()
     page = None
     
     try:
-        # 启动浏览器
-        page = create_browser()
+        page = create_browser(proxy_socks5)
+        
+        # 测试代理
+        if proxy_socks5:
+            log("\n[0/5] 测试代理...")
+            page.get('https://api.ipify.org')
+            ip = page.ele('tag:body').text.strip()
+            log(f"   当前 IP: {ip}")
         
         # 打开页面
         log("\n[1/5] 打开登录页...")
         page.get(LOGIN_URL)
-        log(f"   当前URL: {page.url}")
+        log(f"   URL: {page.url}")
         
-        # 等待加载
-        log("   等待页面加载...")
         page.wait.doc_loaded(timeout=30)
         time.sleep(2)
         
@@ -293,7 +342,7 @@ def main():
         
         # 填写邮箱
         log("\n[2/5] 填写邮箱...")
-        email_input = page.ele('@name=username', timeout=10) or page.ele('@type=email', timeout=5)
+        email_input = page.ele('@name=username', timeout=10)
         if email_input:
             email_input.clear()
             email_input.input(email)
@@ -303,7 +352,7 @@ def main():
         
         # 填写密码
         log("\n[3/5] 填写密码...")
-        pwd_input = page.ele('@name=password', timeout=5) or page.ele('@type=password', timeout=5)
+        pwd_input = page.ele('@name=password', timeout=5)
         if pwd_input:
             pwd_input.clear()
             pwd_input.input(password)
@@ -321,24 +370,54 @@ def main():
         
         page.get_screenshot(path=f"{SCREENSHOT_DIR}/02_filled.png")
         
-        # 点击登录
+        # 点击登录按钮 - 修复选择器
         log("\n[5/5] 点击登录...")
-        login_btn = (page.ele('@tag()=button@@text():로그인', timeout=5) or 
-                    page.ele('@tag()=button@@text():Login', timeout=3) or
-                    page.ele('@@tag()=button@@type=submit', timeout=3))
+        login_btn = None
+        
+        # 尝试多种选择器
+        selectors = [
+            'css:button.jOimeR',                    # class 名
+            'css:button[color="red"]',              # color 属性
+            '@tag()=button@@text():로그인',          # 韩文
+            '@tag()=button@@text():Login',          # 英文
+            'css:button span:contains(로그인)',     # span 内文字
+            'xpath://button[contains(@class, "Button__ButtonStyle")]',  # 包含 class
+        ]
+        
+        for sel in selectors:
+            try:
+                btn = page.ele(sel, timeout=2)
+                if btn and btn.states.is_displayed:
+                    login_btn = btn
+                    log(f"   找到按钮: {sel}")
+                    break
+            except:
+                continue
+        
         if login_btn:
             login_btn.click()
             log("   ✅ 已点击登录")
         else:
-            log("   ❌ 未找到登录按钮")
+            # 备用方案：用 JS 点击
+            log("   ⚠️ 尝试 JS 点击...")
+            page.run_js('document.querySelector("button[color=red]")?.click()')
         
         time.sleep(3)
         page.get_screenshot(path=f"{SCREENSHOT_DIR}/03_clicked.png")
         
         # 处理验证码
         log("\n[*] 检查 reCAPTCHA...")
-        solver = RecaptchaSolver(page)
-        solver.solve(max_attempts=5)
+        
+        # 转换代理格式给 requests 用
+        requests_proxy = None
+        if proxy_socks5:
+            requests_proxy = proxy_socks5
+        
+        solver = RecaptchaSolver(page, proxy=requests_proxy)
+        result = solver.solve(max_attempts=5)
+        
+        if not result:
+            log("⚠️ 验证码处理失败")
         
         # 检查结果
         time.sleep(2)
