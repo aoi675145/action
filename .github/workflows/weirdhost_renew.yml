@@ -1,81 +1,48 @@
-name: Weirdhost Auto Renew
+name: Weirdhost Auto Login
 
 on:
-  # 每天 UTC 2:00 (北京时间 10:00) 运行
   schedule:
-    - cron: '0 2 * * *'
-  
-  # 手动触发
+    - cron: '0 1 * * *'
   workflow_dispatch:
-    inputs:
-      debug:
-        description: '启用调试模式'
-        required: false
-        default: 'true'
-        type: boolean
-
-env:
-  PYTHON_VERSION: '3.11'
 
 jobs:
   login:
-    name: 自动登录续期
     runs-on: ubuntu-latest
-    timeout-minutes: 30
     
     steps:
-      # 1. 检出代码
-      - name: 📥 检出代码
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
       
-      # 2. 设置 Python
-      - name: 🐍 设置 Python ${{ env.PYTHON_VERSION }}
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: scripts/Weirdhost/requirements.txt
+          python-version: '3.11'
       
-      # 3. 安装 Chrome
-      - name: 🌐 安装 Chrome
+      - name: Install Chrome
+        uses: browser-actions/setup-chrome@latest
+        with:
+          chrome-version: stable
+      
+      - name: Install ffmpeg
         run: |
-          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
           sudo apt-get update
-          sudo apt-get install -y google-chrome-stable
-          echo "Chrome 版本: $(google-chrome --version)"
+          sudo apt-get install -y ffmpeg
       
-      # 4. 安装 Python 依赖
-      - name: 📦 安装依赖
+      - name: Install dependencies
         run: |
-          pip install --upgrade pip
           pip install -r scripts/Weirdhost/requirements.txt
-          pip list
       
-      # 5. 运行登录脚本
-      - name: 🔐 执行登录
-        working-directory: scripts/Weirdhost
+      - name: Run login
         env:
           TEST_EMAIL: ${{ secrets.TEST_EMAIL }}
           TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
-          WIT_AI_TOKEN: ${{ secrets.WIT_AI_TOKEN }}
-          HEADLESS: 'true'
+          HEADLESS: "true"
         run: |
-          echo "开始执行登录脚本..."
-          python weirdhost_login.py
+          python scripts/Weirdhost/weirdhost_login.py
       
-      # 6. 上传调试截图
-      - name: 📸 上传截图
+      - name: Upload screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: debug-screenshots-${{ github.run_number }}
-          path: scripts/Weirdhost/debug_screenshots/
-          retention-days: 7
-          if-no-files-found: ignore
-      
-      # 7. 失败通知 (可选)
-      - name: 📢 失败通知
-        if: failure()
-        run: |
-          echo "::error::登录失败，请检查截图和日志"
+          name: weirdhost-debug
+          path: debug_screenshots/
+          retention-days: 3
