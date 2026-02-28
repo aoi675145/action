@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Weirdhost 自动登录 - Google Speech Recognition
+Weirdhost 自动登录 - 带调试输出
 """
 
 from DrissionPage import ChromiumPage, ChromiumOptions
@@ -11,13 +11,23 @@ import random
 import requests
 import tempfile
 import html
+import sys
 from typing import Optional
+
+# 强制实时输出
+sys.stdout.reconfigure(line_buffering=True)
 
 DEBUG = True
 SCREENSHOT_DIR = "debug_screenshots"
 os.makedirs(SCREENSHOT_DIR, exist_ok=True)
 
 LOGIN_URL = "https://hub.weirdhost.xyz/auth/login"
+TIMEOUT = 180  # 总超时 3 分钟
+
+
+def log(msg):
+    """实时打印日志"""
+    print(f"[{time.strftime('%H:%M:%S')}] {msg}", flush=True)
 
 
 class RecaptchaSolver:
@@ -25,9 +35,6 @@ class RecaptchaSolver:
     
     def __init__(self, page):
         self.page = page
-    
-    def log(self, msg):
-        print(f"   [Solver] {msg}")
     
     def get_bframe(self):
         """获取 reCAPTCHA bframe"""
@@ -42,27 +49,17 @@ class RecaptchaSolver:
     def get_audio_source(self, iframe_ele) -> Optional[str]:
         """获取音频下载链接"""
         try:
-            # 检查是否被拦截
             err_msg = iframe_ele.ele('css:.rc-audiochallenge-error-message')
             if err_msg and err_msg.states.is_displayed:
-                self.log(f"⛔ 被拦截: {err_msg.text}")
+                log(f"   ⛔ 被拦截: {err_msg.text}")
                 return None
             
-            # 方法1: 下载链接
             download_link = iframe_ele.ele('css:.rc-audiochallenge-tdownload-link')
             if download_link:
                 href = download_link.attr('href')
                 if href:
                     return html.unescape(href)
             
-            # 方法2: XPath 查找 mp3
-            download_link = iframe_ele.ele('xpath://a[contains(@href, ".mp3")]')
-            if download_link:
-                href = download_link.attr('href')
-                if href:
-                    return html.unescape(href)
-            
-            # 方法3: audio-source
             audio_tag = iframe_ele.ele('css:#audio-source')
             if audio_tag:
                 src = audio_tag.attr('src')
@@ -84,7 +81,7 @@ class RecaptchaSolver:
             r = requests.get(url, headers=headers, timeout=15)
             r.raise_for_status()
             
-            self.log(f"📥 下载: {len(r.content)} bytes")
+            log(f"   📥 下载: {len(r.content)} bytes")
             
             mp3_path = tempfile.mktemp(suffix='.mp3')
             with open(mp3_path, 'wb') as f:
@@ -92,7 +89,7 @@ class RecaptchaSolver:
             return mp3_path
                 
         except Exception as e:
-            self.log(f"❌ 下载失败: {e}")
+            log(f"   ❌ 下载失败: {e}")
             return None
     
     def recognize_audio(self, mp3_path: str) -> Optional[str]:
@@ -101,20 +98,17 @@ class RecaptchaSolver:
             import speech_recognition as sr
             from pydub import AudioSegment
             
-            # MP3 转 WAV
-            self.log("🔄 转换格式...")
+            log("   🔄 转换 MP3 -> WAV...")
             wav_path = mp3_path.replace('.mp3', '.wav')
             sound = AudioSegment.from_mp3(mp3_path)
             sound.export(wav_path, format="wav")
             
-            # 识别
-            self.log("🎤 Google 识别...")
+            log("   🎤 Google 语音识别...")
             recognizer = sr.Recognizer()
             with sr.AudioFile(wav_path) as source:
                 audio_data = recognizer.record(source)
                 text = recognizer.recognize_google(audio_data)
             
-            # 清理
             try:
                 os.remove(wav_path)
             except:
@@ -123,256 +117,261 @@ class RecaptchaSolver:
             return text
             
         except Exception as e:
-            self.log(f"❌ 识别失败: {e}")
+            log(f"   ❌ 识别失败: {e}")
             return None
     
-    def solve(self, max_attempts: int = 8) -> bool:
+    def solve(self, max_attempts: int = 5) -> bool:
         """解决 reCAPTCHA"""
-        self.log("🎧 启动音频破解...")
+        log("🎧 启动音频破解...")
         
         for attempt in range(max_attempts):
-            self.log(f"\n===== 尝试 {attempt + 1}/{max_attempts} =====")
+            log(f"\n--- 尝试 {attempt + 1}/{max_attempts} ---")
             
-            # 检查是否已跳转
             if "/auth/login" not in self.page.url:
-                self.log("✅ 已跳转!")
+                log("✅ 已跳转!")
                 return True
             
-            # 获取 iframe
             iframe_ele = self.get_bframe()
             if not iframe_ele:
-                self.log("📭 未检测到验证码")
+                log("   📭 未检测到验证码弹窗")
                 time.sleep(2)
                 continue
             
-            self.log("🎯 找到 reCAPTCHA")
-            self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/attempt_{attempt:02d}_00.png")
+            log("   🎯 找到 reCAPTCHA")
+            
+            # 截图
+            try:
+                self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/attempt_{attempt}.png")
+            except:
+                pass
             
             # 点击音频按钮
-            audio_btn = iframe_ele.ele('css:#recaptcha-audio-button', timeout=3)
+            audio_btn = iframe_ele.ele('css:#recaptcha-audio-button', timeout=2)
             if audio_btn:
                 try:
-                    if audio_btn.states.is_displayed:
-                        self.log("🖱️ 点击音频按钮...")
-                        audio_btn.click()
-                        time.sleep(random.uniform(2, 4))
-                except:
+                    log("   🖱️ 点击音频按钮...")
                     audio_btn.click()
-                    time.sleep(3)
-            
-            self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/attempt_{attempt:02d}_01.png")
+                    time.sleep(random.uniform(2, 3))
+                except:
+                    pass
             
             # 获取音频链接
             src = self.get_audio_source(iframe_ele)
             
             if not src:
-                self.log("⚠️ 获取音频失败，刷新...")
-                reload_btn = iframe_ele.ele('css:#recaptcha-reload-button', timeout=3)
+                log("   ⚠️ 无音频，刷新...")
+                reload_btn = iframe_ele.ele('css:#recaptcha-reload-button', timeout=2)
                 if reload_btn:
                     reload_btn.click()
-                    time.sleep(random.uniform(3, 5))
-                    src = self.get_audio_source(iframe_ele)
-            
-            if not src:
-                self.log("❌ 无法获取音频")
-                # 保存 HTML 调试
-                try:
-                    with open(f"{SCREENSHOT_DIR}/attempt_{attempt:02d}.html", 'w') as f:
-                        f.write(iframe_ele.html)
-                except:
-                    pass
-                time.sleep(2)
+                    time.sleep(3)
                 continue
             
-            self.log(f"📎 音频: {src[:60]}...")
+            log(f"   📎 音频URL: {src[:50]}...")
             
-            # 下载音频
+            # 下载
             mp3_path = self.download_audio(src)
             if not mp3_path:
                 continue
             
-            # 语音识别
+            # 识别
             key_text = self.recognize_audio(mp3_path)
             
-            # 清理
             try:
                 os.remove(mp3_path)
             except:
                 pass
             
             if not key_text:
-                self.log("❌ 识别失败，刷新重试...")
+                log("   ❌ 识别失败")
                 reload_btn = iframe_ele.ele('css:#recaptcha-reload-button')
                 if reload_btn:
                     reload_btn.click()
                     time.sleep(3)
                 continue
             
-            self.log(f"🗣️ 识别: [{key_text}]")
+            log(f"   🗣️ 识别结果: [{key_text}]")
             
-            # 输入答案
+            # 输入
             input_box = iframe_ele.ele('css:#audio-response')
             if not input_box:
-                self.log("❌ 未找到输入框")
+                log("   ❌ 未找到输入框")
                 continue
             
             input_box.click()
-            time.sleep(0.5)
+            time.sleep(0.3)
             
-            # 模拟人工输入
             for char in key_text:
                 input_box.input(char, clear=False)
-                time.sleep(random.uniform(0.05, 0.15))
+                time.sleep(random.uniform(0.03, 0.08))
             
-            time.sleep(1)
-            self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/attempt_{attempt:02d}_02.png")
+            time.sleep(0.5)
             
-            # 点击验证
+            # 提交
             verify_btn = iframe_ele.ele('css:#recaptcha-verify-button')
             if verify_btn:
+                log("   🚀 提交...")
                 verify_btn.click()
-                self.log("🚀 提交验证...")
-                time.sleep(4)
+                time.sleep(3)
             
-            self.page.get_screenshot(path=f"{SCREENSHOT_DIR}/attempt_{attempt:02d}_03.png")
-            
-            # 检查结果
             if "/auth/login" not in self.page.url:
-                self.log("✅ 验证通过!")
+                log("✅ 验证通过!")
                 return True
-            
-            # 检查错误
-            try:
-                err = iframe_ele.ele('css:.rc-audiochallenge-error-message')
-                if err and err.states.is_displayed:
-                    self.log(f"❌ 错误: {err.text}")
-            except:
-                pass
         
         return False
 
 
-class WeirdhostLogin:
-    """Weirdhost 登录器"""
+def create_browser() -> ChromiumPage:
+    """创建浏览器"""
+    log("🌐 启动 Chrome...")
     
-    def __init__(self, headless: bool = True):
-        self.headless = headless
-        self.page = None
+    co = ChromiumOptions()
+    co.auto_port()
+    co.headless()
     
-    def _create_browser(self) -> ChromiumPage:
-        co = ChromiumOptions()
-        co.auto_port()
-        
-        if self.headless:
-            co.headless()
-        
-        co.set_argument('--no-sandbox')
-        co.set_argument('--disable-dev-shm-usage')
-        co.set_argument('--disable-gpu')
-        co.set_argument('--window-size=1280,900')
-        co.set_argument('--disable-blink-features=AutomationControlled')
-        
-        chrome_path = '/usr/bin/google-chrome'
-        if os.path.exists(chrome_path):
-            co.set_browser_path(chrome_path)
-        
-        co.set_user_agent(
-            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
-            'AppleWebKit/537.36 (KHTML, like Gecko) '
-            'Chrome/120.0.0.0 Safari/537.36'
-        )
-        
-        return ChromiumPage(co)
+    # 关键参数
+    co.set_argument('--no-sandbox')
+    co.set_argument('--disable-dev-shm-usage')
+    co.set_argument('--disable-gpu')
+    co.set_argument('--disable-software-rasterizer')
+    co.set_argument('--window-size=1280,900')
+    co.set_argument('--disable-blink-features=AutomationControlled')
     
-    def login(self, email: str, password: str) -> bool:
-        print(f"\n{'='*60}")
-        print(f"🔐 Weirdhost 自动登录")
-        print(f"{'='*60}")
-        
-        self.page = self._create_browser()
-        
-        try:
-            # 打开页面
-            print(f"\n[1/5] 打开页面...")
-            self.page.get(LOGIN_URL)
-            self.page.wait.doc_loaded()
-            time.sleep(2)
-            
-            # 填写表单
-            print(f"\n[2/5] 填写邮箱...")
-            email_input = self.page.ele('@name=username') or self.page.ele('@type=email')
-            if email_input:
-                email_input.clear()
-                email_input.input(email)
-            
-            print(f"\n[3/5] 填写密码...")
-            pwd_input = self.page.ele('@name=password') or self.page.ele('@type=password')
-            if pwd_input:
-                pwd_input.clear()
-                pwd_input.input(password)
-            
-            print(f"\n[4/5] 勾选条款...")
-            checkbox = self.page.ele('@type=checkbox')
-            if checkbox and not checkbox.states.is_checked:
-                checkbox.click()
-            
-            # 点击登录
-            print(f"\n[5/5] 点击登录...")
-            login_btn = (self.page.ele('@tag()=button@@text():로그인') or 
-                        self.page.ele('@tag()=button@@text():Login') or
-                        self.page.ele('@@tag()=button@@type=submit'))
-            if login_btn:
-                login_btn.click()
-            
-            time.sleep(2)
-            
-            # 处理验证码
-            print(f"\n[*] 处理 reCAPTCHA...")
-            solver = RecaptchaSolver(self.page)
-            success = solver.solve()
-            
-            time.sleep(2)
-            final_url = self.page.url
-            print(f"\n📍 最终 URL: {final_url}")
-            
-            if "/auth/login" not in final_url:
-                print(f"\n🎉 登录成功!")
-                return True
-            
-            return False
-                
-        except Exception as e:
-            print(f"\n❌ 异常: {e}")
-            import traceback
-            traceback.print_exc()
-            return False
-        
-        finally:
-            if self.page:
-                self.page.quit()
+    # 设置超时
+    co.set_timeouts(base=30, page_load=60, script=30)
+    
+    # Chrome 路径
+    for path in ['/usr/bin/google-chrome', '/usr/bin/chromium-browser', '/usr/bin/chromium']:
+        if os.path.exists(path):
+            co.set_browser_path(path)
+            log(f"   Chrome: {path}")
+            break
+    
+    co.set_user_agent(
+        'Mozilla/5.0 (Windows NT 10.0; Win64; x64) '
+        'AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Chrome/120.0.0.0 Safari/537.36'
+    )
+    
+    page = ChromiumPage(co)
+    log("   ✅ Chrome 已启动")
+    return page
 
 
 def main():
-    print("=" * 60)
-    print("🚀 Weirdhost 自动登录 (Google Speech)")
-    print("=" * 60)
+    log("=" * 50)
+    log("🚀 Weirdhost 自动登录")
+    log("=" * 50)
     
     email = os.environ.get("TEST_EMAIL", "")
     password = os.environ.get("TEST_PASSWORD", "")
     
     if not all([email, password]):
-        print("❌ 缺少 TEST_EMAIL 或 TEST_PASSWORD")
-        exit(1)
+        log("❌ 缺少 TEST_EMAIL 或 TEST_PASSWORD")
+        sys.exit(1)
     
-    print(f"\n📋 邮箱: {email[:3]}***")
+    log(f"📧 邮箱: {email[:3]}***")
     
-    headless = os.environ.get("HEADLESS", "true").lower() == "true"
+    start_time = time.time()
+    page = None
     
-    login = WeirdhostLogin(headless=headless)
-    success = login.login(email, password)
-    
-    exit(0 if success else 1)
+    try:
+        # 启动浏览器
+        page = create_browser()
+        
+        # 打开页面
+        log("\n[1/5] 打开登录页...")
+        page.get(LOGIN_URL)
+        log(f"   当前URL: {page.url}")
+        
+        # 等待加载
+        log("   等待页面加载...")
+        page.wait.doc_loaded(timeout=30)
+        time.sleep(2)
+        
+        page.get_screenshot(path=f"{SCREENSHOT_DIR}/01_loaded.png")
+        log("   ✅ 页面已加载")
+        
+        # 填写邮箱
+        log("\n[2/5] 填写邮箱...")
+        email_input = page.ele('@name=username', timeout=10) or page.ele('@type=email', timeout=5)
+        if email_input:
+            email_input.clear()
+            email_input.input(email)
+            log("   ✅ 邮箱已填写")
+        else:
+            log("   ❌ 未找到邮箱输入框")
+        
+        # 填写密码
+        log("\n[3/5] 填写密码...")
+        pwd_input = page.ele('@name=password', timeout=5) or page.ele('@type=password', timeout=5)
+        if pwd_input:
+            pwd_input.clear()
+            pwd_input.input(password)
+            log("   ✅ 密码已填写")
+        else:
+            log("   ❌ 未找到密码输入框")
+        
+        # 勾选条款
+        log("\n[4/5] 勾选条款...")
+        checkbox = page.ele('@type=checkbox', timeout=5)
+        if checkbox:
+            if not checkbox.states.is_checked:
+                checkbox.click()
+            log("   ✅ 条款已勾选")
+        
+        page.get_screenshot(path=f"{SCREENSHOT_DIR}/02_filled.png")
+        
+        # 点击登录
+        log("\n[5/5] 点击登录...")
+        login_btn = (page.ele('@tag()=button@@text():로그인', timeout=5) or 
+                    page.ele('@tag()=button@@text():Login', timeout=3) or
+                    page.ele('@@tag()=button@@type=submit', timeout=3))
+        if login_btn:
+            login_btn.click()
+            log("   ✅ 已点击登录")
+        else:
+            log("   ❌ 未找到登录按钮")
+        
+        time.sleep(3)
+        page.get_screenshot(path=f"{SCREENSHOT_DIR}/03_clicked.png")
+        
+        # 处理验证码
+        log("\n[*] 检查 reCAPTCHA...")
+        solver = RecaptchaSolver(page)
+        solver.solve(max_attempts=5)
+        
+        # 检查结果
+        time.sleep(2)
+        final_url = page.url
+        log(f"\n📍 最终URL: {final_url}")
+        
+        page.get_screenshot(path=f"{SCREENSHOT_DIR}/04_final.png")
+        
+        elapsed = time.time() - start_time
+        log(f"⏱️ 耗时: {elapsed:.1f}秒")
+        
+        if "/auth/login" not in final_url:
+            log("\n🎉 登录成功!")
+            return True
+        else:
+            log("\n❌ 登录失败")
+            return False
+            
+    except Exception as e:
+        log(f"\n❌ 异常: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+        
+    finally:
+        if page:
+            try:
+                page.quit()
+                log("🔚 浏览器已关闭")
+            except:
+                pass
 
 
 if __name__ == "__main__":
-    main()
+    success = main()
+    sys.exit(0 if success else 1)
