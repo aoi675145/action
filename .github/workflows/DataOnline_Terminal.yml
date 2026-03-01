@@ -50,7 +50,7 @@ jobs:
           ACCOUNT_NAME: ${{ github.event.inputs.account_name }}
         run: |
           python private/scripts/DataOnline/DataOnline_Terminal.py
-          # > /dev/null 2>&1
+#           > /dev/null 2>&1
 
 #      - name: 上传截图
 #        if: always()
