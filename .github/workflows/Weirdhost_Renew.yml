@@ -88,7 +88,7 @@ jobs:
           sudo chmod +x /usr/local/bin/xray
           xray version
 
-      - name: 登录失败账号  > /dev/null 2>&1
+      - name: 登录失败账号
         if: always() && steps.check_failed.outputs.has_failed == 'true'
         env:
           WEIRDHOST_COOKIE_1: ${{ secrets.WEIRDHOST_COOKIE_1 }}
