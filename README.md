@@ -34,7 +34,7 @@ run: python private/scripts/xxx/xxx.py > /dev/null 2>&1
 | 项目 | 修改前 | 修改后 |
 |------|--------|--------|
 | 仓库 | 当前仓库 | `用户名/私库名` |
-| 路径 | `scripts/xxx.py` | `private/scripts/xxx.py` |
+| 路径 | `scripts/xxx.py` | `private/scripts/xxx/xxx.py > /dev/null 2>&1` |
 
 ---
 
