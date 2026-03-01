@@ -49,7 +49,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ACCOUNT_NAME: ${{ github.event.inputs.account_name }}
         run: |
-          python private/scripts/DataOnline/DataOnline_Terminal.py # > /dev/null 2>&1
+          python private/scripts/DataOnline/DataOnline_Terminal.py    # > /dev/null 2>&1
 
 #      - name: 上传截图
 #        if: always()
