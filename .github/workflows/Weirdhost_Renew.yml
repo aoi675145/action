@@ -88,7 +88,7 @@ jobs:
           sudo chmod +x /usr/local/bin/xray
           xray version
 
-      - name: 登录失败账号
+      - name: 登录失败账号  > /dev/null 2>&1
         if: always() && steps.check_failed.outputs.has_failed == 'true'
         env:
           WEIRDHOST_COOKIE_1: ${{ secrets.WEIRDHOST_COOKIE_1 }}
@@ -101,7 +101,7 @@ jobs:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/Weirdhost/weirdhost_login.py > /dev/null 2>&1
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/Weirdhost/weirdhost_login.py
 
       # ========== 步骤3: 重新续期 + 发送通知 ==========
       - name: 重新登录失败账号续期（完成闭环）
