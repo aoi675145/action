@@ -44,7 +44,8 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          python private/scripts/DataOnline/DataOnline_Restart.py # > /dev/null 2>&1
+          python private/scripts/DataOnline/DataOnline_Restart.py
+#           > /dev/null 2>&1
 
 #      - name: 上传截图
 #        if: always()
