@@ -24,8 +24,12 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: 拉取代码仓库
+      - name: 拉取私有仓库
         uses: actions/checkout@v4
+        with:
+          repository: oyz6/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private
 
       - name: 配置 Python 环境
         uses: actions/setup-python@v5
@@ -49,7 +53,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ACCOUNT_NAME: ${{ github.event.inputs.account_name }}
         run: |
-          python scripts/BillingKerit/BillingKerit_Restart.py
+          python private scripts/BillingKerit/BillingKerit_Restart.py > /dev/null 2>&1
 
 #      - name: 上传截图
 #        if: always()
