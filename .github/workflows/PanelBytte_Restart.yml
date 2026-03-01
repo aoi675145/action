@@ -21,7 +21,7 @@ jobs:
         with:
           repository: oyz6/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: private
+          path: .  # 拉到根目录
       
       - name: 设置 Python
         uses: actions/setup-python@v5
@@ -44,7 +44,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python private/scripts/PanelBytte/PanelBytte_Restart.py
+        run: python scripts/PanelBytte/PanelBytte_Restart.py
 #        > /dev/null 2>&1
       
 #      - name: 上传截图
