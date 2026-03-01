@@ -53,7 +53,7 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           ACCOUNT_NAME: ${{ github.event.inputs.account_name }}
         run: |
-          python private scripts/BillingKerit/BillingKerit_Restart.py > /dev/null 2>&1
+          python private/scripts/BillingKerit/BillingKerit_Restart.py > /dev/null 2>&1
 
 #      - name: 上传截图
 #        if: always()
