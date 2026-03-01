@@ -4,6 +4,12 @@ on:
   schedule:
     - cron: '01 4 * * *'  # 每天北京时间 12:01
   workflow_dispatch:
+    inputs:
+      account_email:
+        description: '指定账号邮箱（留空运行全部）'
+        required: false
+        default: ''
+        type: string
 
 jobs:
   add_time:
@@ -34,6 +40,7 @@ jobs:
       - name: 执行续约脚本
         env:
           CASTLE_ACCOUNTS: ${{ secrets.CASTLE_ACCOUNTS }}
+          ACCOUNT_EMAIL: ${{ github.event.inputs.account_email }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python scripts/CastleHOST/CastleHOST_Renew.py
