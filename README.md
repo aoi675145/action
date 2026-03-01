@@ -1,6 +1,6 @@
 # 私有仓库脚本拉取
 
-只需修改 **2 处**：
+只需修改 **1 处**：
 
 ---
 
@@ -12,38 +12,13 @@
   with:
     repository: oyz6/scripts
     token: ${{ secrets.REPO_TOKEN }}
-    path: private
+    path: .  
 ```
-
----
-
-### 2. 修改脚本路径
-
-
-##### 原路径
-```yaml
-        run: |
-          python scripts/xxx/xxx.py > /dev/null 2>&1
-```
-##### 新路径（加 private/ 前缀）
-```
-        run: |
-          python private/scripts/xxx/xxx.py > /dev/null 2>&1
-```
-
----
-
-## 对比
-
-| 项目 | 修改前 | 修改后 |
-|------|--------|--------|
-| 仓库 | oyz6/scripts | `用户名/私库名` |
-| 路径 | `scripts/xxx/xxx.py` | `private/scripts/xxx/xxx.py > /dev/null 2>&1` |
 
 ---
 
 ## 前提
 
 - Secrets 中已配置 `REPO_TOKEN`
-- 私有仓库中存在对应脚本
+- 私有仓库结构中存在对应脚本
 - 注意：> /dev/null 2>&1 会隐藏所有输出，调试时建议先去掉。
