@@ -83,10 +83,22 @@ jobs:
         run: |
           echo "安装 Xray..."
           XRAY_VERSION="v25.1.30"
-          wget -q "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip" -O /tmp/xray.zip
+          if wget -q "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip" -O /tmp/xray.zip; then
+            echo "下载成功"
+          else
+            echo "官方下载失败，尝试备用链接..."
+            wget -q "https://github.com/user-attachments/files/25659359/Xray-linux-64.zip" -O /tmp/xray.zip || {
+              echo "所有下载源均失败"
+              exit 1
+            }
+            echo "下载成功"
+          fi
+          
           sudo unzip -o /tmp/xray.zip -d /usr/local/bin/ xray
           sudo chmod +x /usr/local/bin/xray
+          rm -f /tmp/xray.zip
           xray version
+          echo "Xray 安装完成"
 
       - name: 登录失败账号
         if: always() && steps.check_failed.outputs.has_failed == 'true'
@@ -96,6 +108,7 @@ jobs:
           WEIRDHOST_COOKIE_3: ${{ secrets.WEIRDHOST_COOKIE_3 }}
           WEIRDHOST_COOKIE_4: ${{ secrets.WEIRDHOST_COOKIE_4 }}
           WEIRDHOST_COOKIE_5: ${{ secrets.WEIRDHOST_COOKIE_5 }}
+          PROXY_NODE: ${{ secrets.PROXY_NODE }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
