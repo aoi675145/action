@@ -14,7 +14,12 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - uses: actions/checkout@v4
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: oyz6/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .  # 拉到根目录
 
       - name: 设置 Python
         uses: actions/setup-python@v5
