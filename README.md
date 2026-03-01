@@ -22,11 +22,13 @@
 
 ##### 原路径
 ```yaml
-run: scripts/xxx/xxx.py
+        run: |
+          python scripts/xxx/xxx.py > /dev/null 2>&1
 ```
 ##### 新路径（加 private/ 前缀）
 ```
-run: python private/scripts/xxx/xxx.py > /dev/null 2>&1
+        run: |
+          python private/scripts/xxx/xxx.py > /dev/null 2>&1
 ```
 
 ---
