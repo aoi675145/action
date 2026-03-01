@@ -14,8 +14,12 @@ jobs:
       actions: write
 
     steps:
-      - name: 检出代码
+      - name: 拉取私有仓库
         uses: actions/checkout@v4
+        with:
+          repository: oyz6/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v4
