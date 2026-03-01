@@ -62,12 +62,12 @@ jobs:
 
       - name: 执行保活
         env:
-          BETADASH_EMAIL: ${{ secrets.LUNES_EMAIL }}
-          BETADASH_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+          LUNES_EMAIL: ${{ secrets.LUNES_EMAIL }}
+          LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: http://127.0.0.1:7890
-        run: python scripts/Lunes/Lunes-Betadash.py
+        run: python scripts/Lunes/Lunes-Keep.py
 
 #      - name: 上传截图
 #        uses: actions/upload-artifact@v4
