@@ -62,8 +62,8 @@ jobs:
 
       - name: 执行保活
         env:
-          BETADASH_EMAIL: ${{ secrets.BETADASH_EMAIL }}
-          BETADASH_PASSWORD: ${{ secrets.BETADASH_PASSWORD }}
+          BETADASH_EMAIL: ${{ secrets.LUNES_EMAIL }}
+          BETADASH_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: http://127.0.0.1:7890
