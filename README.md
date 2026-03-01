@@ -12,7 +12,7 @@
   with:
     repository: oyz6/scripts
     token: ${{ secrets.REPO_TOKEN }}
-    path: .  
+    path: .  # 拉到根目录
 ```
 
 ---
