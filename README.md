@@ -20,11 +20,11 @@
 ### 2. 修改脚本路径
 
 
-### 原路径
+##### 原路径
 ```yaml
-run: python scripts/xxx/xxx.py
+run: scripts/xxx/xxx.py
 ```
-### 新路径（加 private/ 前缀）
+##### 新路径（加 private/ 前缀）
 ```
 run: python private/scripts/xxx/xxx.py > /dev/null 2>&1
 ```
@@ -36,7 +36,7 @@ run: python private/scripts/xxx/xxx.py > /dev/null 2>&1
 | 项目 | 修改前 | 修改后 |
 |------|--------|--------|
 | 仓库 | 当前仓库 | `用户名/私库名` |
-| 路径 | `scripts/xxx.py` | `private/scripts/xxx/xxx.py > /dev/null 2>&1` |
+| 路径 | `scripts/xxx/xxx.py` | `private/scripts/xxx/xxx.py > /dev/null 2>&1` |
 
 ---
 
