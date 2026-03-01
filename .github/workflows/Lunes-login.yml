@@ -1,4 +1,4 @@
-name: Lunes 自动重启
+name: Lunes Host 重启脚本
 
 on:
   workflow_dispatch:
