@@ -21,7 +21,7 @@ jobs:
         with:
           repository: oyz6/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: private
+          path: .  # 拉到根目录
 
       - name: 设置 Python
         uses: actions/setup-python@v5
@@ -359,7 +359,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-        run: python private/scripts/Zampto/Zampto_Renew.py
+        run: python scripts/Zampto/Zampto_Renew.py
 #        > /dev/null 2>&1
 
 #      - name: 上传截图
