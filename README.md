@@ -10,7 +10,7 @@
 - name: 拉取私有仓库
   uses: actions/checkout@v4
   with:
-    repository: 用户名/私库名
+    repository: oyz6/scripts
     token: ${{ secrets.REPO_TOKEN }}
     path: private
 ```
@@ -37,7 +37,7 @@
 
 | 项目 | 修改前 | 修改后 |
 |------|--------|--------|
-| 仓库 | 当前仓库 | `用户名/私库名` |
+| 仓库 | oyz6/scripts | `用户名/私库名` |
 | 路径 | `scripts/xxx/xxx.py` | `private/scripts/xxx/xxx.py > /dev/null 2>&1` |
 
 ---
