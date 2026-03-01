@@ -1,5 +1,0 @@
-DrissionPage>=4.0.0
-requests>=2.28.0
-pydub>=0.25.0
-SpeechRecognition>=3.10.0
-PySocks>=1.7.1
