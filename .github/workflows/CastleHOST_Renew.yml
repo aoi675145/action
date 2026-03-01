@@ -1,0 +1,48 @@
+name: Castle HOST 续约
+
+on:
+  schedule:
+    - cron: '01 4 * * *'  # 每天北京时间 12:01
+  workflow_dispatch:
+
+jobs:
+  add_time:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: oyz6/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: 安装依赖
+        run: |
+          pip install seleniumbase requests pyvirtualdisplay
+          sudo apt-get install -y xvfb
+
+      - name: 执行续约脚本
+        env:
+          CASTLE_ACCOUNTS: ${{ secrets.CASTLE_ACCOUNTS }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python scripts/CastleHOST/CastleHOST_Renew.py
+
+      - name: 清理工作流记录
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
