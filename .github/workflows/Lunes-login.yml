@@ -1,0 +1,73 @@
+name: Lunes 自动重启
+
+on:
+  workflow_dispatch:
+
+jobs:
+  restart:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: oyz6/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg > /dev/null 2>&1
+          pip install -q seleniumbase pyvirtualdisplay requests SpeechRecognition pydub
+
+      - name: 配置代理
+        env:
+          HY2_URL: ${{ secrets.HY2_URL }}
+        run: |
+          wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+          chmod +x hysteria
+          URL="${HY2_URL#hysteria2://}"
+          PASSWORD="${URL%%@*}"
+          SERVER="${URL#*@}"; SERVER="${SERVER%%\?*}"
+          SNI=$(echo "$URL" | grep -oP 'sni=\K[^&]+' || echo "${SERVER%%:*}")
+          cat > hy2.yaml << EOF
+          server: ${SERVER}
+          auth: ${PASSWORD}
+          tls:
+            sni: ${SNI}
+            insecure: true
+          http:
+            listen: 127.0.0.1:7890
+          EOF
+          ./hysteria client -c hy2.yaml > /dev/null 2>&1 &
+          sleep 3
+
+      - name: 执行任务
+        env:
+          LUNES_EMAIL: ${{ secrets.LUNES_EMAIL }}
+          LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROXY_SERVER: http://127.0.0.1:7890
+        run: |
+          python private/scripts/Lunes/Lunes-login.py > /dev/null 2>&1
+          echo "完成"
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
