@@ -21,7 +21,7 @@
 
 - Secrets 中已配置 `REPO_TOKEN`
 - 注意：> /dev/null 2>&1 会隐藏所有输出，调试时建议先去掉。
--私有仓库结构中存在对应脚本
+- 私有仓库结构中存在对应脚本
 ```
 oyz6/scripts/
 └── scripts/
