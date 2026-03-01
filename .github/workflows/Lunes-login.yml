@@ -16,7 +16,7 @@ jobs:
         with:
           repository: oyz6/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: private
+          path: .  # 拉到根目录
 
       - name: 配置 Python
         uses: actions/setup-python@v5
@@ -59,7 +59,7 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: http://127.0.0.1:7890
         run: |
-          python private/scripts/Lunes/Lunes-login.py > /dev/null 2>&1
+          python scripts/Lunes/Lunes-login.py > /dev/null 2>&1
           echo "完成"
 
       - name: 清理运行记录
