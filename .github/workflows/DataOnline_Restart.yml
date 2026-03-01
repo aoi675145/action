@@ -20,8 +20,12 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: 拉取代码仓库
+      - name: 拉取私有仓库
         uses: actions/checkout@v4
+        with:
+          repository: oyz6/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private
 
       - name: 配置 Python 环境
         uses: actions/setup-python@v5
@@ -40,7 +44,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          python scripts/DataOnline/DataOnline_Restart.py
+          python private/scripts/DataOnline/DataOnline_Restart.py # > /dev/null 2>&1
 
 #      - name: 上传截图
 #        if: always()
