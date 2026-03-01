@@ -16,8 +16,12 @@ jobs:
     timeout-minutes: 20
     
     steps:
-      - name: 检出代码
+      - name: 拉取私有仓库
         uses: actions/checkout@v4
+        with:
+          repository: oyz6/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private
       
       - name: 设置 Python
         uses: actions/setup-python@v5
@@ -40,7 +44,8 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-        run: python scripts/PanelBytte/PanelBytte_Restart.py
+        run: python private/scripts/PanelBytte/PanelBytte_Restart.py
+#        > /dev/null 2>&1
       
 #      - name: 上传截图
 #        uses: actions/upload-artifact@v4
