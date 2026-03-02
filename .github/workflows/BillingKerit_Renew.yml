@@ -18,7 +18,7 @@ jobs:
       - name: 拉取私有仓库
         uses: actions/checkout@v4
         with:
-          repository: oyz6/scripts
+          repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .  # 拉到根目录
       
