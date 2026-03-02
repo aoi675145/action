@@ -1,14 +1,16 @@
+# .github/workflows/Weirdhost_renew.yml
 name: Weirdhost 多账号自动续期
 
 on:
   schedule:
-    - cron: '20 3 * * *'
+    # 每天北京时间 12:20
+    - cron: '20 4 * * *'
   workflow_dispatch:
 
 jobs:
   add_time:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     permissions:
       contents: write
       actions: write
@@ -19,7 +21,7 @@ jobs:
         with:
           repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: .
+          path: .  # 拉到根目录
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v4
@@ -29,27 +31,20 @@ jobs:
       - name: 安装系统依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb x11-utils xdotool scrot ffmpeg
+          sudo apt-get install -y xvfb x11-utils xdotool scrot
 
-      - name: 安装字体
+      - name: 安装韩文字体
         run: |
           sudo apt-get install -y fonts-nanum fonts-noto-cjk
-
-      - name: 安装 Chrome
-        run: |
-          wget -q -O - https://dl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" | sudo tee /etc/apt/sources.list.d/google-chrome.list
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable || true
 
       - name: 安装 Python 依赖
         run: |
           python -m pip install --upgrade pip
-          pip install seleniumbase aiohttp pynacl DrissionPage requests pydub SpeechRecognition
+          pip install seleniumbase aiohttp pynacl
 
-      # ========== 步骤1: 续期（直连） ==========
-      - name: 自动续期
+      - name: 运行续期脚本
         env:
+          ACCOUNTS: ${{ secrets.WEIRDHOST_ACCOUNTS }}
           WEIRDHOST_COOKIE_1: ${{ secrets.WEIRDHOST_COOKIE_1 }}
           WEIRDHOST_COOKIE_2: ${{ secrets.WEIRDHOST_COOKIE_2 }}
           WEIRDHOST_COOKIE_3: ${{ secrets.WEIRDHOST_COOKIE_3 }}
@@ -59,93 +54,10 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          RENEW_THRESHOLD_DAYS: "5"
-          FREE_RENEW_THRESHOLD_DAYS: "2"
+          RENEW_THRESHOLD_DAYS: "2"  # 到期前几天才续期
+          NOTIFY_THRESHOLD_DAYS: "4" # 剩余<=4天才发任何TG通知（>4天完全静默）
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/Weirdhost/weirdhost_renew.py
-
-      # ========== 步骤2: 检查是否有失败账号 ==========
-      - name: 记录失败账号
-        id: check_failed
-        if: always()
-        run: |
-          if [ -f "scripts/Weirdhost/failed_accounts.json" ] && [ -s "scripts/Weirdhost/failed_accounts.json" ]; then
-            count=$(python3 -c "import json; print(len(json.load(open('scripts/Weirdhost/failed_accounts.json'))))")
-            echo "有 ${count} 个失败账号需要处理"
-            echo "has_failed=true" >> $GITHUB_OUTPUT
-          else
-            echo "没有失败账号"
-            echo "has_failed=false" >> $GITHUB_OUTPUT
-          fi
-
-      - name: 安装 Xray
-        if: always() && steps.check_failed.outputs.has_failed == 'true'
-        run: |
-          echo "安装 Xray..."
-          XRAY_VERSION="v25.1.30"
-          if wget -q "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VERSION}/Xray-linux-64.zip" -O /tmp/xray.zip; then
-            echo "下载成功"
-          else
-            echo "官方下载失败，尝试备用链接..."
-            wget -q "https://github.com/oyz6/action/releases/download/Xray/Xray-linux-64.zip" -O /tmp/xray.zip || {
-              echo "所有下载源均失败"
-              exit 1
-            }
-            echo "备用链接下载成功"
-          fi
-          
-          sudo unzip -o /tmp/xray.zip -d /usr/local/bin/ xray
-          sudo chmod +x /usr/local/bin/xray
-          rm -f /tmp/xray.zip
-          xray version
-          echo "Xray 安装完成"
-
-      - name: 登录失败账号
-        if: always() && steps.check_failed.outputs.has_failed == 'true'
-        env:
-          WEIRDHOST_COOKIE_1: ${{ secrets.WEIRDHOST_COOKIE_1 }}
-          WEIRDHOST_COOKIE_2: ${{ secrets.WEIRDHOST_COOKIE_2 }}
-          WEIRDHOST_COOKIE_3: ${{ secrets.WEIRDHOST_COOKIE_3 }}
-          WEIRDHOST_COOKIE_4: ${{ secrets.WEIRDHOST_COOKIE_4 }}
-          WEIRDHOST_COOKIE_5: ${{ secrets.WEIRDHOST_COOKIE_5 }}
-          PROXY_NODE: ${{ secrets.PROXY_NODE }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-        run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/Weirdhost/weirdhost_login.py
-
-      # ========== 步骤3: 重新续期 + 发送通知 ==========
-      - name: 重新登录失败账号续期（完成闭环）
-        id: step3
-        if: always()
-        env:
-          WEIRDHOST_COOKIE_1: ${{ secrets.WEIRDHOST_COOKIE_1 }}
-          WEIRDHOST_COOKIE_2: ${{ secrets.WEIRDHOST_COOKIE_2 }}
-          WEIRDHOST_COOKIE_3: ${{ secrets.WEIRDHOST_COOKIE_3 }}
-          WEIRDHOST_COOKIE_4: ${{ secrets.WEIRDHOST_COOKIE_4 }}
-          WEIRDHOST_COOKIE_5: ${{ secrets.WEIRDHOST_COOKIE_5 }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          RENEW_THRESHOLD_DAYS: "5"
-          FREE_RENEW_THRESHOLD_DAYS: "2"
-        run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/Weirdhost/weirdhost_notify.py
-
-#      - name: 上传调试截图
-#        if: always()
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: debug-screenshots
-#          path: |
-#            *.png
-#            scripts/Weirdhost/*.png
-#            debug_screenshots/*.png
-#          if-no-files-found: ignore
-#          retention-days: 3
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/Weirdhost/Weirdhost_renew.py
 
       - name: 清理旧的工作流运行记录
         uses: Mattraks/delete-workflow-runs@v2
