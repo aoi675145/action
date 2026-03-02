@@ -32,10 +32,15 @@ jobs:
         with:
           python-version: "3.11"
 
+#      - name: 安装依赖
+#        run: |
+#          pip install seleniumbase requests pyvirtualdisplay
+#          sudo apt-get install -y xvfb
+
       - name: 安装依赖
         run: |
-          pip install seleniumbase requests pyvirtualdisplay
-          sudo apt-get install -y xvfb
+          pip install seleniumbase requests pyvirtualdisplay pyautogui
+          sudo apt-get install -y xvfb xdotool
 
       - name: 执行续约脚本
         env:
