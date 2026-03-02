@@ -91,7 +91,7 @@ jobs:
               echo "所有下载源均失败"
               exit 1
             }
-            echo "下载成功"
+            echo "备用链接下载成功"
           fi
           
           sudo unzip -o /tmp/xray.zip -d /usr/local/bin/ xray
