@@ -16,13 +16,12 @@ jobs:
       actions: write
 
     steps:
-      # 仅修改此处：由原来的本地 checkout 改为从私有仓库拉取
       - name: 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: .  # 拉取到根目录
+          path: . 
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v4
@@ -58,7 +57,9 @@ jobs:
           RENEW_THRESHOLD_DAYS: "5"       # Bot 服务器阈值（天）
           FREE_RENEW_THRESHOLD_DAYS: "2"  # Minecraft 服务器阈值（天）
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/weirdhost_renew.py
+          # 路径已修改为私库实际路径：scripts/Weirdhost/Weirdhost_renew.py
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
+          python scripts/Weirdhost/Weirdhost_renew.py
 
       - name: 上传调试截图
         if: always()
