@@ -1,5 +1,5 @@
 # .github/workflows/Weirdhost_renew.yml
-name: Weirdhost 多账号自动续期
+name: Weirdhost 多账号自动续期 (增强版)
 
 on:
   schedule:
@@ -16,50 +16,58 @@ jobs:
       actions: write
 
     steps:
-      - name: 拉取私有仓库
+      # 1. 采用代码 B 的拉取方式：从私有仓库获取脚本
+      - name: 拉取私有仓库脚本
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: .  # 拉到根目录
+          path: .  # 拉取到当前工作目录
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # 推荐使用 v5，支持更好的缓存
         with:
           python-version: "3.11"
+          cache: 'pip' # 自动缓存依赖，提升运行速度
 
       - name: 安装系统依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb x11-utils xdotool scrot
-
-      - name: 安装韩文字体
-        run: |
-          sudo apt-get install -y fonts-nanum fonts-noto-cjk
+          sudo apt-get install -y xvfb x11-utils xdotool scrot fonts-nanum fonts-noto-cjk
 
       - name: 安装 Python 依赖
         run: |
           python -m pip install --upgrade pip
           pip install seleniumbase aiohttp pynacl
+          # 预安装浏览器驱动，确保环境稳定性
+          seleniumbase install chromedriver
 
       - name: 运行续期脚本
         env:
+          # 账号与 Cookie 信息
           ACCOUNTS: ${{ secrets.WEIRDHOST_ACCOUNTS }}
           WEIRDHOST_COOKIE_1: ${{ secrets.WEIRDHOST_COOKIE_1 }}
           WEIRDHOST_COOKIE_2: ${{ secrets.WEIRDHOST_COOKIE_2 }}
           WEIRDHOST_COOKIE_3: ${{ secrets.WEIRDHOST_COOKIE_3 }}
           WEIRDHOST_COOKIE_4: ${{ secrets.WEIRDHOST_COOKIE_4 }}
           WEIRDHOST_COOKIE_5: ${{ secrets.WEIRDHOST_COOKIE_5 }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          
+          # 通知与 API 信息
+          TG_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          RENEW_THRESHOLD_DAYS: "2"  # 到期前几天才续期
-          NOTIFY_THRESHOLD_DAYS: "4" # 剩余<=4天才发任何TG通知（>4天完全静默）
+          
+          # 逻辑阈值（代码 B 新增逻辑）
+          RENEW_THRESHOLD_DAYS: "2"  # 到期前 2 天才执行续期动作
+          NOTIFY_THRESHOLD_DAYS: "4" # 剩余天数 <= 4 天才发送 TG 通知
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/Weirdhost/Weirdhost_renew.py
+          # 注意：这里路径使用了代码 B 的 scripts/Weirdhost/ 路径，请确保私库目录一致
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
+          python scripts/Weirdhost/Weirdhost_renew.py
 
       - name: 清理旧的工作流运行记录
+        if: always() # 确保即使脚本运行失败，也会清理历史记录
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
