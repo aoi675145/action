@@ -16,13 +16,12 @@ jobs:
       actions: write
 
     steps:
-      # 仅修改此处：由原来的本地 checkout 改为拉取私有仓库
       - name: 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: .  # 拉取到根目录
+          path: . 
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v4
@@ -55,9 +54,11 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          RENEW_THRESHOLD_DAYS: "2"  # 到期前几天才续期
+          RENEW_THRESHOLD_DAYS: "2"
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/weirdhost_renew.py
+          # 关键修改：将路径指向私库中的实际位置
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
+          python scripts/Weirdhost/Weirdhost_renew.py
 
       - name: 清理旧的工作流运行记录
         uses: Mattraks/delete-workflow-runs@v2
