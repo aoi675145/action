@@ -43,10 +43,10 @@ jobs:
           
       - name: 执行唤醒脚本
         env:
-          TARGET_URL: ${{ github.event.inputs.target_url || 'https://sheet-tool-zsjsj.streamlit.app' }}
+          TARGET_URL: ${{ github.event.inputs.target_url || 'https://knz7pb7sy32pcujrfubbbe.streamlit.app' }}
         run: |
           echo "开始执行 Streamlit 应用唤醒任务..."
-          python scripts/Streamlit/Keep.py
+          python scripts/sceipts/Streamlit/Keep.py
           echo "唤醒任务执行完毕！"
 
       - name: 清理历史运行记录
