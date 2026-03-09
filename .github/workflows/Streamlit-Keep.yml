@@ -6,7 +6,7 @@ on:
       target_url:
         description: '目标链接'
         required: false
-        default: 'https://sheet-tool-zsjsj.streamlit.app'
+        default: 'https://knz7pb7sy32pcujrfubbbe.streamlit.app'
         type: string
 
 permissions:
