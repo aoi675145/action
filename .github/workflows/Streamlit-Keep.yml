@@ -1,0 +1,59 @@
+name: Streamlit 自动唤醒
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_url:
+        description: '目标链接'
+        required: false
+        default: 'https://sheet-tool-zsjsj.streamlit.app'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  wakeup:
+    name: 唤醒应用
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    
+    steps:
+      - name: 拉取私有仓库代码
+        uses: actions/checkout@v4
+        with:
+          repository: oyz6/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+          
+      - name: 安装依赖包
+        run: |
+          echo "正在安装 Playwright..."
+          pip install playwright
+          echo "正在安装 Firefox 浏览器..."
+          python -m playwright install firefox
+          echo "依赖安装完成！"
+          
+      - name: 执行唤醒脚本
+        env:
+          TARGET_URL: ${{ github.event.inputs.target_url || 'https://sheet-tool-zsjsj.streamlit.app' }}
+        run: |
+          echo "开始执行 Streamlit 应用唤醒任务..."
+          python scripts/Streamlit/Keep.py
+          echo "唤醒任务执行完毕！"
+
+      - name: 清理历史运行记录
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
