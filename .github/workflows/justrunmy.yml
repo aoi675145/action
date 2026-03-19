@@ -15,8 +15,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
+    # 👇 替换为拉取私有仓库的逻辑
+    - name: 拉取私有仓库
       uses: actions/checkout@v4
+      with:
+        repository: akina005/scripts
+        token: ${{ secrets.REPO_TOKEN }}
+        path: .  # 拉到根目录
 
     - name: Set up Python
       uses: actions/setup-python@v5
@@ -50,7 +55,8 @@ jobs:
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}  # 映射 Secret
       run: |
         # 使用 xvfb 运行以支持强力过人机验证模式
-        xvfb-run -a python just.py
+        # 👇 路径修改为截图中的实际路径
+        xvfb-run -a python scripts/justrunmy/just.py
 
     # 👇 新增步骤：将更新后的 cookie.txt 提交回仓库
     - name: Commit and Push Cookie Update
@@ -59,10 +65,10 @@ jobs:
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
         
-        # 检查 cookie.txt 是否有变化
-        if [[ -n $(git status -s cookie.txt) ]]; then
+        # 👇 检查和提交的也是带实际路径的 cookie.txt
+        if [[ -n $(git status -s scripts/justrunmy/cookie.txt) ]]; then
           echo "检测到 Cookie 更新，正在提交..."
-          git add cookie.txt
+          git add scripts/justrunmy/cookie.txt
           git commit -m "Auto-update auth cookie [skip ci]"
           git push
         else
