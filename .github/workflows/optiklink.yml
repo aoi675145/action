@@ -345,7 +345,7 @@ jobs:
         working-directory: scripts/OptikLink
         env:
           discord_account: ${{ secrets.discord_account }}
-          DISCORD_TOKEN:   ${{ secrets.DISCORD_TOKEN }}
+          discord_token:   ${{ secrets.discord_token }}
           PANEL_ACCOUNT:   ${{ secrets.PANEL_ACCOUNT }}
           TG_BOT_TOKEN:    ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:      ${{ secrets.TG_CHAT_ID }}
