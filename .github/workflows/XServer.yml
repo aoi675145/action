@@ -2,7 +2,8 @@ name: XServer 游戏机续期
 
 on:
   schedule:
-    - cron: '0 0 */2 * *'
+    # 每天日本时间 16:00 (即 UTC 07:00) 运行
+    - cron: '0 7 * * *'
   workflow_dispatch:
 
 jobs:
