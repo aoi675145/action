@@ -31,7 +31,7 @@ jobs:
 
       - name: 🛡️ 解析节点并启动 Xray 代理
         env:
-          PROXY_NODE: ${{ secrets.PROXY_NODE }}
+          PROXY_NODE: ${{ secrets.OPTIKLINK_PROXY_NODE }}
         run: |
           if [ -z "$PROXY_NODE" ]; then
             echo "[INFO] 未配置代理节点 (PROXY_NODE)，跳过"
