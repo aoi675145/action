@@ -345,7 +345,7 @@ jobs:
         working-directory: scripts/OptikLink
         env:
           DISCORD_ACCOUNT_1: ${{ secrets.DISCORD_ACCOUNT_1 }}
-          DISCORD_TOKEN-1:   ${{ secrets.DISCORD_TOKEN-1 }}
+          DISCORD_TOKEN_1:   ${{ secrets.DISCORD_TOKEN_1 }}
           PANEL_ACCOUNT:   ${{ secrets.PANEL_ACCOUNT }}
           TG_BOT_TOKEN:    ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:      ${{ secrets.TG_CHAT_ID }}
