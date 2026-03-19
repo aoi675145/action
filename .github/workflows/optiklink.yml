@@ -1,18 +1,20 @@
 name: 🎮 OptikLink-Keep
-
 on:
   schedule:
     - cron: '0 1 */2 * *'
   workflow_dispatch:
-
 jobs:
   keepalive:
     name: 🔄 执行保活
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 📥 拉取代码
+      - name: 📥 拉取私有代码
         uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
 
       - name: 🟢 安装 Node.js
         uses: actions/setup-node@v4
@@ -20,9 +22,11 @@ jobs:
           node-version: '22'
 
       - name: 📦 安装依赖
+        working-directory: scripts/OptikLink
         run: npm install
 
       - name: 🌐 安装 Playwright 浏览器
+        working-directory: scripts/OptikLink
         run: npx playwright install chromium --with-deps
 
       - name: 🛡️ 解析节点并启动 Xray 代理
@@ -38,8 +42,6 @@ jobs:
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
           unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
           
-          # ... (保留下面的原有 Python 脚本等所有代码) ...
-
           # 2. 运行 Python 脚本解析节点并生成配置文件
           python3 << 'PYEOF'
           import os, sys, json, base64
@@ -340,11 +342,13 @@ jobs:
           exit 1
 
       - name: 🚀 运行保活脚本
+        working-directory: scripts/OptikLink
         env:
           DISCORD_ACCOUNT: ${{ secrets.DISCORD_ACCOUNT }}
-          DISCORD_TOKEN:   ${{ secrets.DISCORD_TOKEN }}   # 👈 新增这一行
+          DISCORD_TOKEN:   ${{ secrets.DISCORD_TOKEN }}
           PANEL_ACCOUNT:   ${{ secrets.PANEL_ACCOUNT }}
-          TG_BOT:          ${{ secrets.TG_BOT }}
+          TG_BOT_TOKEN:    ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID:      ${{ secrets.TG_CHAT_ID }}
           GOST_PROXY:      ${{ env.LOCAL_PROXY }}
         run: npx playwright test
 
@@ -353,5 +357,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: failure-screenshots
-          path: test-results/
+          path: scripts/OptikLink/test-results/
           retention-days: 7
