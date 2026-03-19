@@ -14,38 +14,48 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      # 👇 1. 改为拉取私有仓库
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.9'
 
-    - name: Install Dependencies
-      run: |
-        pip install requests websocket-client selenium selenium-wire blinker==1.7.0
+      # 👇 2. 指定工作目录安装依赖
+      - name: Install Dependencies
+        working-directory: scripts/gameserver
+        run: |
+          pip install requests websocket-client selenium selenium-wire blinker==1.7.0
 
-    - name: Run Selenium Script
-      env:
-        MY_USERNAME: ${{ secrets.MY_USERNAME }}
-        MY_PASSWORD: ${{ secrets.MY_PASSWORD }}
-        PROXY_URL: ${{ secrets.PROXY_URL }}
-      run: |
-        python main.py
+      # 👇 3. 合并变量并指定工作目录运行
+      - name: Run Selenium Script
+        working-directory: scripts/gameserver
+        env:
+          # 将原来的 MY_USERNAME 和 MY_PASSWORD 替换成了这个合并的变量
+          gameserver_ACCOUNTS: ${{ secrets.gameserver_ACCOUNTS }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+        run: |
+          python main.py
 
-    # 检测并提交 cookie.txt
-    - name: Commit and Push Cookie
-      run: |
-        git config --global user.name "Auto Bot"
-        git config --global user.email "bot@github.com"
-        
-        git add cookie.txt
-        
-        if git diff --staged --quiet; then
-          echo "✅ Cookie 没有变化，跳过提交。"
-        else
-          echo "🍪 检测到 Cookie 更新，正在推送到仓库..."
-          git commit -m "Update cookie.txt [skip ci]"
-          git push
-        fi
+      # 👇 4. 提交 cookie.txt（加上了具体路径）
+      - name: Commit and Push Cookie
+        run: |
+          git config --global user.name "Auto Bot"
+          git config --global user.email "bot@github.com"
+          
+          # 注意：这里的路径要指向私库里 cookie.txt 的实际位置
+          git add scripts/gameserver/cookie.txt
+          
+          if git diff --staged --quiet; then
+            echo "✅ Cookie 没有变化，跳过提交。"
+          else
+            echo "🍪 检测到 Cookie 更新，正在推送到仓库..."
+            git commit -m "Update cookie.txt [skip ci]"
+            git push
+          fi
