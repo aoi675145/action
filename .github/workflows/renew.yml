@@ -9,21 +9,29 @@ jobs:
   auto_renew_katabump:
     runs-on: ubuntu-22.04
 
+    # 👇 修改 1：更新环境变量名，匹配新的 Secrets
     env:
-      ACCOUNTS: ${{ secrets.ACCOUNTS }}
-      BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-      CHAT_ID: ${{ secrets.CHAT_ID }}
+      Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
     steps:
-      - name: Checkout repository
+      # 👇 修改 2：拉取私有仓库
+      - name: 📥 拉取私有代码
         uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      # 👇 修改 3：加上工作目录，让系统能找到 requirements.txt
       - name: Install dependencies
+        working-directory: scripts/Katabump
         run: |
           pip install -r requirements.txt
           sudo apt-get update && sudo apt-get install -y xvfb
@@ -46,7 +54,9 @@ jobs:
         # 在后台启动 Xvfb，创建一个虚拟屏幕 :99
         run: Xvfb :99 -ac &
 
+      # 👇 修改 4：加上工作目录，让系统能找到 renew_katabump.py
       - name: Run Script in Stealth Mode (via Xvfb)
+        working-directory: scripts/Katabump
         env:
           DISPLAY: ':99'
           HEADLESS: 'false'
