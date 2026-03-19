@@ -1,4 +1,4 @@
-name: Webhook Start Server (Git Save)
+name: gameserver (Git Save)
 
 on:
   workflow_dispatch: # 允许网页手动点击触发
