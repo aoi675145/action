@@ -51,8 +51,8 @@ jobs:
     - name: Run Script
       env:
         PROXY: socks5://127.0.0.1:1080
-        TG_TOKEN: ${{ secrets.TG_TOKEN }}      # 映射 Secret
-        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}  # 映射 Secret
+        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}  # 修改这里 (变量名和Secret名)
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
         # 使用 xvfb 运行以支持强力过人机验证模式
         # 👇 路径修改为截图中的实际路径
