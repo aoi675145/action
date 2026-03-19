@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      # 👇 1. 改为拉取私有仓库
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -27,29 +26,25 @@ jobs:
         with:
           python-version: '3.9'
 
-      # 👇 2. 指定工作目录安装依赖
       - name: Install Dependencies
         working-directory: scripts/gameserver
         run: |
           pip install requests websocket-client selenium selenium-wire blinker==1.7.0
 
-      # 👇 3. 合并变量并指定工作目录运行
       - name: Run Selenium Script
         working-directory: scripts/gameserver
         env:
-          # 将原来的 MY_USERNAME 和 MY_PASSWORD 替换成了这个合并的变量
           gameserver_ACCOUNTS: ${{ secrets.gameserver_ACCOUNTS }}
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          # 👇 这里的变量名和 Secret 名都改成了带前缀的
+          gameserver_PROXY_URL: ${{ secrets.gameserver_PROXY_URL }}
         run: |
           python main.py
 
-      # 👇 4. 提交 cookie.txt（加上了具体路径）
       - name: Commit and Push Cookie
         run: |
           git config --global user.name "Auto Bot"
           git config --global user.email "bot@github.com"
           
-          # 注意：这里的路径要指向私库里 cookie.txt 的实际位置
           git add scripts/gameserver/cookie.txt
           
           if git diff --staged --quiet; then
