@@ -10,27 +10,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 👇 修改 1：改为拉取私有仓库
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
+      # 👇 修改 2：指定工作目录，并补充安装 playwright 浏览器内核
       - name: Install dependencies
-        run: npm install playwright axios form-data
+        working-directory: scripts/sap-login
+        run: |
+          npm install playwright axios form-data
+          npx playwright install chromium --with-deps
 
+      # 👇 修改 3：指定工作目录，并修改 TG 环境变量名匹配你的截图
       - name: Run login script
-        run: node scripts/login.js
+        working-directory: scripts/sap-login
+        run: node login.js
         env:
           SAP_ACCOUNTS: ${{ secrets.SAP_ACCOUNTS }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
+      # 👇 修改 4：修正截图收集路径
       - name: Upload screenshots as artifact
+        if: always() # 建议加上这行，无论成功失败都截个图
         uses: actions/upload-artifact@v4
         with:
           name: sap-btp-screenshots
-          path: |
-            *.png
+          path: scripts/sap-login/*.png
