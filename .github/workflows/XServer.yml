@@ -22,13 +22,16 @@ jobs:
         with:
           node-version: '20'
 
+      # 👇 修改 1：去掉了 scripts/，直接指定工作目录为 XServer
       - name: 安装依赖
+        working-directory: XServer
         run: |
-          cd scripts/XServer
           npm init -y
           npm install playwright
 
+      # 👇 指定工作目录安装浏览器
       - name: 安装浏览器
+        working-directory: XServer
         run: npx playwright install --with-deps chrome
 
       - name: 安装并启动代理
@@ -245,20 +248,23 @@ jobs:
           cat xray.log
           exit 1
 
+      # 👇 修改 2：加上 working-directory，并且运行命令直接写 node main.js
       - name: 运行续期脚本
+        working-directory: XServer
         env:
           XSERVER_ACCOUNT: ${{ secrets.XSERVER_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-        run: node scripts/XServer/main.js
+        run: node main.js
 
 #      - name: 上传截图
 #        if: always()
 #        uses: actions/upload-artifact@v4
 #        with:
 #          name: screenshots
-#          path: "screenshots/*.png"
+#          # 如果以后你要解开注释，记得路径也应该是 XServer/screenshots/*.png
+#          path: "XServer/screenshots/*.png"
 #          retention-days: 5
 
       - name: 清理旧运行
