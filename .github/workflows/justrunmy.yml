@@ -51,12 +51,14 @@ jobs:
     - name: Run Script
       env:
         PROXY: socks5://127.0.0.1:1080
-        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}  # 修改这里 (变量名和Secret名)
+        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}      # 已经改好的新变量名
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
+        # 👇 先进入对应的文件夹，让脚本能在同级目录找到 cookie.txt
+        cd scripts/justrunmy
+        
         # 使用 xvfb 运行以支持强力过人机验证模式
-        # 👇 路径修改为截图中的实际路径
-        xvfb-run -a python scripts/justrunmy/just.py
+        xvfb-run -a python just.py
 
     # 👇 新增步骤：将更新后的 cookie.txt 提交回仓库
     - name: Commit and Push Cookie Update
