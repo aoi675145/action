@@ -9,7 +9,6 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # 👇 替换为拉取私有仓库的逻辑
       - name: 📥 拉取私有代码
         uses: actions/checkout@v4
         with:
@@ -22,19 +21,16 @@ jobs:
         with:
           node-version: '22'
 
-      # 👇 指定工作目录为 scripts/freeze
       - name: 📦 安装依赖
         working-directory: scripts/freeze
         run: npm install
 
-      # 👇 指定工作目录为 scripts/freeze
       - name: 🌐 安装 Playwright 浏览器
         working-directory: scripts/freeze
         run: npx playwright install chromium --with-deps
 
-      # 👇 修正了 if 判断，使其能正确识别 secrets
       - name: 🛡️ 启动 GOST 代理转发
-        if: ${{ secrets.GOST_PROXY != '' }} 
+        if: ${{ env.GOST_PROXY != '' }}
         env:
           GOST_PROXY: ${{ secrets.GOST_PROXY }}
         run: |
@@ -48,19 +44,16 @@ jobs:
           echo "✅ GOST 已启动，测试连通性..."
           curl -s -x http://127.0.0.1:8080 https://api.ipify.org
 
-      # 👇 指定工作目录为 scripts/freeze
       - name: 🚀 运行续期脚本
         working-directory: scripts/freeze
         env:
           DISCORD_ACCOUNT: ${{ secrets.DISCORD_ACCOUNT }}
           DISCORD_TOKEN:   ${{ secrets.DISCORD_TOKEN }}
-          # 👇 删掉原来的 TG_BOT，换成这两个
           TG_BOT_TOKEN:    ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:      ${{ secrets.TG_CHAT_ID }}
           GOST_PROXY:      http://127.0.0.1:8080
         run: npx playwright test
 
-      # 👇 修正截图上传路径，指向实际运行目录下的 test-results/
       - name: 📸 上传失败截图
         if: failure()
         uses: actions/upload-artifact@v4
