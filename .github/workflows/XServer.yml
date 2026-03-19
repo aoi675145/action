@@ -36,7 +36,7 @@ jobs:
 
       - name: 安装并启动代理
         env:
-          PROXY_NODE: ${{ secrets.PROXY_NODE }}
+          PROXY_NODE: ${{ secrets.XSERVER_PROXY_NODE }}
         run: |
           if [ -z "$PROXY_NODE" ]; then
             echo "[INFO] 未配置代理，直连模式"
