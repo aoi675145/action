@@ -344,7 +344,7 @@ jobs:
       - name: 🚀 运行保活脚本
         working-directory: scripts/OptikLink
         env:
-          discord_account: ${{ secrets.discord_account }}
+          DISCORD_ACCOUNT-1: ${{ secrets.DISCORD_ACCOUNT-1 }}
           discord_token:   ${{ secrets.discord_token }}
           PANEL_ACCOUNT:   ${{ secrets.PANEL_ACCOUNT }}
           TG_BOT_TOKEN:    ${{ secrets.TG_BOT_TOKEN }}
