@@ -22,16 +22,16 @@ jobs:
         with:
           node-version: '20'
 
-      # 👇 修改 1：去掉了 scripts/，直接指定工作目录为 XServer
+      # 👇 恢复为正确的路径：scripts/XServer
       - name: 安装依赖
-        working-directory: XServer
+        working-directory: scripts/XServer
         run: |
           npm init -y
           npm install playwright
 
-      # 👇 指定工作目录安装浏览器
+      # 👇 恢复为正确的路径：scripts/XServer
       - name: 安装浏览器
-        working-directory: XServer
+        working-directory: scripts/XServer
         run: npx playwright install --with-deps chrome
 
       - name: 安装并启动代理
@@ -248,9 +248,9 @@ jobs:
           cat xray.log
           exit 1
 
-      # 👇 修改 2：加上 working-directory，并且运行命令直接写 node main.js
+      # 👇 恢复为正确的路径：scripts/XServer
       - name: 运行续期脚本
-        working-directory: XServer
+        working-directory: scripts/XServer
         env:
           XSERVER_ACCOUNT: ${{ secrets.XSERVER_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -263,8 +263,8 @@ jobs:
 #        uses: actions/upload-artifact@v4
 #        with:
 #          name: screenshots
-#          # 如果以后你要解开注释，记得路径也应该是 XServer/screenshots/*.png
-#          path: "XServer/screenshots/*.png"
+#          # 注意如果以后开启，这里的路径也应该是 scripts/XServer/screenshots/*.png
+#          path: "scripts/XServer/screenshots/*.png"
 #          retention-days: 5
 
       - name: 清理旧运行
