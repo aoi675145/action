@@ -18,73 +18,31 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 🛡️ 2. 启动 Xray 代理转发
+      - name: 🛡️ 2. 启动 Gost 代理转发
         env:
-          # 使用你指定的专属变量名
-          PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
-        # 仅在配置了变量时运行代理流程
-        if: env.PROXY_NODE != ''
+          # 先在这里注入，方便下一步 if 判断
+          GOST_PROXY: ${{ secrets.GOST_PROXY }}
+        # 使用你测试通过的判断语法
+        if: env.GOST_PROXY != ''
         run: |
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
-
-          python3 << 'PYEOF'
-          import os, sys, json, base64
-          from urllib.parse import parse_qs, unquote
-
-          url = os.environ.get("PROXY_NODE", "").strip()
-          if not url: sys.exit(0)
-
-          config = {
-              "log": {"loglevel": "warning"},
-              "inbounds": [{"port": 10809, "listen": "127.0.0.1", "protocol": "http"}],
-              "outbounds": []
-          }
-
-          try:
-              if url.startswith("vless://"):
-                  uuid, rest = url[8:].split("@", 1)
-                  host_port = rest.split("?")[0]
-                  addr, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
-                  outbound = {
-                      "protocol": "vless",
-                      "settings": {"vnext": [{"address": addr, "port": int(port), "users": [{"id": uuid, "encryption": "none"}]}]},
-                      "streamSettings": {"network": "tcp", "security": "tls"}
-                  }
-              elif url.startswith("trojan://"):
-                  pwd, rest = url[9:].split("@", 1)
-                  host_port = rest.split("?")[0]
-                  addr, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
-                  outbound = {
-                      "protocol": "trojan",
-                      "settings": {"servers": [{"address": addr, "port": int(port), "password": pwd}]},
-                      "streamSettings": {"network": "tcp", "security": "tls"}
-                  }
-              config["outbounds"].append(outbound)
-              with open("xray_config.json", "w") as f:
-                  json.dump(config, f, indent=2)
-              print("✅ Xray 配置解析成功")
-          except Exception as e:
-              print(f"❌ 解析失败: {e}")
-              sys.exit(1)
-          PYEOF
-
-          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          wget -q https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
+          gunzip gost-linux-amd64-2.11.5.gz
+          chmod +x gost-linux-amd64-2.11.5
+          mv gost-linux-amd64-2.11.5 gost
+          
+          # 直接使用注入好的环境变量，安全又整洁
+          nohup ./gost -L http://:8080 -F "$GOST_PROXY" > gost.log 2>&1 &
           sleep 5
           
-          # 注入环境变量，让后续步骤自动识别代理
-          echo "HTTPS_PROXY=http://127.0.0.1:10809" >> $GITHUB_ENV
-          echo "HTTP_PROXY=http://127.0.0.1:10809" >> $GITHUB_ENV
-          echo "✅ Xray 已在后台启动 (端口: 10809)"
-          curl -s -x http://127.0.0.1:10809 --max-time 15 https://api.ipify.org || echo "代理测试异常，尝试继续..."
+          echo "✅ Gost 已启动，测试连通性..."
+          curl -s -x http://127.0.0.1:8080 --max-time 15 https://api.ipify.org || echo "代理测试异常，尝试继续..."
 
       - name: 🎮 3. 执行每日领取
         working-directory: scripts/berry
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
-          # 传递 berry 专用代理变量供脚本内部逻辑使用
-          berry_PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
+          GOST_PROXY: ${{ secrets.GOST_PROXY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
