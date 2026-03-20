@@ -19,12 +19,13 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 🛡️ 2. 启动 Xray 代理
+      - name: 🛡️ 2. 启动 Xray 代理 (使用 berry 专用变量)
         env:
-          PROXY_NODE: ${{ secrets.PROXY_NODE }}
+          # 👇 变量名已修改
+          PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
         run: |
           if [ -z "$PROXY_NODE" ]; then
-            echo "[INFO] 未配置代理，直连模式运行"
+            echo "[INFO] 未配置 berry_PROXY_NODE，直连模式运行"
             exit 0
           fi
           
@@ -80,7 +81,6 @@ jobs:
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
-          # 👇 统一变量名
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
