@@ -3,8 +3,7 @@ name: TheBerryHost 每日领取
 on:
   workflow_dispatch:
   schedule:
-    # 每天日本时间 16:00 (UTC 07:00) 自动运行
-    - cron: '0 7 * * *'
+    - cron: '0 1 * * *'  # 每天 UTC 01:00 (北京 09:00)
 
 jobs:
   claim:
@@ -19,75 +18,45 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 🛡️ 2. 启动 Xray 代理 (使用 berry 专用变量)
+      - name: 🛡️ 2. 启动 Gost 代理转发
+        # 仅在配置了 GOST_PROXY 时运行
+        if: secrets.GOST_PROXY != ''
         env:
-          # 👇 变量名已修改
-          PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
+          GOST_PROXY: ${{ secrets.GOST_PROXY }}
         run: |
-          if [ -z "$PROXY_NODE" ]; then
-            echo "[INFO] 未配置 berry_PROXY_NODE，直连模式运行"
-            exit 0
-          fi
+          wget -q https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
+          gunzip gost-linux-amd64-2.11.5.gz
+          chmod +x gost-linux-amd64-2.11.5
+          mv gost-linux-amd64-2.11.5 gost
           
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
-
-          python3 << 'PYEOF'
-          import os, sys, json, base64
-          from urllib.parse import parse_qs, unquote
-
-          url = os.environ.get("PROXY_NODE", "").strip()
-          if not url: sys.exit(0)
-
-          config = {
-              "log": {"loglevel": "warning"},
-              "inbounds": [{"port": 10809, "listen": "127.0.0.1", "protocol": "http"}],
-              "outbounds": []
-          }
-
-          try:
-              if url.startswith("vless://"):
-                  uuid, rest = url[8:].split("@", 1)
-                  host_port = rest.split("?")[0]
-                  addr, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
-                  outbound = {
-                      "protocol": "vless",
-                      "settings": {"vnext": [{"address": addr, "port": int(port), "users": [{"id": uuid, "encryption": "none"}]}]},
-                      "streamSettings": {"network": "tcp", "security": "tls"}
-                  }
-              elif url.startswith("trojan://"):
-                  pwd, rest = url[9:].split("@", 1)
-                  host_port = rest.split("?")[0]
-                  addr, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
-                  outbound = {
-                      "protocol": "trojan",
-                      "settings": {"servers": [{"address": addr, "port": int(port), "password": pwd}]},
-                      "streamSettings": {"network": "tcp", "security": "tls"}
-                  }
-              config["outbounds"].append(outbound)
-              with open("xray_config.json", "w") as f:
-                  json.dump(config, f, indent=2)
-          except:
-              sys.exit(1)
-          PYEOF
-
-          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          # 启动代理并记录日志
+          nohup ./gost -L http://:8080 -F "$GOST_PROXY" > gost.log 2>&1 &
           sleep 5
-          echo "HTTPS_PROXY=http://127.0.0.1:10809" >> $GITHUB_ENV
-          echo "HTTP_PROXY=http://127.0.0.1:10809" >> $GITHUB_ENV
+          
+          echo "✅ Gost 代理已启动，测试中..."
+          if curl -s -x http://127.0.0.1:8080 --max-time 10 https://api.ipify.org; then
+            echo -e "\n[INFO] 代理连接成功"
+          else
+            echo -e "\n[ERROR] 代理连接失败"
+            exit 1
+          fi
 
-      - name: 🎮 3. 执行领取脚本
+      - name: 🎮 3. 执行每日领取
+        # 根据截图设置工作目录
         working-directory: scripts/berry
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
+          GOST_PROXY: ${{ secrets.GOST_PROXY }}
+          # 统一使用新的 TG 变量名
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           chmod +x berryhost.sh
           bash berryhost.sh
 
-      - name: 🧹 4. 清理旧运行
+      - name: 🧹 4. 清理旧运行记录
+        if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
