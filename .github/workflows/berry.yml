@@ -1,60 +1,118 @@
-name: TheBerryHost 每日领取
+#!/bin/bash
+# ===== 个人配置（通过 GitHub Secrets 注入，无需修改）=====
+: "${DISCORD_TOKEN:?请设置 GitHub Secret: DISCORD_TOKEN}"
+: "${SESSION_ID:?请设置 GitHub Secret: SESSION_ID}"
 
-on:
-  workflow_dispatch:
-  schedule:
-    - cron: '0 1 * * *'  # 每天 UTC 01:00 (北京 09:00)
+# ===== 公共配置（所有人相同，无需修改）=====
+GUILD_ID="1453168143865352374"
+CHANNEL_ID="1453169471681200293"
+CUSTOM_ID="daily_claim_button"
 
-jobs:
-  claim:
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
+# ===== 代理配置（有 GOST_PROXY 时使用，否则直连）=====
+if [ -n "$GOST_PROXY" ]; then
+  PROXY="-x http://127.0.0.1:8080"
+  echo "🛡️ 使用代理模式 (Gost: 8080)"
+else
+  PROXY=""
+  echo "🌐 直连模式（GitHub Actions IP）"
+fi
 
-    steps:
-      - name: 📥 1. 拉取私有仓库代码
-        uses: actions/checkout@v4
-        with:
-          repository: akina005/scripts
-          token: ${{ secrets.REPO_TOKEN }}
-          path: .
+echo "🕐 运行时间: $(date '+%Y-%m-%d %H:%M:%S')"
+echo "🎮 TheBerryHost 每日领取"
+echo "========================================"
 
-      - name: 🛡️ 2. 启动 Gost 代理转发
-        env:
-          # 先在这里注入，方便下一步 if 判断
-          GOST_PROXY: ${{ secrets.GOST_PROXY }}
-        # 使用你测试通过的判断语法
-        if: env.GOST_PROXY != ''
-        run: |
-          wget -q https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
-          gunzip gost-linux-amd64-2.11.5.gz
-          chmod +x gost-linux-amd64-2.11.5
-          mv gost-linux-amd64-2.11.5 gost
-          
-          # 直接使用注入好的环境变量，安全又整洁
-          nohup ./gost -L http://:8080 -F "$GOST_PROXY" > gost.log 2>&1 &
-          sleep 5
-          
-          echo "✅ Gost 已启动，测试连通性..."
-          curl -s -x http://127.0.0.1:8080 --max-time 15 https://api.ipify.org || echo "代理测试异常，尝试继续..."
+# ===== 动态获取 MESSAGE_ID / APPLICATION_ID =====
+echo "🔍 正在获取最新签到消息..."
 
-      - name: 🎮 3. 执行每日领取
-        working-directory: scripts/berry
-        env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          SESSION_ID: ${{ secrets.SESSION_ID }}
-          GOST_PROXY: ${{ secrets.GOST_PROXY }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: |
-          chmod +x berryhost.sh
-          bash berryhost.sh
+# 获取原始数据并存入变量
+RAW_IDS=$(curl -s $PROXY \
+  "https://discord.com/api/v9/channels/${CHANNEL_ID}/messages?limit=20" \
+  -H "authorization: ${DISCORD_TOKEN}" \
+  -H "user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
+  | python3 -c "
+import json, sys
+try:
+    msgs = json.load(sys.stdin)
+    if not isinstance(msgs, list):
+        print('NOT_FOUND NOT_FOUND')
+        sys.exit()
+    for m in msgs:
+        if m.get('components'):
+            print(m['id'], m['author']['id'])
+            sys.exit()
+    print('NOT_FOUND NOT_FOUND')
+except:
+    print('NOT_FOUND NOT_FOUND')
+")
 
-      - name: 🧹 4. 清理旧运行记录
-        if: always()
-        uses: Mattraks/delete-workflow-runs@v2
-        with:
-          token: ${{ github.token }}
-          repository: ${{ github.repository }}
-          delete_workflow_pattern: ${{ github.workflow }}
-          retain_days: 0
-          keep_minimum_runs: 1
+read MESSAGE_ID APPLICATION_ID <<< "$RAW_IDS"
+
+if [ "$MESSAGE_ID" = "NOT_FOUND" ]; then
+  echo "❌ 未找到签到消息，请检查 Token 是否有效"
+  RESULT="❌ 未找到签到消息"
+else
+  # --- 日志脱敏处理：仅在 echo 时遮掩，不影响变量实际值 ---
+  MASKED_MSG="${MESSAGE_ID:0:4}****${MESSAGE_ID: -4}"
+  MASKED_APP="${APPLICATION_ID:0:4}****${APPLICATION_ID: -4}"
+  echo "📌 MESSAGE_ID:      $MASKED_MSG"
+  echo "🤖 APPLICATION_ID: $MASKED_APP"
+
+  # ===== 生成 nonce =====
+  NONCE=$(python3 -c "import time; print(str(int((int(time.time()*1000) - 1420070400000) << 22)))")
+
+  # ===== 发送交互请求 =====
+  echo "🚀 正在提交签到..."
+
+  RESPONSE=$(curl -s -w "\n%{http_code}" $PROXY \
+    -X POST "https://discord.com/api/v9/interactions" \
+    -H "authorization: ${DISCORD_TOKEN}" \
+    -H "content-type: application/json" \
+    -H "user-agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36" \
+    -H "x-discord-locale: zh-CN" \
+    -H "x-discord-timezone: Asia/Shanghai" \
+    -H "origin: https://discord.com" \
+    -H "referer: https://discord.com/channels/${GUILD_ID}/${CHANNEL_ID}" \
+    -d "{\"type\":3,\"nonce\":\"${NONCE}\",\"guild_id\":\"${GUILD_ID}\",\"channel_id\":\"${CHANNEL_ID}\",\"message_flags\":0,\"message_id\":\"${MESSAGE_ID}\",\"application_id\":\"${APPLICATION_ID}\",\"session_id\":\"${SESSION_ID}\",\"data\":{\"component_type\":2,\"custom_id\":\"${CUSTOM_ID}\"}}")
+
+  HTTP_CODE=$(echo "$RESPONSE" | tail -n1)
+
+  if [ "$HTTP_CODE" = "204" ] || [ "$HTTP_CODE" = "200" ]; then
+    echo "✅ 成功！状态码: $HTTP_CODE"
+    echo "🎉 已成功点击 Claim Daily Reward！"
+    RESULT="✅ 领取成功！"
+  else
+    echo "❌ 失败！状态码: ${HTTP_CODE}"
+    case "$HTTP_CODE" in
+      429) RESULT="❌ 失败！触发频率限制" ;;
+      401) RESULT="❌ 失败！Token 失效" ;;
+      *)   RESULT="❌ 失败！状态码: ${HTTP_CODE}" ;;
+    esac
+  fi
+fi
+
+# ===== TG 通知（恢复你喜欢的完整格式）=====
+if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
+  RUN_TIME=$(date '+%Y-%m-%d %H:%M:%S')
+  
+  # 根据结果判断奖励显示（可根据需要微调数值）
+  if [[ "$RESULT" == ✅* ]]; then
+    REWARD_LINE="🎉 今日奖励: 💰 5 BerryCoins"
+  else
+    REWARD_LINE="🎉 今日奖励: 💰 0 BerryCoins"
+  fi
+
+  # 构造回复原本的视觉格式
+  MESSAGE="🍇 TheBerryHost 每日领取
+🕒 运行时间: ${RUN_TIME}
+🎮 服务器: 🇬🇧 TheBerryHost
+📊 领取结果: ${RESULT}
+${REWARD_LINE}"
+
+  curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+    -d chat_id="${TG_CHAT_ID}" \
+    -d text="${MESSAGE}" > /dev/null
+  echo "📬 TG 通知已发送"
+fi
+
+# ===== 最终退出码 =====
+[[ "$RESULT" == ✅* ]] && exit 0 || exit 1
