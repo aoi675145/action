@@ -8,7 +8,7 @@ on:
 jobs:
   claim:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15 # 考虑到安装和启动代理，稍微增加了超时时间
 
     steps:
       - name: 📥 1. 拉取私有仓库代码
@@ -18,38 +18,156 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 🛡️ 2. 启动 Gost 代理转发
-        env:
-          # 先在这里注入，方便下一步 if 判断
-          GOST_PROXY: ${{ secrets.GOST_PROXY }}
-        # 使用你测试通过的判断语法
-        if: env.GOST_PROXY != ''
-        run: |
-          wget -q https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
-          gunzip gost-linux-amd64-2.11.5.gz
-          chmod +x gost-linux-amd64-2.11.5
-          mv gost-linux-amd64-2.11.5 gost
-          
-          # 直接使用注入好的环境变量，安全又整洁
-          nohup ./gost -L http://:8080 -F "$GOST_PROXY" > gost.log 2>&1 &
-          sleep 5
-          
-          echo "✅ Gost 已启动，测试连通性..."
-          curl -s -x http://127.0.0.1:8080 --max-time 15 https://api.ipify.org || echo "代理测试异常，尝试继续..."
+      - name: 🐍 2. 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
-      - name: 🎮 3. 执行每日领取
+      - name: 🛠️ 3. 安装代理相关依赖
+        run: |
+          sudo apt-get update && sudo apt-get install -y unzip
+          # 如果你的 berryhost.sh 脚本需要 requests 等，也可以在这里安装
+
+      - name: 🛡️ 4. 安装并启动 Xray 代理
+        env:
+          berry_PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
+        run: |
+          if [ -z "$berry_PROXY_NODE" ]; then
+            echo "[INFO] 未配置 berry_PROXY_NODE，跳过代理"
+            exit 0
+          fi
+          
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
+          
+          python3 << 'PYEOF'
+          import os, sys, json, base64
+          from urllib.parse import parse_qs, unquote
+
+          def mask(s):
+              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
+
+          url = os.environ.get("berry_PROXY_NODE", "").strip()
+          if not url: sys.exit(0)
+
+          if url.startswith("socks5://") or url.startswith("socks://"):
+              content = url.split("://")[1].split("#")[0]
+              server = content.split("@")[1].split(":")[0] if "@" in content else content.split(":")[0]
+              print(f"[INFO] 外部 SOCKS5 -> {mask(server)}")
+              with open("use_external_socks.txt", "w") as f: f.write(url.split("#")[0])
+              sys.exit(0)
+
+          # 简易版协议匹配逻辑
+          protocol = ""
+          for p in ["vless", "vmess", "trojan", "ss"]:
+              if url.startswith(f"{p}://"):
+                  protocol = p
+                  break
+          
+          if not protocol:
+              print(f"[ERROR] 不支持协议: {url.split('://')[0]}")
+              sys.exit(1)
+
+          content = url.split("://")[1].split("#")[0]
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [
+                  {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}}
+              ],
+              "outbounds": []
+          }
+
+          if protocol == "vless":
+              uuid, rest = content.split("@", 1)
+              host_port = rest.split("?")[0]
+              params = parse_qs(rest.split("?")[1]) if "?" in rest else {}
+              address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
+              
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {"vnext": [{"address": address, "port": int(port), "users": [{"id": uuid, "encryption": "none"}]}]},
+                  "streamSettings": {
+                      "network": params.get("type", ["tcp"])[0],
+                      "security": params.get("security", ["none"])[0]
+                  }
+              }
+              if outbound["streamSettings"]["security"] == "reality":
+                  outbound["streamSettings"]["realitySettings"] = {"serverName": params.get("sni", [address])[0], "fingerprint": params.get("fp", ["chrome"])[0], "publicKey": params.get("pbk", [""])[0]}
+              config["outbounds"].append(outbound)
+
+          elif protocol == "vmess":
+              try:
+                  padding = 4 - len(content) % 4
+                  decoded = base64.b64decode(content + "=" * (padding if padding < 4 else 0)).decode("utf-8")
+                  vm = json.loads(decoded)
+                  outbound = {
+                      "protocol": "vmess",
+                      "settings": {"vnext": [{"address": vm["add"], "port": int(vm["port"]), "users": [{"id": vm["id"], "alterId": int(vm.get("aid", 0)), "security": "auto"}]}]},
+                      "streamSettings": {"network": vm.get("net", "tcp"), "security": "tls" if vm.get("tls") == "tls" else "none"}
+                  }
+                  config["outbounds"].append(outbound)
+              except: sys.exit(1)
+
+          elif protocol == "trojan":
+              password, rest = content.split("@", 1)
+              host_port = rest.split("?")[0]
+              address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
+              config["outbounds"].append({
+                  "protocol": "trojan",
+                  "settings": {"servers": [{"address": address, "port": int(port), "password": password}]},
+                  "streamSettings": {"network": "tcp", "security": "tls"}
+              })
+
+          elif protocol == "ss":
+              try:
+                  if "@" in content:
+                      encoded, server_part = content.split("@", 1)
+                      method, password = base64.b64decode(encoded + "==").decode("utf-8").split(":", 1)
+                      address, port = server_part.split(":", 1)
+                  else:
+                      decoded = base64.b64decode(content + "==").decode("utf-8")
+                      user_part, server_part = decoded.split("@", 1)
+                      method, password = user_part.split(":", 1)
+                      address, port = server_part.split(":", 1)
+                  config["outbounds"].append({
+                      "protocol": "shadowsocks",
+                      "settings": {"servers": [{"address": address, "port": int(port), "method": method, "password": password}]}
+                  })
+              except: sys.exit(1)
+
+          with open("xray_config.json", "w") as f: json.dump(config, f, indent=2)
+          PYEOF
+          
+          if [ -f "use_external_socks.txt" ]; then
+            echo "PROXY_SOCKS5=$(cat use_external_socks.txt)" >> $GITHUB_ENV
+          else
+            ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+            sleep 5
+            if curl -x socks5://127.0.0.1:10808 -s --max-time 10 https://api.ipify.org > /dev/null; then
+              echo "✅ 代理连接成功"
+              echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+            else
+              echo "❌ 代理失效"
+              cat xray.log && exit 1
+            fi
+          fi
+
+      - name: 🎮 5. 执行每日领取
         working-directory: scripts/berry
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
-          GOST_PROXY: ${{ secrets.GOST_PROXY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          # 自动注入上面生成的代理地址
+          PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
+          # 也可以保留原有的 berry_PROXY_NODE 备用
+          berry_PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
         run: |
           chmod +x berryhost.sh
           bash berryhost.sh
 
-      - name: 🧹 4. 清理旧运行记录
+      - name: 🧹 6. 清理旧运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
