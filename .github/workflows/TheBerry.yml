@@ -26,7 +26,7 @@ jobs:
       - name: 🛠️ 3. 安装依赖
         run: |
           sudo apt-get update && sudo apt-get install -y unzip
-          pip install requests  # 确保 Python 脚本可用
+          pip install requests
 
       - name: 🛡️ 4. 安装并启动 Xray 代理
         env:
@@ -44,8 +44,6 @@ jobs:
           import os, sys, json, base64
           from urllib.parse import parse_qs, unquote, urlparse
 
-          def mask(s): return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
-
           url = os.environ.get("berry_PROXY_NODE", "").strip()
           if not url: sys.exit(0)
 
@@ -55,15 +53,13 @@ jobs:
               "outbounds": []
           }
 
-          # 处理直连 SOCKS
           if url.startswith(("socks5://", "socks://")):
               with open("use_external_socks.txt", "w") as f: f.write(url.split("#")[0])
               sys.exit(0)
 
           try:
               if url.startswith("vless://"):
-                  p = urlparse(url)
-                  qs = parse_qs(p.query)
+                  p = urlparse(url); qs = parse_qs(p.query)
                   net, sec = qs.get("type", ["tcp"])[0], qs.get("security", ["none"])[0]
                   out = {
                       "protocol": "vless",
@@ -90,8 +86,7 @@ jobs:
                   config["outbounds"].append(out)
 
               elif url.startswith("trojan://"):
-                  p = urlparse(url)
-                  qs = parse_qs(p.query)
+                  p = urlparse(url); qs = parse_qs(p.query)
                   config["outbounds"].append({
                       "protocol": "trojan",
                       "settings": {"servers": [{"address": p.hostname, "port": p.port or 443, "password": p.username}]},
@@ -99,9 +94,7 @@ jobs:
                   })
 
               with open("xray_config.json", "w") as f: json.dump(config, f, indent=2)
-              print(f"✅ 成功解析协议")
           except Exception as e:
-              print(f"❌ 解析失败: {e}")
               sys.exit(1)
           PYEOF
           
@@ -109,18 +102,17 @@ jobs:
             echo "PROXY_SOCKS5=$(cat use_external_socks.txt)" >> $GITHUB_ENV
           else
             ./xray/xray run -c xray_config.json > xray.log 2>&1 &
-            sleep 8 # 增加等待握手的时间
+            sleep 8
             if curl -x socks5://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null; then
-              echo "✅ 代理连接成功"
               echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
             else
-              echo "❌ 代理测试失败，可能是节点在 GitHub 环境下不可用"
               cat xray.log && exit 1
             fi
           fi
 
       - name: 🎮 5. 执行每日领取
-        working-directory: scripts/berry
+        # --- 路径已更新为 scripts/TheBerry ---
+        working-directory: scripts/TheBerry
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
@@ -132,7 +124,7 @@ jobs:
           chmod +x berryhost.sh
           bash berryhost.sh
 
-      - name: 🧹 6. 清理记录
+      - name: 🧹 6. 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
