@@ -1,0 +1,34 @@
+name: TheBerryHost 每日领取
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 1 * * *'   # 每天 UTC 01:00（北京时间 09:00）
+jobs:
+  claim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: 📥 检出代码
+        uses: actions/checkout@v4
+
+      - name: 🛡️ 启动 Gost 代理转发
+        if: env.GOST_PROXY != ''
+        env:
+          GOST_PROXY: ${{ secrets.GOST_PROXY }}
+        run: |
+          wget -q https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
+          gunzip gost-linux-amd64-2.11.5.gz
+          chmod +x gost-linux-amd64-2.11.5
+          mv gost-linux-amd64-2.11.5 gost
+          nohup ./gost -L http://:8080 -F ${{ secrets.GOST_PROXY }} > gost.log 2>&1 &
+          sleep 3
+          echo "✅ Gost 已启动，测试连通性..."
+          curl -s -x http://127.0.0.1:8080 https://api.ipify.org
+
+      - name: 🎮 执行每日领取
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          SESSION_ID: ${{ secrets.SESSION_ID }}
+          GOST_PROXY: ${{ secrets.GOST_PROXY }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+        run: bash berryhost.sh
