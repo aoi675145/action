@@ -8,7 +8,7 @@ on:
 jobs:
   claim:
     runs-on: ubuntu-latest
-    timeout-minutes: 15 # 考虑到安装和启动代理，稍微增加了超时时间
+    timeout-minutes: 15
 
     steps:
       - name: 📥 1. 拉取私有仓库代码
@@ -23,10 +23,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 🛠️ 3. 安装代理相关依赖
+      - name: 🛠️ 3. 安装依赖
         run: |
           sudo apt-get update && sudo apt-get install -y unzip
-          # 如果你的 berryhost.sh 脚本需要 requests 等，也可以在这里安装
+          pip install requests  # 确保 Python 脚本可用
 
       - name: 🛡️ 4. 安装并启动 Xray 代理
         env:
@@ -42,112 +42,79 @@ jobs:
           
           python3 << 'PYEOF'
           import os, sys, json, base64
-          from urllib.parse import parse_qs, unquote
+          from urllib.parse import parse_qs, unquote, urlparse
 
-          def mask(s):
-              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
+          def mask(s): return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
 
           url = os.environ.get("berry_PROXY_NODE", "").strip()
           if not url: sys.exit(0)
 
-          if url.startswith("socks5://") or url.startswith("socks://"):
-              content = url.split("://")[1].split("#")[0]
-              server = content.split("@")[1].split(":")[0] if "@" in content else content.split(":")[0]
-              print(f"[INFO] 外部 SOCKS5 -> {mask(server)}")
-              with open("use_external_socks.txt", "w") as f: f.write(url.split("#")[0])
-              sys.exit(0)
-
-          # 简易版协议匹配逻辑
-          protocol = ""
-          for p in ["vless", "vmess", "trojan", "ss"]:
-              if url.startswith(f"{p}://"):
-                  protocol = p
-                  break
-          
-          if not protocol:
-              print(f"[ERROR] 不支持协议: {url.split('://')[0]}")
-              sys.exit(1)
-
-          content = url.split("://")[1].split("#")[0]
           config = {
               "log": {"loglevel": "warning"},
-              "inbounds": [
-                  {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}}
-              ],
+              "inbounds": [{"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}}],
               "outbounds": []
           }
 
-          if protocol == "vless":
-              uuid, rest = content.split("@", 1)
-              host_port = rest.split("?")[0]
-              params = parse_qs(rest.split("?")[1]) if "?" in rest else {}
-              address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
-              
-              outbound = {
-                  "protocol": "vless",
-                  "settings": {"vnext": [{"address": address, "port": int(port), "users": [{"id": uuid, "encryption": "none"}]}]},
-                  "streamSettings": {
-                      "network": params.get("type", ["tcp"])[0],
-                      "security": params.get("security", ["none"])[0]
-                  }
-              }
-              if outbound["streamSettings"]["security"] == "reality":
-                  outbound["streamSettings"]["realitySettings"] = {"serverName": params.get("sni", [address])[0], "fingerprint": params.get("fp", ["chrome"])[0], "publicKey": params.get("pbk", [""])[0]}
-              config["outbounds"].append(outbound)
+          # 处理直连 SOCKS
+          if url.startswith(("socks5://", "socks://")):
+              with open("use_external_socks.txt", "w") as f: f.write(url.split("#")[0])
+              sys.exit(0)
 
-          elif protocol == "vmess":
-              try:
-                  padding = 4 - len(content) % 4
-                  decoded = base64.b64decode(content + "=" * (padding if padding < 4 else 0)).decode("utf-8")
-                  vm = json.loads(decoded)
-                  outbound = {
+          try:
+              if url.startswith("vless://"):
+                  p = urlparse(url)
+                  qs = parse_qs(p.query)
+                  net, sec = qs.get("type", ["tcp"])[0], qs.get("security", ["none"])[0]
+                  out = {
+                      "protocol": "vless",
+                      "settings": {"vnext": [{"address": p.hostname, "port": p.port or 443, "users": [{"id": p.username, "encryption": "none"}]}]},
+                      "streamSettings": {"network": net, "security": sec}
+                  }
+                  if sec in ["tls", "reality"]:
+                      key = "realitySettings" if sec == "reality" else "tlsSettings"
+                      out["streamSettings"][key] = {"serverName": qs.get("sni", [p.hostname])[0], "fingerprint": qs.get("fp", ["chrome"])[0]}
+                      if sec == "reality": out["streamSettings"][key]["publicKey"] = qs.get("pbk", [""])[0]
+                  if net == "ws":
+                      out["streamSettings"]["wsSettings"] = {"path": unquote(qs.get("path", ["/"])[0]), "headers": {"Host": qs.get("host", [p.hostname])[0]}}
+                  config["outbounds"].append(out)
+
+              elif url.startswith("vmess://"):
+                  v = json.loads(base64.b64decode(url[8:].split("#")[0] + "==").decode("utf-8"))
+                  out = {
                       "protocol": "vmess",
-                      "settings": {"vnext": [{"address": vm["add"], "port": int(vm["port"]), "users": [{"id": vm["id"], "alterId": int(vm.get("aid", 0)), "security": "auto"}]}]},
-                      "streamSettings": {"network": vm.get("net", "tcp"), "security": "tls" if vm.get("tls") == "tls" else "none"}
+                      "settings": {"vnext": [{"address": v["add"], "port": int(v["port"]), "users": [{"id": v["id"], "alterId": int(v.get("aid", 0))}]}]},
+                      "streamSettings": {"network": v.get("net", "tcp"), "security": v.get("tls", "none")}
                   }
-                  config["outbounds"].append(outbound)
-              except: sys.exit(1)
+                  if v.get("net") == "ws":
+                      out["streamSettings"]["wsSettings"] = {"path": v.get("path", "/"), "headers": {"Host": v.get("host", v["add"])}}
+                  config["outbounds"].append(out)
 
-          elif protocol == "trojan":
-              password, rest = content.split("@", 1)
-              host_port = rest.split("?")[0]
-              address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
-              config["outbounds"].append({
-                  "protocol": "trojan",
-                  "settings": {"servers": [{"address": address, "port": int(port), "password": password}]},
-                  "streamSettings": {"network": "tcp", "security": "tls"}
-              })
-
-          elif protocol == "ss":
-              try:
-                  if "@" in content:
-                      encoded, server_part = content.split("@", 1)
-                      method, password = base64.b64decode(encoded + "==").decode("utf-8").split(":", 1)
-                      address, port = server_part.split(":", 1)
-                  else:
-                      decoded = base64.b64decode(content + "==").decode("utf-8")
-                      user_part, server_part = decoded.split("@", 1)
-                      method, password = user_part.split(":", 1)
-                      address, port = server_part.split(":", 1)
+              elif url.startswith("trojan://"):
+                  p = urlparse(url)
+                  qs = parse_qs(p.query)
                   config["outbounds"].append({
-                      "protocol": "shadowsocks",
-                      "settings": {"servers": [{"address": address, "port": int(port), "method": method, "password": password}]}
+                      "protocol": "trojan",
+                      "settings": {"servers": [{"address": p.hostname, "port": p.port or 443, "password": p.username}]},
+                      "streamSettings": {"network": qs.get("type", ["tcp"])[0], "security": "tls", "tlsSettings": {"serverName": qs.get("sni", [p.hostname])[0]}}
                   })
-              except: sys.exit(1)
 
-          with open("xray_config.json", "w") as f: json.dump(config, f, indent=2)
+              with open("xray_config.json", "w") as f: json.dump(config, f, indent=2)
+              print(f"✅ 成功解析协议")
+          except Exception as e:
+              print(f"❌ 解析失败: {e}")
+              sys.exit(1)
           PYEOF
           
           if [ -f "use_external_socks.txt" ]; then
             echo "PROXY_SOCKS5=$(cat use_external_socks.txt)" >> $GITHUB_ENV
           else
             ./xray/xray run -c xray_config.json > xray.log 2>&1 &
-            sleep 5
-            if curl -x socks5://127.0.0.1:10808 -s --max-time 10 https://api.ipify.org > /dev/null; then
+            sleep 8 # 增加等待握手的时间
+            if curl -x socks5://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null; then
               echo "✅ 代理连接成功"
               echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
             else
-              echo "❌ 代理失效"
+              echo "❌ 代理测试失败，可能是节点在 GitHub 环境下不可用"
               cat xray.log && exit 1
             fi
           fi
@@ -159,20 +126,17 @@ jobs:
           SESSION_ID: ${{ secrets.SESSION_ID }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          # 自动注入上面生成的代理地址
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-          # 也可以保留原有的 berry_PROXY_NODE 备用
           berry_PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
         run: |
           chmod +x berryhost.sh
           bash berryhost.sh
 
-      - name: 🧹 6. 清理旧运行记录
+      - name: 🧹 6. 清理记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
-          delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
           keep_minimum_runs: 1
