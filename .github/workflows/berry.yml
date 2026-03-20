@@ -3,7 +3,7 @@ name: TheBerryHost 每日领取
 on:
   workflow_dispatch:
   schedule:
-    # 每天日本时间 16:00 (即 UTC 07:00) 自动运行
+    # 每天日本时间 16:00 (UTC 07:00) 自动运行
     - cron: '0 7 * * *'
 
 jobs:
@@ -19,21 +19,18 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 🛡️ 2. 安装并启动代理 (Xray 自动解析)
+      - name: 🛡️ 2. 启动 Xray 代理
         env:
-          # 填入你的 VLESS/VMess/Trojan/SS 节点链接
           PROXY_NODE: ${{ secrets.PROXY_NODE }}
         run: |
           if [ -z "$PROXY_NODE" ]; then
-            echo "[INFO] 未配置代理，将尝试直连模式"
+            echo "[INFO] 未配置代理，直连模式运行"
             exit 0
           fi
-
-          # 下载并解压 Xray
+          
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
           unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
 
-          # 使用 Python 脚本生成 Xray 配置
           python3 << 'PYEOF'
           import os, sys, json, base64
           from urllib.parse import parse_qs, unquote
@@ -49,8 +46,7 @@ jobs:
 
           try:
               if url.startswith("vless://"):
-                  protocol, content = "vless", url[8:]
-                  uuid, rest = content.split("@", 1)
+                  uuid, rest = url[8:].split("@", 1)
                   host_port = rest.split("?")[0]
                   addr, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
                   outbound = {
@@ -59,46 +55,39 @@ jobs:
                       "streamSettings": {"network": "tcp", "security": "tls"}
                   }
               elif url.startswith("trojan://"):
-                  protocol, content = "trojan", url[9:]
-                  password, rest = content.split("@", 1)
+                  pwd, rest = url[9:].split("@", 1)
                   host_port = rest.split("?")[0]
                   addr, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
                   outbound = {
                       "protocol": "trojan",
-                      "settings": {"servers": [{"address": addr, "port": int(port), "password": password}]},
+                      "settings": {"servers": [{"address": addr, "port": int(port), "password": pwd}]},
                       "streamSettings": {"network": "tcp", "security": "tls"}
                   }
-              # 如果有 VMess/SS 需求，建议在此处补充对应逻辑
               config["outbounds"].append(outbound)
               with open("xray_config.json", "w") as f:
                   json.dump(config, f, indent=2)
-              print("[INFO] Xray 配置生成成功")
-          except Exception as e:
-              print(f"[ERROR] 解析节点失败: {e}")
+          except:
               sys.exit(1)
           PYEOF
 
-          # 启动 Xray
           ./xray/xray run -c xray_config.json > xray.log 2>&1 &
           sleep 5
-
-          # 注入环境变量，让后续步骤的 curl 自动走代理
           echo "HTTPS_PROXY=http://127.0.0.1:10809" >> $GITHUB_ENV
           echo "HTTP_PROXY=http://127.0.0.1:10809" >> $GITHUB_ENV
-          echo "✅ 代理服务已在后台运行 (Port: 10809)"
 
-      - name: 🎮 3. 执行每日领取脚本
-        # 👇 关键路径：指定到 berry 文件夹
+      - name: 🎮 3. 执行领取脚本
         working-directory: scripts/berry
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
-          TG_BOT: ${{ secrets.TG_BOT }}
+          # 👇 统一变量名
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           chmod +x berryhost.sh
           bash berryhost.sh
 
-      - name: 🧹 4. 清理旧运行记录
+      - name: 🧹 4. 清理旧运行
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
