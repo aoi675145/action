@@ -3,7 +3,7 @@ name: TheBerryHost 每日领取
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 1 * * *'  # 每天 UTC 01:00 (北京 09:00)
+    - cron: '17 1 * * *'  # 每天 UTC 01:17 (北京 09:17)
 
 jobs:
   claim:
