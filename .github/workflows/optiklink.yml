@@ -346,10 +346,9 @@ jobs:
         env:
           DISCORD_ACCOUNT_1: ${{ secrets.DISCORD_ACCOUNT_1 }}
           DISCORD_TOKEN_1:   ${{ secrets.DISCORD_TOKEN_1 }}
-          PANEL_ACCOUNT:   ${{ secrets.PANEL_ACCOUNT }}
-          TG_BOT_TOKEN:    ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID:      ${{ secrets.TG_CHAT_ID }}
-          GOST_PROXY:      ${{ env.LOCAL_PROXY }}
+          PANEL_ACCOUNT:     ${{ secrets.PANEL_ACCOUNT }}
+          TG_BOT:            ${{ secrets.TG_BOT }}
+          GOST_PROXY:        ${{ env.LOCAL_PROXY }}
         run: npx playwright test
 
       - name: 📸 上传失败截图
