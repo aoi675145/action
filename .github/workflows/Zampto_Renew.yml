@@ -2,7 +2,7 @@ name: Zampto 续期
 
 on:
   schedule:
-    - cron: '45 3 * * *'  # 每天北京时间 11:45 运行
+    - cron: '45 0 * * *'  # 每天北京时间 08:45 运行
   workflow_dispatch:
 
 jobs:
