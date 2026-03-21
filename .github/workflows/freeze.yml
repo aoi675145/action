@@ -49,8 +49,7 @@ jobs:
         env:
           DISCORD_ACCOUNT: ${{ secrets.DISCORD_ACCOUNT }}
           DISCORD_TOKEN:   ${{ secrets.DISCORD_TOKEN }}
-          TG_BOT_TOKEN:    ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID:      ${{ secrets.TG_CHAT_ID }}
+          TG_BOT:          ${{ secrets.TG_BOT }}
           GOST_PROXY:      http://127.0.0.1:8080
         run: npx playwright test
 
