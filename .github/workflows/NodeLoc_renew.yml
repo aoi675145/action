@@ -15,7 +15,7 @@ on:
       debug:
         description: '调试模式'
         required: false
-        default: 'false'
+        default: false
         type: boolean
 
 jobs:
