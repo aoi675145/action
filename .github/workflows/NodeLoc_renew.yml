@@ -9,7 +9,7 @@ name: NodeLoc 每日签到
 
 on:
   schedule:
-    - cron: '05 4 * * *'  # 每天北京时间 12:05 运行
+    - cron: '17 0 * * *'  # 每天北京时间 08:17 运行
   workflow_dispatch:
     inputs:
       debug:
