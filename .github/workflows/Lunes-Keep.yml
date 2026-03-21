@@ -21,7 +21,7 @@ jobs:
       - name: 拉取私有仓库
         uses: actions/checkout@v4
         with:
-          repository: akina005/scripts
+          repository: oyz6/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
@@ -62,8 +62,13 @@ jobs:
 
       - name: 执行保活
         env:
-          LUNES_EMAIL: ${{ secrets.LUNES_EMAIL }}
-          LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+#          LUNES_EMAIL: ${{ secrets.LUNES_EMAIL }}
+#          LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+          LUNES_1: ${{ secrets.LUNES_1 }}
+          LUNES_2: ${{ secrets.LUNES_2 }}
+          LUNES_3: ${{ secrets.LUNES_3 }}
+          LUNES_4: ${{ secrets.LUNES_4 }}
+          LUNES_5: ${{ secrets.LUNES_5 }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: http://127.0.0.1:7890
