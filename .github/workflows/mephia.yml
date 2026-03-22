@@ -1,0 +1,109 @@
+name: Mephia 续期
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 2 */5 * *'   # 每5天 UTC 02:00 执行
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: 📥 检出私有仓库代码
+        uses: actions/checkout@v4
+        with:
+          repository: 'akina005/scripts'
+          token: ${{ secrets.GH_PAT }} 
+
+      - name: 🛡️ 启动万能代理转换网关
+        env:
+          MY_PROXY_NODE: ${{ secrets.mephia_PROXY_NODE }} 
+        run: |
+          if [ -z "$MY_PROXY_NODE" ]; then
+            echo "[INFO] 未配置节点，跳过代理"
+            exit 0
+          fi
+          
+          # 1. 下载核心组件
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
+          
+          # 2. Python 自动化解析与配置生成
+          python3 << 'PYEOF'
+          import os, sys, json, base64
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          url = os.environ.get("MY_PROXY_NODE", "").strip()
+          if not url: sys.exit(0)
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}}],
+              "outbounds": []
+          }
+
+          if url.startswith(("socks5://", "socks://")):
+              with open("external_socks.txt", "w") as f: f.write(url.split("#")[0])
+              sys.exit(0)
+
+          try:
+              if url.startswith("vless://"):
+                  p = urlparse(url); qs = parse_qs(p.query)
+                  net, sec = qs.get("type", ["tcp"])[0], qs.get("security", ["none"])[0]
+                  out = {
+                      "protocol": "vless",
+                      "settings": {"vnext": [{"address": p.hostname, "port": p.port or 443, "users": [{"id": p.username, "encryption": "none"}]}]},
+                      "streamSettings": {"network": net, "security": sec}
+                  }
+                  if sec in ["tls", "reality"]:
+                      key = "realitySettings" if sec == "reality" else "tlsSettings"
+                      out["streamSettings"][key] = {"serverName": qs.get("sni", [p.hostname])[0], "fingerprint": qs.get("fp", ["chrome"])[0]}
+                      if sec == "reality": out["streamSettings"][key]["publicKey"] = qs.get("pbk", [""])[0]
+                  if net == "ws":
+                      out["streamSettings"]["wsSettings"] = {"path": unquote(qs.get("path", ["/"])[0]), "headers": {"Host": qs.get("host", [p.hostname])[0]}}
+                  config["outbounds"].append(out)
+
+              elif url.startswith("vmess://"):
+                  v = json.loads(base64.b64decode(url[8:].split("#")[0] + "==").decode("utf-8"))
+                  out = {
+                      "protocol": "vmess",
+                      "settings": {"vnext": [{"address": v["add"], "port": int(v["port"]), "users": [{"id": v["id"], "alterId": int(v.get("aid", 0))}]}]},
+                      "streamSettings": {"network": v.get("net", "tcp"), "security": v.get("tls", "none")}
+                  }
+                  if v.get("net") == "ws":
+                      out["streamSettings"]["wsSettings"] = {"path": v.get("path", "/"), "headers": {"Host": v.get("host", v["add"])}}
+                  config["outbounds"].append(out)
+
+              elif url.startswith("trojan://"):
+                  p = urlparse(url); qs = parse_qs(p.query)
+                  config["outbounds"].append({
+                      "protocol": "trojan",
+                      "settings": {"servers": [{"address": p.hostname, "port": p.port or 443, "password": p.username}]},
+                      "streamSettings": {"network": qs.get("type", ["tcp"])[0], "security": "tls", "tlsSettings": {"serverName": qs.get("sni", [p.hostname])[0]}}
+                  })
+
+              with open("xray_config.json", "w") as f: json.dump(config, f, indent=2)
+          except Exception as e:
+              print(f"解析失败: {e}"); sys.exit(1)
+          PYEOF
+          
+          # 3. 启动并导出环境变量
+          if [ -f "external_socks.txt" ]; then
+            echo "GLOBAL_PROXY=$(cat external_socks.txt)" >> $GITHUB_ENV
+          else
+            ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+            sleep 8
+            if curl -x socks5://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null; then
+              echo "GLOBAL_PROXY=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+            else
+              cat xray.log && exit 1
+            fi
+          fi
+
+      - name: 🔧 执行续期
+        env:
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          SESSION_ID: ${{ secrets.SESSION_ID }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+        # 根据截图路径调整了执行路径
+        run: bash scripts/Mephia/mephia_renew.sh
