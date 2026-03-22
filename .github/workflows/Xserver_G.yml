@@ -161,11 +161,9 @@ jobs:
 
       - name: Run Extension Script
         env:
-          ACC: ${{ matrix.account_index == 'SINGLE' && secrets.EML || secrets[format('EML_{0}', matrix.account_index)] }}
-          ACC_PWD: ${{ matrix.account_index == 'SINGLE' && secrets.PWD || secrets[format('PWD_{0}', matrix.account_index)] }}
+          Xserver_G_ACCOUNT: ${{ secrets.Xserver_G_ACCOUNT }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_ID: ${{ secrets.TG_ID }}
-          # 将网关产出的代理地址传递给 renew.js 所需的 PROXY_URL 变量
           PROXY_URL: ${{ env.GLOBAL_PROXY }} 
           GITHUB_EVENT_NAME: ${{ github.event_name }}
         run: |
