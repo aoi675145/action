@@ -16,6 +16,9 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          repository: 'akina005/scripts'
+          token: ${{ secrets.REPO_TOKEN }}
 
       - name: Generate account list
         id: set-matrix
@@ -50,6 +53,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          repository: 'akina005/scripts'
+          token: ${{ secrets.REPO_TOKEN }}
           fetch-depth: 0
 
       - name: Set up Node.js
@@ -59,39 +64,99 @@ jobs:
 
       - name: Install Dependencies
         run: |
-          npm install
-          npx playwright install --with-deps chrome
           sudo apt-get update
           sudo apt-get install -y jq fonts-noto-cjk python3 wget
+          
+          # 进入项目目录安装依赖
+          cd scripts/Xserver_G
+          npm install
+          npx playwright install --with-deps chrome
 
-      - name: Start Proxy Tunnel
+      - name: 🛡️ 启动万能代理转换网关
         env:
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          MY_PROXY_NODE: ${{ secrets.Xserver_G_PROXY_NODE }}
         run: |
-          if [ -z "$PROXY_URL" ]; then exit 0; fi
+          if [ -z "$MY_PROXY_NODE" ]; then
+            echo "[INFO] 未配置节点，跳过代理"
+            exit 0
+          fi
           
-          # 下载特定版本的 sing-box (与 ICMP9 项目一致)
-          SINGBOX_VER="1.11.0"
-          echo "📦 下载 sing-box v${SINGBOX_VER}..."
-          wget -q "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VER}/sing-box-${SINGBOX_VER}-linux-amd64.tar.gz"
-          tar -xzf "sing-box-${SINGBOX_VER}-linux-amd64.tar.gz"
-          mv "sing-box-${SINGBOX_VER}-linux-amd64/sing-box" ./sing-box
-          chmod +x ./sing-box
+          # 1. 下载核心组件
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
           
-          # 生成配置
-          echo "🔗 解析代理协议..."
-          python3 proxy_handler.py
+          # 2. Python 自动化解析与配置生成
+          python3 << 'PYEOF'
+          import os, sys, json, base64
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          url = os.environ.get("MY_PROXY_NODE", "").strip()
+          if not url: sys.exit(0)
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}}],
+              "outbounds": []
+          }
+
+          if url.startswith(("socks5://", "socks://")):
+              with open("external_socks.txt", "w") as f: f.write(url.split("#")[0])
+              sys.exit(0)
+
+          try:
+              if url.startswith("vless://"):
+                  p = urlparse(url); qs = parse_qs(p.query)
+                  net, sec = qs.get("type", ["tcp"])[0], qs.get("security", ["none"])[0]
+                  out = {
+                      "protocol": "vless",
+                      "settings": {"vnext": [{"address": p.hostname, "port": p.port or 443, "users": [{"id": p.username, "encryption": "none"}]}]},
+                      "streamSettings": {"network": net, "security": sec}
+                  }
+                  if sec in ["tls", "reality"]:
+                      key = "realitySettings" if sec == "reality" else "tlsSettings"
+                      out["streamSettings"][key] = {"serverName": qs.get("sni", [p.hostname])[0], "fingerprint": qs.get("fp", ["chrome"])[0]}
+                      if sec == "reality": out["streamSettings"][key]["publicKey"] = qs.get("pbk", [""])[0]
+                  if net == "ws":
+                      out["streamSettings"]["wsSettings"] = {"path": unquote(qs.get("path", ["/"])[0]), "headers": {"Host": qs.get("host", [p.hostname])[0]}}
+                  config["outbounds"].append(out)
+
+              elif url.startswith("vmess://"):
+                  v = json.loads(base64.b64decode(url[8:].split("#")[0] + "==").decode("utf-8"))
+                  out = {
+                      "protocol": "vmess",
+                      "settings": {"vnext": [{"address": v["add"], "port": int(v["port"]), "users": [{"id": v["id"], "alterId": int(v.get("aid", 0))}]}]},
+                      "streamSettings": {"network": v.get("net", "tcp"), "security": v.get("tls", "none")}
+                  }
+                  if v.get("net") == "ws":
+                      out["streamSettings"]["wsSettings"] = {"path": v.get("path", "/"), "headers": {"Host": v.get("host", v["add"])}}
+                  config["outbounds"].append(out)
+
+              elif url.startswith("trojan://"):
+                  p = urlparse(url); qs = parse_qs(p.query)
+                  config["outbounds"].append({
+                      "protocol": "trojan",
+                      "settings": {"servers": [{"address": p.hostname, "port": p.port or 443, "password": p.username}]},
+                      "streamSettings": {"network": qs.get("type", ["tcp"])[0], "security": "tls", "tlsSettings": {"serverName": qs.get("sni", [p.hostname])[0]}}
+                  })
+
+              with open("xray_config.json", "w") as f: json.dump(config, f, indent=2)
+          except Exception as e:
+              print("解析失败 (日志已隐去以防泄露)"); sys.exit(1)
+          PYEOF
           
-          if [ -f config.json ]; then
-            echo "✅ 代理配置已生成:"
-            cat config.json
-            # 使用 nohup 启动 (与 ICMP9 项目一致)
-            nohup ./sing-box run -c config.json > singbox.log 2>&1 &
-            sleep 5
-            echo "✅ Proxy tunnel started"
+          # 3. 启动并导出环境变量 (增加脱敏)
+          if [ -f "external_socks.txt" ]; then
+            EXT_PROXY=$(cat external_socks.txt)
+            echo "::add-mask::$EXT_PROXY"
+            echo "GLOBAL_PROXY=$EXT_PROXY" >> $GITHUB_ENV
           else
-            echo "❌ 代理配置生成失败"
-            exit 1
+            ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+            sleep 8
+            if curl -x socks5://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null; then
+              echo "GLOBAL_PROXY=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+            else
+              echo "[ERROR] Xray 启动失败或节点不连通 (详情请本地测试)" && exit 1
+            fi
           fi
 
       - name: Run Extension Script
@@ -100,21 +165,25 @@ jobs:
           ACC_PWD: ${{ matrix.account_index == 'SINGLE' && secrets.PWD || secrets[format('PWD_{0}', matrix.account_index)] }}
           TG_TOKEN: ${{ secrets.TG_TOKEN }}
           TG_ID: ${{ secrets.TG_ID }}
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          # 将网关产出的代理地址传递给 renew.js 所需的 PROXY_URL 变量
+          PROXY_URL: ${{ env.GLOBAL_PROXY }} 
           GITHUB_EVENT_NAME: ${{ github.event_name }}
-        run: node renew.js
+        run: |
+          cd scripts/Xserver_G
+          node renew.js
 
       - name: Upload Screenshots
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-${{ matrix.account_index }}
-          path: "*.png"
+          path: "scripts/Xserver_G/*.png"
           retention-days: 5
 
       - name: Persist status.json
         if: always()
         run: |
+          cd scripts/Xserver_G
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main || echo "No remote changes"
