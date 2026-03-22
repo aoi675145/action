@@ -1,0 +1,125 @@
+name: XServer Extend (Node.js Matrix)
+
+on:
+  schedule:
+    - cron: '0 22 * * *' # 06:00 AM Beijing (UTC+8)
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Generate account list
+        id: set-matrix
+        shell: bash
+        env:
+          ALL_SECRETS: ${{ toJson(secrets) }}
+        run: |
+          ACCOUNTS=$(echo "$ALL_SECRETS" | jq -r 'keys[] | select(startswith("EML_"))' | sed 's/EML_//' | shuf)
+          if [ -z "$ACCOUNTS" ]; then
+            HAS_SINGLE=$(echo "$ALL_SECRETS" | jq -r 'keys[] | select(. == "EML")')
+            if [ -n "$HAS_SINGLE" ]; then
+              echo "matrix=[\"SINGLE\"]" >> $GITHUB_OUTPUT
+            else
+              echo "Error: No EML_1 or EML secrets found."
+              exit 1
+            fi
+          else
+            INDEX_ARRAY=$(echo "$ACCOUNTS" | jq -R . | jq -s -c .)
+            echo "matrix=$INDEX_ARRAY" >> $GITHUB_OUTPUT
+          fi
+
+  renew:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 1
+      matrix:
+        account_index: ${{ fromJson(needs.setup.outputs.matrix) }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Install Dependencies
+        run: |
+          npm install
+          npx playwright install --with-deps chrome
+          sudo apt-get update
+          sudo apt-get install -y jq fonts-noto-cjk python3 wget
+
+      - name: Start Proxy Tunnel
+        env:
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+        run: |
+          if [ -z "$PROXY_URL" ]; then exit 0; fi
+          
+          # 下载特定版本的 sing-box (与 ICMP9 项目一致)
+          SINGBOX_VER="1.11.0"
+          echo "📦 下载 sing-box v${SINGBOX_VER}..."
+          wget -q "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VER}/sing-box-${SINGBOX_VER}-linux-amd64.tar.gz"
+          tar -xzf "sing-box-${SINGBOX_VER}-linux-amd64.tar.gz"
+          mv "sing-box-${SINGBOX_VER}-linux-amd64/sing-box" ./sing-box
+          chmod +x ./sing-box
+          
+          # 生成配置
+          echo "🔗 解析代理协议..."
+          python3 proxy_handler.py
+          
+          if [ -f config.json ]; then
+            echo "✅ 代理配置已生成:"
+            cat config.json
+            # 使用 nohup 启动 (与 ICMP9 项目一致)
+            nohup ./sing-box run -c config.json > singbox.log 2>&1 &
+            sleep 5
+            echo "✅ Proxy tunnel started"
+          else
+            echo "❌ 代理配置生成失败"
+            exit 1
+          fi
+
+      - name: Run Extension Script
+        env:
+          ACC: ${{ matrix.account_index == 'SINGLE' && secrets.EML || secrets[format('EML_{0}', matrix.account_index)] }}
+          ACC_PWD: ${{ matrix.account_index == 'SINGLE' && secrets.PWD || secrets[format('PWD_{0}', matrix.account_index)] }}
+          TG_TOKEN: ${{ secrets.TG_TOKEN }}
+          TG_ID: ${{ secrets.TG_ID }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+          GITHUB_EVENT_NAME: ${{ github.event_name }}
+        run: node renew.js
+
+      - name: Upload Screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ matrix.account_index }}
+          path: "*.png"
+          retention-days: 5
+
+      - name: Persist status.json
+        if: always()
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || echo "No remote changes"
+          if [ -f status.json ]; then
+            git add status.json
+            git commit -m "chore: Update status.json for ${{ matrix.account_index }} [skip ci]" || echo "No changes"
+            git push
+          fi
