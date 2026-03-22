@@ -2,7 +2,7 @@ name: JustRunMy Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 0 * * *'
+    - cron: '30 0 * * *'
   repository_dispatch:
     types: [just]
 
