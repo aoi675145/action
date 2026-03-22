@@ -35,12 +35,15 @@ jobs:
           npm install
           npx playwright install --with-deps chrome
 
-      - name: 🛡️ 启动万能代理转换网关
+      - name: 🛡️ 启动万能代理转换网关 (支持直连回退)
         env:
           MY_PROXY_NODE: ${{ secrets.Xserver_G_PROXY_NODE }}
         run: |
+          # ===== 新增：空变量直连检测逻辑 =====
           if [ -z "$MY_PROXY_NODE" ]; then
-            echo "[INFO] 未配置节点，跳过代理"
+            echo "🌐 未读取到代理节点变量 (Xserver_G_PROXY_NODE 为空)"
+            echo "🚀 切换为直连模式运行..."
+            echo "GLOBAL_PROXY=" >> $GITHUB_ENV
             exit 0
           fi
           
@@ -107,13 +110,14 @@ jobs:
               print("解析失败 (日志已隐去以防泄露)"); sys.exit(1)
           PYEOF
           
-          # 3. 启动并导出环境变量 (增加脱敏)
+          # 3. 启动并导出环境变量 (增加脱敏并修复进程中断问题)
           if [ -f "external_socks.txt" ]; then
             EXT_PROXY=$(cat external_socks.txt)
             echo "::add-mask::$EXT_PROXY"
             echo "GLOBAL_PROXY=$EXT_PROXY" >> $GITHUB_ENV
           else
-            ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+            # 👇 这里已经加上了修复掉线的 nohup
+            nohup ./xray/xray run -c xray_config.json > xray.log 2>&1 &
             sleep 8
             if curl -x socks5://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null; then
               echo "GLOBAL_PROXY=socks5://127.0.0.1:10808" >> $GITHUB_ENV
@@ -137,7 +141,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots-single # 去掉了 matrix 变量
+          name: screenshots-single
           path: "scripts/Xserver_G/*.png"
           retention-days: 5
 
