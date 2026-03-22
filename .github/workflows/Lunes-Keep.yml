@@ -3,7 +3,7 @@ name: Lunes Host 自动保活
 on:
   schedule:
     # 每10天运行：1号、11号、21号 09:24 (北京时间)
-    - cron: '24 1 1,11,21 * *'
+    - cron: '15 1 1,11,21 * *'
   workflow_dispatch:
 
 jobs:
