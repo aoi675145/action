@@ -1,4 +1,4 @@
-name: XServer Extend (Node.js Matrix)
+name: XServer Extend (Single Account)
 
 on:
   schedule:
@@ -9,46 +9,9 @@ permissions:
   contents: write
 
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          repository: 'akina005/scripts'
-          token: ${{ secrets.REPO_TOKEN }}
-
-      - name: Generate account list
-        id: set-matrix
-        shell: bash
-        env:
-          ALL_SECRETS: ${{ toJson(secrets) }}
-        run: |
-          ACCOUNTS=$(echo "$ALL_SECRETS" | jq -r 'keys[] | select(startswith("EML_"))' | sed 's/EML_//' | shuf)
-          if [ -z "$ACCOUNTS" ]; then
-            HAS_SINGLE=$(echo "$ALL_SECRETS" | jq -r 'keys[] | select(. == "EML")')
-            if [ -n "$HAS_SINGLE" ]; then
-              echo "matrix=[\"SINGLE\"]" >> $GITHUB_OUTPUT
-            else
-              echo "Error: No EML_1 or EML secrets found."
-              exit 1
-            fi
-          else
-            INDEX_ARRAY=$(echo "$ACCOUNTS" | jq -R . | jq -s -c .)
-            echo "matrix=$INDEX_ARRAY" >> $GITHUB_OUTPUT
-          fi
-
   renew:
-    needs: setup
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      max-parallel: 1
-      matrix:
-        account_index: ${{ fromJson(needs.setup.outputs.matrix) }}
-
+    timeout-minutes: 15
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -174,7 +137,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: screenshots-${{ matrix.account_index }}
+          name: screenshots-single # 去掉了 matrix 变量
           path: "scripts/Xserver_G/*.png"
           retention-days: 5
 
@@ -187,6 +150,6 @@ jobs:
           git pull --rebase origin main || echo "No remote changes"
           if [ -f status.json ]; then
             git add status.json
-            git commit -m "chore: Update status.json for ${{ matrix.account_index }} [skip ci]" || echo "No changes"
+            git commit -m "chore: Update status.json for Xserver account [skip ci]" || echo "No changes"
             git push
           fi
