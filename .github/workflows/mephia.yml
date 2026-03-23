@@ -2,7 +2,7 @@ name: Mephia 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 2 */5 * *'   # 每5天 UTC 02:00 执行
+    - cron: '18 5 */5 * *'   
 
 jobs:
   renew:
