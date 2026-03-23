@@ -10,12 +10,15 @@ jobs:
     name: 执行续期
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: write
 
     steps:
       - name: 拉取私有仓库
         uses: actions/checkout@v4
         with:
-          repository: akina005/scripts  # 已根据图片修改为你的仓库
+          repository: oyz6/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
@@ -62,12 +65,21 @@ jobs:
           FREEZEHOST_DISCORD_TOKEN: ${{ secrets.FREEZEHOST_DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python scripts/freeze1/renew.py  # 已根据图片修改为正确的脚本路径
+        run: python scripts/FreezeHost/renew.py
 
-      - name: 上传截图
-        if: always()
-        uses: actions/upload-artifact@v4
+#      - name: 上传截图
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: renew-screenshots
+#          path: screenshots/
+#          retention-days: 7
+
+      - name: 清理历史运行记录
+        uses: Mattraks/delete-workflow-runs@v2
         with:
-          name: renew-screenshots
-          path: screenshots/
-          retention-days: 7
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 1
