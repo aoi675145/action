@@ -18,7 +18,7 @@ jobs:
       - name: 拉取私有仓库
         uses: actions/checkout@v4
         with:
-          repository: oyz6/scripts
+          repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
@@ -65,7 +65,7 @@ jobs:
           FREEZEHOST_DISCORD_TOKEN: ${{ secrets.FREEZEHOST_DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python scripts/FreezeHost/renew.py
+        run: python scripts/freeze1/renew.py
 
 #      - name: 上传截图
 #        if: always()
