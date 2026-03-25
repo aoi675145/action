@@ -22,14 +22,12 @@ jobs:
         with:
           node-version: '20'
 
-      # 👇 恢复为正确的路径：scripts/XServer
       - name: 安装依赖
         working-directory: scripts/XServer
         run: |
           npm init -y
           npm install playwright
 
-      # 👇 恢复为正确的路径：scripts/XServer
       - name: 安装浏览器
         working-directory: scripts/XServer
         run: npx playwright install --with-deps chrome
@@ -248,7 +246,6 @@ jobs:
           cat xray.log
           exit 1
 
-      # 👇 恢复为正确的路径：scripts/XServer
       - name: 运行续期脚本
         working-directory: scripts/XServer
         env:
@@ -258,14 +255,65 @@ jobs:
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
         run: node main.js
 
-#      - name: 上传截图
-#        if: always()
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: screenshots
-#          # 注意如果以后开启，这里的路径也应该是 scripts/XServer/screenshots/*.png
-#          path: "scripts/XServer/screenshots/*.png"
-#          retention-days: 5
+      # 👇 ======== 新增：单独拉取当前运行的工作流仓库 ======== 👇
+      - name: 拉取当前工作流仓库
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          path: self-repo
+
+      # 👇 ======== 新增：自动修改工作流时间并推送 ======== 👇
+      - name: 自动修改下一次运行时间
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          # 针对刚拉取下来的目录指定正确的相对路径
+          WORKFLOW_FILE: self-repo/.github/workflows/main.yml
+        run: |
+          python3 << 'EOF'
+          import re
+          import random
+          import os
+          from datetime import datetime, timedelta
+
+          workflow_file = os.environ.get("WORKFLOW_FILE")
+
+          try:
+              with open(workflow_file, 'r', encoding='utf-8') as f:
+                  content = f.read()
+
+              # 随机生成分钟(0-59)和小时(这里默认设置为 UTC 5点到7点之间随机，可自行更改)
+              random_minute = random.randint(0, 59)
+              random_hour = random.randint(5, 7)
+              new_cron = f"{random_minute} {random_hour} * * *"
+
+              next_date = (datetime.utcnow() + timedelta(days=1)).strftime("%Y-%m-%d")
+
+              # 替换 cron 表达式并加上注释
+              new_content = re.sub(
+                  r"- cron: '.*?'",
+                  f"- cron: '{new_cron}' # 下一个: {next_date} {random_hour:02d}:{random_minute:02d} UTC",
+                  content,
+                  count=1
+              )
+
+              with open(workflow_file, 'w', encoding='utf-8') as f:
+                  f.write(new_content)
+              print(f"✅ 已将下一次运行时间更新为: {new_cron}")
+          except Exception as e:
+              print(f"❌ 修改文件失败，请检查 WORKFLOW_FILE 路径是否正确: {e}")
+              exit(1)
+          EOF
+
+          # 进入 self-repo 目录配置 Git 并提交推送
+          cd self-repo
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/main.yml
+          git commit -m "🚀 auto: 随机更新下一次续期时间" || echo "没有变更需要提交"
+          
+          # 强制推送到当前仓库
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+          git push
 
       - name: 清理旧运行
         uses: Mattraks/delete-workflow-runs@v2
