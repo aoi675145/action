@@ -1,9 +1,8 @@
-# .github/workflows/XServer.yml
 name: XServer 游戏机续期
 
 on:
   schedule:
-    - cron: '40 9 * * *'  # 日本时间 18:40
+    - cron: '5 6 28 3 *' # 下一个: 2026-03-28 06:05 UTC (对应网页时间: 2026-03-28 15:05)
   workflow_dispatch:
 
 jobs:
@@ -11,85 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 检查是否需要续期
-        id: check
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          echo "[INFO] 通过 GitHub API 读取 logs.txt..."
-
-          HTTP_CODE=$(curl -s -o /tmp/logs_response.json -w "%{http_code}" \
-            -H "Authorization: token $REPO_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/akina005/scripts/contents/scripts/XServer/logs.txt")
-
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "[WARN] 无法读取 logs.txt (HTTP $HTTP_CODE)，视为全部需要续期"
-            echo "need_renew=true" >> $GITHUB_OUTPUT
-            echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          # 解码 base64 内容
-          cat /tmp/logs_response.json | python3 -c "
-          import sys, json, base64
-          data = json.load(sys.stdin)
-          content = base64.b64decode(data['content']).decode('utf-8')
-          print(content)
-          " > /tmp/logs.txt
-
-          echo "[INFO] logs.txt 读取成功 ($(wc -l < /tmp/logs.txt) 行)"
-
-          # 获取文件 SHA（后续更新用）
-          LOG_SHA=$(cat /tmp/logs_response.json | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
-          echo "log_sha=$LOG_SHA" >> $GITHUB_OUTPUT
-
-          python3 << 'PYEOF'
-          import os, sys
-          from datetime import datetime, timedelta, timezone
-
-          jst = timezone(timedelta(hours=9))
-          now = datetime.now(jst)
-
-          print(f"[INFO] 当前日本时间: {now.strftime('%Y-%m-%d %H:%M')}")
-
-          accounts_to_renew = []
-
-          with open("/tmp/logs.txt", "r") as f:
-              for line in f:
-                  line = line.strip()
-                  if not line or line.startswith("#") or "-----" not in line:
-                      continue
-                  parts = line.split("-----")
-                  if len(parts) < 2:
-                      continue
-                  email = parts[0].strip()
-                  next_run_str = parts[1].strip()
-                  try:
-                      next_run_dt = datetime.strptime(next_run_str, "%Y-%m-%d %H:%M").replace(tzinfo=jst)
-                      if now >= next_run_dt:
-                          print(f"[INFO] 账号需要续期 → 执行时间已到 ({next_run_str})")
-                          accounts_to_renew.append(email)
-                      else:
-                          print(f"[INFO] 账号跳过 → 下次执行时间 {next_run_str}")
-                  except ValueError:
-                      print(f"[WARN] 日期解析失败，加入续期列表")
-                      accounts_to_renew.append(email)
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as gh:
-              if accounts_to_renew:
-                  gh.write(f"need_renew=true\n")
-                  gh.write(f"accounts_to_renew={','.join(accounts_to_renew)}\n")
-                  print(f"[INFO] 共 {len(accounts_to_renew)} 个账号需要续期")
-              else:
-                  gh.write("need_renew=false\n")
-                  gh.write("accounts_to_renew=\n")
-                  print("[INFO] ✅ 所有账号均不需要续期，跳过后续操作")
-          PYEOF
-
-      # ========== 以下所有步骤仅在需要续期时执行 ==========
       - name: 拉取私有仓库
-        if: steps.check.outputs.need_renew == 'true'
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
@@ -97,33 +18,30 @@ jobs:
           path: .
 
       - name: 安装 Node.js
-        if: steps.check.outputs.need_renew == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       - name: 安装依赖
-        if: steps.check.outputs.need_renew == 'true'
+        working-directory: scripts/XServer
         run: |
-          cd scripts/XServer
           npm init -y
           npm install playwright
 
       - name: 安装浏览器
-        if: steps.check.outputs.need_renew == 'true'
+        working-directory: scripts/XServer
         run: npx playwright install --with-deps chrome
 
       - name: 安装并启动代理
-        if: steps.check.outputs.need_renew == 'true'
         env:
-          PROXY_NODE: ${{ secrets.PROXY_NODE }}
+          PROXY_NODE: ${{ secrets.XSERVER_PROXY_NODE }}
         run: |
           if [ -z "$PROXY_NODE" ]; then
             echo "[INFO] 未配置代理，直连模式"
             exit 0
           fi
 
-          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
           unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
 
           python3 << 'PYEOF'
@@ -329,27 +247,103 @@ jobs:
           exit 1
 
       - name: 运行续期脚本
-        if: steps.check.outputs.need_renew == 'true'
+        working-directory: scripts/XServer
         env:
           XSERVER_ACCOUNT: ${{ secrets.XSERVER_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-          ACCOUNTS_TO_RENEW: ${{ steps.check.outputs.accounts_to_renew }}
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          LOG_SHA: ${{ steps.check.outputs.log_sha }}
-        run: node scripts/XServer/main.js
+        run: node main.js
 
-#      - name: 上传截图
-#        if: always() && steps.check.outputs.need_renew == 'true'
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: screenshots
-#          path: "screenshots/*.png"
-#          retention-days: 5
+      - name: 拉取当前工作流仓库
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          path: self-repo
+
+      - name: 自动修改下一次运行时间
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          WORKFLOW_FILE: self-repo/.github/workflows/XServer.yml
+        run: |
+          python3 << 'EOF'
+          import re
+          import os
+          from datetime import datetime, timedelta
+
+          workflow_file = os.environ.get("WORKFLOW_FILE")
+          date_file = 'scripts/XServer/next_time.txt'
+
+          target_date = None
+          
+          # 1. 动态读取 Node.js 写入的精准时间文件
+          if os.path.exists(date_file):
+              with open(date_file, 'r', encoding='utf-8') as f:
+                  content = f.read()
+              
+              # 正则提取 年-月-日 时:分 (兼容多种分隔符)
+              dates = re.findall(r'(\d{4})[^\d]+(\d{1,2})[^\d]+(\d{1,2})[^\d]+(\d{1,2})[^\d]+(\d{1,2})', content)
+              valid_dates = []
+              for y, m, d, h, minute in dates:
+                  try:
+                      # 组装提取到的日本时间 (JST)
+                      jst_time = datetime(int(y), int(m), int(d), int(h), int(minute))
+                      valid_dates.append(jst_time)
+                  except: pass
+              
+              if valid_dates:
+                  target_date = min(valid_dates)
+
+          if target_date:
+              # 2. 精准时区转换：将读取到的日本时间 (JST, UTC+9) 减去 9 小时，变为 GitHub 识别的 UTC 时间
+              utc_time = target_date - timedelta(hours=9)
+              
+              cron_month = utc_time.month
+              cron_day = utc_time.day
+              cron_hour = utc_time.hour
+              cron_minute = utc_time.minute
+              
+              next_date_str = f"{utc_time.strftime('%Y-%m-%d %H:%M')} UTC (对应网页时间: {target_date.strftime('%Y-%m-%d %H:%M')})"
+              new_cron = f"{cron_minute} {cron_hour} {cron_day} {cron_month} *"
+          else:
+              # 3. 兜底方案：如果没有读取到有效时间，默认明天同一分钟再次尝试
+              now_utc = datetime.utcnow()
+              tomorrow_utc = now_utc + timedelta(days=1)
+              new_cron = f"{tomorrow_utc.minute} {tomorrow_utc.hour} * * *"
+              next_date_str = f"{tomorrow_utc.strftime('%Y-%m-%d %H:%M')} UTC (兜底方案)"
+
+          # 4. 写入并替换 yml 文件
+          try:
+              with open(workflow_file, 'r', encoding='utf-8') as f:
+                  content = f.read()
+
+              new_content = re.sub(
+                  r"- cron: '.*?'",
+                  f"- cron: '{new_cron}' # 下一个: {next_date_str}",
+                  content,
+                  count=1
+              )
+
+              with open(workflow_file, 'w', encoding='utf-8') as f:
+                  f.write(new_content)
+              print(f"✅ 已精准将下一次运行时间更新为: {new_cron} (对应网页: {target_date})")
+          except Exception as e:
+              print(f"❌ 修改 yml 文件失败: {e}")
+              exit(1)
+          EOF
+
+          # 进入 self-repo 目录提交修改
+          cd self-repo
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/XServer.yml
+          git commit -m "🚀 auto: 精准锁定网页提示的续期时间" || echo "没有变更需要提交"
+          
+          # 推送到仓库
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
+          git push
 
       - name: 清理旧运行
-        if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
