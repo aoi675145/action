@@ -1,8 +1,9 @@
+# .github/workflows/XServer.yml
 name: XServer 游戏机续期
 
 on:
   schedule:
-    - cron: '5 6 28 3 *' # 下一个: 2026-03-28 06:05 UTC (对应网页时间: 2026-03-28 15:05)
+    - cron: '40 9 * * *'  # 日本时间 18:40
   workflow_dispatch:
 
 jobs:
@@ -10,340 +11,160 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      - name: 检查是否需要续期
+        id: check
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          echo "[INFO] 通过 GitHub API 读取 logs.txt..."
+
+          HTTP_CODE=$(curl -s -o /tmp/logs_response.json -w "%{http_code}" \
+            -H "Authorization: token $REPO_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/akina005/scripts/contents/scripts/XServer/logs.txt")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "[WARN] 无法读取 logs.txt (HTTP $HTTP_CODE)，视为全部需要续期"
+            echo "need_renew=true" >> $GITHUB_OUTPUT
+            echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 解码 base64 内容
+          cat /tmp/logs_response.json | python3 -c "
+          import sys, json, base64
+          data = json.load(sys.stdin)
+          content = base64.b64decode(data['content']).decode('utf-8')
+          print(content)
+          " > /tmp/logs.txt
+
+          echo "[INFO] logs.txt 读取成功 ($(wc -l < /tmp/logs.txt) 行)"
+
+          # 获取文件 SHA（后续更新用）
+          LOG_SHA=$(cat /tmp/logs_response.json | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
+          echo "log_sha=$LOG_SHA" >> $GITHUB_OUTPUT
+
+          python3 << 'PYEOF'
+          import os, sys
+          from datetime import datetime, timedelta, timezone
+
+          jst = timezone(timedelta(hours=9))
+          now = datetime.now(jst)
+
+          print(f"[INFO] 当前日本时间: {now.strftime('%Y-%m-%d %H:%M')}")
+
+          accounts_to_renew = []
+
+          with open("/tmp/logs.txt", "r") as f:
+              for line in f:
+                  line = line.strip()
+                  if not line or line.startswith("#") or "-----" not in line:
+                      continue
+                  parts = line.split("-----")
+                  if len(parts) < 2:
+                      continue
+                  email = parts[0].strip()
+                  next_run_str = parts[1].strip()
+                  try:
+                      next_run_dt = datetime.strptime(next_run_str, "%Y-%m-%d %H:%M").replace(tzinfo=jst)
+                      if now >= next_run_dt:
+                          print(f"[INFO] 账号需要续期 → 执行时间已到 ({next_run_str})")
+                          accounts_to_renew.append(email)
+                      else:
+                          print(f"[INFO] 账号跳过 → 下次执行时间 {next_run_str}")
+                  except ValueError:
+                      print(f"[WARN] 日期解析失败，加入续期列表")
+                      accounts_to_renew.append(email)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as gh:
+              if accounts_to_renew:
+                  gh.write(f"need_renew=true\n")
+                  gh.write(f"accounts_to_renew={','.join(accounts_to_renew)}\n")
+                  print(f"[INFO] 共 {len(accounts_to_renew)} 个账号需要续期")
+              else:
+                  gh.write("need_renew=false\n")
+                  gh.write("accounts_to_renew=\n")
+                  print("[INFO] ✅ 所有账号均不需要续期，跳过后续操作")
+          PYEOF
+
+      # ========== 以下所有步骤仅在需要续期时执行 ==========
       - name: 拉取私有仓库
+        if: steps.check.outputs.need_renew == 'true'
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 安装 Node.js
-        uses: actions/setup-node@v4
+      - name: 启用 WARP 网络
+        if: steps.check.outputs.need_renew == 'true'
+        uses: fscarmen/warp-on-actions@v1.3
         with:
-          node-version: '20'
+          stack: dual
+          mode: client
+
+      - name: 修复 DNS
+        if: steps.check.outputs.need_renew == 'true'
+        run: |
+          echo "🔧 停用 systemd-resolved，直连 DNS..."
+          
+          # 停掉 systemd-resolved
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
+          
+          # 删掉软链接，写真实文件
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
+          
+          # 防止被覆盖
+          sudo chattr +i /etc/resolv.conf 2>/dev/null || true
+          
+          # 等 DNS 生效
+          sleep 2
+          
+          echo "🔍 DNS 测试:"
+          echo "--- ctrl.lunes.host ---"
+          nslookup ctrl.lunes.host 1.1.1.1 || dig ctrl.lunes.host @1.1.1.1 +short || echo "⚠️ 解析失败"
+          echo "--- api.github.com ---"
+          nslookup api.github.com 1.1.1.1 || echo "⚠️ 解析失败"
+          echo "--- 系统级测试 ---"
+          getent hosts ctrl.lunes.host || echo "⚠️ getent 失败"
+          
+          echo ""
+          echo "🌍 当前 IP:"
+          curl -s --max-time 10 https://api.ipify.org && echo
+          echo "🔍 WARP Trace:"
+          curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace | grep -E 'ip=|warp=|loc='
+          
+          echo ""
+          echo "📄 /etc/resolv.conf:"
+          cat /etc/resolv.conf
+
+      - name: 设置 Python
+        if: steps.check.outputs.need_renew == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
 
       - name: 安装依赖
-        working-directory: scripts/XServer
+        if: steps.check.outputs.need_renew == 'true'
         run: |
-          npm init -y
-          npm install playwright
-
-      - name: 安装浏览器
-        working-directory: scripts/XServer
-        run: npx playwright install --with-deps chrome
-
-      - name: 安装并启动代理
-        env:
-          PROXY_NODE: ${{ secrets.XSERVER_PROXY_NODE }}
-        run: |
-          if [ -z "$PROXY_NODE" ]; then
-            echo "[INFO] 未配置代理，直连模式"
-            exit 0
-          fi
-
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
-
-          python3 << 'PYEOF'
-          import os, sys, json, base64
-          from urllib.parse import parse_qs, unquote, urlparse
-
-          def mask(s):
-              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
-
-          url = os.environ.get("PROXY_NODE", "").strip()
-          if not url:
-              print("[ERROR] PROXY_NODE 为空")
-              sys.exit(1)
-
-          if url.startswith("vless://"):
-              protocol = "vless"
-              content = url[8:]
-          elif url.startswith("vmess://"):
-              protocol = "vmess"
-              content = url[8:]
-          elif url.startswith("trojan://"):
-              protocol = "trojan"
-              content = url[9:]
-          elif url.startswith("ss://"):
-              protocol = "ss"
-              content = url[5:]
-          elif url.startswith("socks5://") or url.startswith("socks://"):
-              protocol = "socks5"
-              content = url.split("://")[1].split("#")[0]
-              if "@" in content:
-                  server = content.split("@")[1].split(":")[0]
-              else:
-                  server = content.split(":")[0]
-              print(f"[INFO] SOCKS5 -> {mask(server)}")
-              with open("use_external_socks.txt", "w") as f:
-                  f.write(url.split("#")[0])
-              sys.exit(0)
-          else:
-              print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
-              sys.exit(1)
-
-          if "#" in content:
-              content = content.rsplit("#", 1)[0]
-
-          config = {
-              "log": {"loglevel": "warning"},
-              "inbounds": [
-                  {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
-                  {"port": 10809, "listen": "127.0.0.1", "protocol": "http"}
-              ],
-              "outbounds": []
-          }
-
-          if protocol == "vless":
-              uuid, rest = content.split("@", 1)
-              if "?" in rest:
-                  host_port, params_str = rest.split("?", 1)
-              else:
-                  host_port, params_str = rest, ""
-              if ":" in host_port:
-                  address, port = host_port.rsplit(":", 1)
-              else:
-                  address, port = host_port, "443"
-              params = parse_qs(params_str)
-              security = params.get("security", ["none"])[0]
-              network = params.get("type", ["tcp"])[0]
-              sni = params.get("sni", [address])[0]
-              fp = params.get("fp", ["chrome"])[0]
-              flow = params.get("flow", [""])[0]
-              pbk = params.get("pbk", [""])[0]
-              host = params.get("host", [sni])[0]
-              path_val = unquote(params.get("path", ["/"])[0])
-              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
-              outbound = {
-                  "protocol": "vless",
-                  "settings": {"vnext": [{"address": address, "port": int(port), "users": [{"id": uuid, "encryption": "none"}]}]},
-                  "streamSettings": {"network": network, "security": security}
-              }
-              if flow:
-                  outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
-              if security == "reality":
-                  outbound["streamSettings"]["realitySettings"] = {"serverName": sni, "fingerprint": fp, "publicKey": pbk}
-              elif security == "tls":
-                  outbound["streamSettings"]["tlsSettings"] = {"serverName": sni, "fingerprint": fp, "allowInsecure": False}
-              if network == "ws":
-                  outbound["streamSettings"]["wsSettings"] = {"path": path_val, "headers": {"Host": host}}
-              elif network == "grpc":
-                  service_name = params.get("serviceName", [""])[0]
-                  outbound["streamSettings"]["grpcSettings"] = {"serviceName": service_name}
-              config["outbounds"].append(outbound)
-
-          elif protocol == "vmess":
-              try:
-                  padding = 4 - len(content) % 4
-                  if padding != 4:
-                      content += "=" * padding
-                  decoded = base64.b64decode(content).decode("utf-8")
-                  vm = json.loads(decoded)
-              except Exception as e:
-                  print(f"[ERROR] VMess 解析失败: {e}")
-                  sys.exit(1)
-              address = vm.get("add", "")
-              port = int(vm.get("port", 443))
-              uuid = vm.get("id", "")
-              aid = int(vm.get("aid", 0))
-              network = vm.get("net", "tcp")
-              tls = vm.get("tls", "")
-              sni = vm.get("sni", "") or vm.get("host", address)
-              host = vm.get("host", address)
-              path_val = vm.get("path", "/")
-              fp = vm.get("fp", "chrome")
-              print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
-              outbound = {
-                  "protocol": "vmess",
-                  "settings": {"vnext": [{"address": address, "port": port, "users": [{"id": uuid, "alterId": aid, "security": "auto"}]}]},
-                  "streamSettings": {"network": network, "security": "tls" if tls == "tls" else "none"}
-              }
-              if tls == "tls":
-                  outbound["streamSettings"]["tlsSettings"] = {"serverName": sni, "fingerprint": fp, "allowInsecure": False}
-              if network == "ws":
-                  outbound["streamSettings"]["wsSettings"] = {"path": path_val, "headers": {"Host": host}}
-              config["outbounds"].append(outbound)
-
-          elif protocol == "trojan":
-              password, rest = content.split("@", 1)
-              if "?" in rest:
-                  host_port, params_str = rest.split("?", 1)
-              else:
-                  host_port, params_str = rest, ""
-              if ":" in host_port:
-                  address, port = host_port.rsplit(":", 1)
-              else:
-                  address, port = host_port, "443"
-              params = parse_qs(params_str)
-              sni = params.get("sni", [address])[0]
-              network = params.get("type", ["tcp"])[0]
-              host = params.get("host", [sni])[0]
-              path_val = unquote(params.get("path", ["/"])[0])
-              fp = params.get("fp", ["chrome"])[0]
-              print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
-              outbound = {
-                  "protocol": "trojan",
-                  "settings": {"servers": [{"address": address, "port": int(port), "password": password}]},
-                  "streamSettings": {"network": network, "security": "tls", "tlsSettings": {"serverName": sni, "fingerprint": fp, "allowInsecure": False}}
-              }
-              if network == "ws":
-                  outbound["streamSettings"]["wsSettings"] = {"path": path_val, "headers": {"Host": host}}
-              config["outbounds"].append(outbound)
-
-          elif protocol == "ss":
-              try:
-                  if "@" in content:
-                      encoded, server_part = content.split("@", 1)
-                      decoded = base64.b64decode(encoded + "==").decode("utf-8")
-                      method, password = decoded.split(":", 1)
-                      address, port = server_part.split(":", 1)
-                  else:
-                      decoded = base64.b64decode(content + "==").decode("utf-8")
-                      if "@" in decoded:
-                          user_part, server_part = decoded.split("@", 1)
-                          method, password = user_part.split(":", 1)
-                          address, port = server_part.split(":", 1)
-                      else:
-                          raise ValueError("无法解析")
-              except Exception as e:
-                  print(f"[ERROR] Shadowsocks 解析失败: {e}")
-                  sys.exit(1)
-              print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
-              outbound = {
-                  "protocol": "shadowsocks",
-                  "settings": {"servers": [{"address": address, "port": int(port), "method": method, "password": password}]}
-              }
-              config["outbounds"].append(outbound)
-
-          with open("xray_config.json", "w") as f:
-              json.dump(config, f, indent=2)
-          print("[INFO] ✅ 代理配置已生成")
-          PYEOF
-
-          if [ -f "use_external_socks.txt" ]; then
-            EXTERNAL_SOCKS=$(cat use_external_socks.txt)
-            echo "PROXY_SOCKS5=$EXTERNAL_SOCKS" >> $GITHUB_ENV
-            echo "[INFO] ✅ 使用外部 SOCKS5 代理"
-            exit 0
-          fi
-
-          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
-          sleep 5
-
-          echo "[INFO] 测试代理连接..."
-          for i in 1 2 3 4 5; do
-            if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
-              echo "[INFO] ✅ 代理连接成功"
-              echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
-              exit 0
-            fi
-            echo "[WARN] 尝试 $i/5..."
-            sleep 3
-          done
-
-          echo "[ERROR] ❌ 代理连接失败"
-          cat xray.log
-          exit 1
+          pip install playwright httpx
+          playwright install --with-deps chromium
 
       - name: 运行续期脚本
-        working-directory: scripts/XServer
+        if: steps.check.outputs.need_renew == 'true'
         env:
           XSERVER_ACCOUNT: ${{ secrets.XSERVER_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-        run: node main.js
-
-      - name: 拉取当前工作流仓库
-        uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.REPO_TOKEN }}
-          path: self-repo
-
-      - name: 自动修改下一次运行时间
-        env:
-          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          WORKFLOW_FILE: self-repo/.github/workflows/XServer.yml
-        run: |
-          python3 << 'EOF'
-          import re
-          import os
-          from datetime import datetime, timedelta
-
-          workflow_file = os.environ.get("WORKFLOW_FILE")
-          date_file = 'scripts/XServer/next_time.txt'
-
-          target_date = None
-          
-          # 1. 动态读取 Node.js 写入的精准时间文件
-          if os.path.exists(date_file):
-              with open(date_file, 'r', encoding='utf-8') as f:
-                  content = f.read()
-              
-              # 正则提取 年-月-日 时:分 (兼容多种分隔符)
-              dates = re.findall(r'(\d{4})[^\d]+(\d{1,2})[^\d]+(\d{1,2})[^\d]+(\d{1,2})[^\d]+(\d{1,2})', content)
-              valid_dates = []
-              for y, m, d, h, minute in dates:
-                  try:
-                      # 组装提取到的日本时间 (JST)
-                      jst_time = datetime(int(y), int(m), int(d), int(h), int(minute))
-                      valid_dates.append(jst_time)
-                  except: pass
-              
-              if valid_dates:
-                  target_date = min(valid_dates)
-
-          if target_date:
-              # 2. 精准时区转换：将读取到的日本时间 (JST, UTC+9) 减去 9 小时，变为 GitHub 识别的 UTC 时间
-              utc_time = target_date - timedelta(hours=9)
-              
-              cron_month = utc_time.month
-              cron_day = utc_time.day
-              cron_hour = utc_time.hour
-              cron_minute = utc_time.minute
-              
-              next_date_str = f"{utc_time.strftime('%Y-%m-%d %H:%M')} UTC (对应网页时间: {target_date.strftime('%Y-%m-%d %H:%M')})"
-              new_cron = f"{cron_minute} {cron_hour} {cron_day} {cron_month} *"
-          else:
-              # 3. 兜底方案：如果没有读取到有效时间，默认明天同一分钟再次尝试
-              now_utc = datetime.utcnow()
-              tomorrow_utc = now_utc + timedelta(days=1)
-              new_cron = f"{tomorrow_utc.minute} {tomorrow_utc.hour} * * *"
-              next_date_str = f"{tomorrow_utc.strftime('%Y-%m-%d %H:%M')} UTC (兜底方案)"
-
-          # 4. 写入并替换 yml 文件
-          try:
-              with open(workflow_file, 'r', encoding='utf-8') as f:
-                  content = f.read()
-
-              new_content = re.sub(
-                  r"- cron: '.*?'",
-                  f"- cron: '{new_cron}' # 下一个: {next_date_str}",
-                  content,
-                  count=1
-              )
-
-              with open(workflow_file, 'w', encoding='utf-8') as f:
-                  f.write(new_content)
-              print(f"✅ 已精准将下一次运行时间更新为: {new_cron} (对应网页: {target_date})")
-          except Exception as e:
-              print(f"❌ 修改 yml 文件失败: {e}")
-              exit(1)
-          EOF
-
-          # 进入 self-repo 目录提交修改
-          cd self-repo
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/XServer.yml
-          git commit -m "🚀 auto: 精准锁定网页提示的续期时间" || echo "没有变更需要提交"
-          
-          # 推送到仓库
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
-          git push
+          ACCOUNTS_TO_RENEW: ${{ steps.check.outputs.accounts_to_renew }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          LOG_SHA: ${{ steps.check.outputs.log_sha }}
+        run: python scripts/XServer/main.py
 
       - name: 清理旧运行
+        if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
