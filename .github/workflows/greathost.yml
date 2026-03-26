@@ -1,0 +1,51 @@
+name: GreatHost Auto Renew
+
+on: 
+  schedule:
+    - cron: '5 */12 * * *'
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.11'
+
+    - name: Cache Cookies
+      uses: actions/cache@v3
+      with:
+        path: /tmp/greathost_cookies.json
+        key: greathost-cookies-${{ github.run_number }}
+        restore-keys: |
+          greathost-cookies-
+
+    - name: Install dependencies
+      run: |
+        pip install -r requirements.txt
+        playwright install chromium
+
+    - name: Run Auto Renew
+      env:
+        GREATHOST_EMAIL: ${{ secrets.GREATHOST_EMAIL }}
+        GREATHOST_PASSWORD: ${{ secrets.GREATHOST_PASSWORD }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        python runox_bot.py
+
+    - name: Upload Screenshots
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: logs-${{ github.run_number }}
+        path: /tmp/*.png
+        if-no-files-found: ignore
+        retention-days: 3
