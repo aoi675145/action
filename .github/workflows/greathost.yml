@@ -11,15 +11,18 @@ jobs:
     timeout-minutes: 10
 
     steps:
-    - name: Checkout
+    - name: 📥 检出私有代码
       uses: actions/checkout@v4
+      with:
+        repository: 'akina005/scripts'
+        token: ${{ secrets.REPO_TOKEN }}
 
-    - name: Setup Python
+    - name: 🟢 Setup Python
       uses: actions/setup-python@v5
       with:
         python-version: '3.11'
 
-    - name: Cache Cookies
+    - name: 💾 Cache Cookies
       uses: actions/cache@v3
       with:
         path: /tmp/greathost_cookies.json
@@ -27,21 +30,28 @@ jobs:
         restore-keys: |
           greathost-cookies-
 
-    - name: Install dependencies
+    - name: 📦 Install dependencies
+      working-directory: scripts/greathost
       run: |
-        pip install -r requirements.txt
+        # 兼容处理：如果有 requirements.txt 就用它，没有就直接装依赖
+        if [ -f "requirements.txt" ]; then
+          pip install -r requirements.txt
+        else
+          pip install playwright requests
+        fi
         playwright install chromium
 
-    - name: Run Auto Renew
+    - name: 🚀 Run Auto Renew
+      working-directory: scripts/greathost
       env:
         GREATHOST_EMAIL: ${{ secrets.GREATHOST_EMAIL }}
         GREATHOST_PASSWORD: ${{ secrets.GREATHOST_PASSWORD }}
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
-        python runox_bot.py
+        python greathost.py
 
-    - name: Upload Screenshots
+    - name: 📸 Upload Screenshots
       if: always()
       uses: actions/upload-artifact@v4
       with:
