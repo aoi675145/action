@@ -21,7 +21,7 @@ jobs:
       - name: 拉取私有仓库
         uses: actions/checkout@v4
         with:
-          repository: oyz6/scripts # 保持你的私有仓库不变
+          repository: akina005/scripts # 👈 已更新为你的仓库
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
@@ -32,7 +32,6 @@ jobs:
 
       - name: 安装精简依赖
         run: |
-          # 移除了 ffmpeg 和音频识别库，只需保留核心的 seleniumbase 和虚拟显示支持
           pip install -q seleniumbase pyvirtualdisplay requests PyNaCl
 
       - name: 配置固定 IP 代理 (Hysteria2)
@@ -60,7 +59,6 @@ jobs:
       - name: 执行 Rustix 任务
         env:
           RUSTIX_ACCOUNTS: ${{ github.event.inputs.accounts }}
-          # 请确保在 GitHub Secrets 中将变量名改为 RUSTIX_1, RUSTIX_2 等
           RUSTIX_1: ${{ secrets.RUSTIX_1 }}
           RUSTIX_2: ${{ secrets.RUSTIX_2 }}
           RUSTIX_3: ${{ secrets.RUSTIX_3 }}
@@ -69,8 +67,8 @@ jobs:
           PROXY_SERVER: http://127.0.0.1:7890
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          # 注意修改为你实际存放 rustix 脚本的路径
-          python scripts/Rustix/Rustix-login.py
+          # 👈 已更新为截图中的实际路径
+          python scripts/Rustix.py
           echo "完成"
 
       - name: 清理运行记录
