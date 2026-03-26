@@ -1,0 +1,84 @@
+name: Rustix 自动登录脚本
+
+on:
+  workflow_dispatch:
+    inputs:
+      accounts:
+        description: '指定邮箱账号（留空运行全部，多个用逗号分隔）'
+        required: false
+        default: ''
+  # schedule:
+  #   - cron: '0 2 * * *' # 如果需要定时运行，可以取消注释并修改时间 (UTC)
+
+jobs:
+  rustix_task:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: oyz6/scripts # 保持你的私有仓库不变
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装精简依赖
+        run: |
+          # 移除了 ffmpeg 和音频识别库，只需保留核心的 seleniumbase 和虚拟显示支持
+          pip install -q seleniumbase pyvirtualdisplay requests PyNaCl
+
+      - name: 配置固定 IP 代理 (Hysteria2)
+        env:
+          HY2_URL: ${{ secrets.HY2_URL }}
+        run: |
+          wget -q https://github.com/oyz6/action/releases/download/proxy/hysteria-linux-amd64 -O hysteria
+          chmod +x hysteria
+          URL="${HY2_URL#hysteria2://}"
+          PASSWORD="${URL%%@*}"
+          SERVER="${URL#*@}"; SERVER="${SERVER%%\?*}"
+          SNI=$(echo "$URL" | grep -oP 'sni=\K[^&]+' || echo "${SERVER%%:*}")
+          cat > hy2.yaml << EOF
+          server: ${SERVER}
+          auth: ${PASSWORD}
+          tls:
+            sni: ${SNI}
+            insecure: true
+          http:
+            listen: 127.0.0.1:7890
+          EOF
+          ./hysteria client -c hy2.yaml > /dev/null 2>&1 &
+          sleep 3
+
+      - name: 执行 Rustix 任务
+        env:
+          RUSTIX_ACCOUNTS: ${{ github.event.inputs.accounts }}
+          # 请确保在 GitHub Secrets 中将变量名改为 RUSTIX_1, RUSTIX_2 等
+          RUSTIX_1: ${{ secrets.RUSTIX_1 }}
+          RUSTIX_2: ${{ secrets.RUSTIX_2 }}
+          RUSTIX_3: ${{ secrets.RUSTIX_3 }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROXY_SERVER: http://127.0.0.1:7890
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          # 注意修改为你实际存放 rustix 脚本的路径
+          python scripts/Rustix/Rustix-login.py
+          echo "完成"
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
