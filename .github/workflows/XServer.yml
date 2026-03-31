@@ -2,7 +2,7 @@ name: XServer 游戏机续期
 
 on:
   schedule:
-    - cron: '19 22 * * *' # 下一个: 2026-03-31 22:19 UTC (兜底方案) # 下一个: 2026-03-30 21:45 UTC (对应网页时间: 2026-03-31 06:45) # 下一个: 2026-03-28 06:05 UTC (对应网页时间: 2026-03-28 15:05)
+    - cron: '19 22 * * *' # 下一个: 2026-03-31 22:19 UTC (兜底方案)
   workflow_dispatch:
 
 jobs:
@@ -317,8 +317,9 @@ jobs:
               with open(workflow_file, 'r', encoding='utf-8') as f:
                   content = f.read()
 
+              # 【关键修复】这里加上了 .* 匹配并覆盖掉之前所有的旧注释
               new_content = re.sub(
-                  r"- cron: '.*?'",
+                  r"- cron: '.*?'.*",
                   f"- cron: '{new_cron}' # 下一个: {next_date_str}",
                   content,
                   count=1
