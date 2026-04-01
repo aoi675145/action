@@ -2,7 +2,7 @@ name: Katabump Renew
 
 on:  
   schedule:
-    - cron: '23 5 */4 * *'  # 每4天运行一次
+    - cron: '23 1 */4 * *'  # 每4天运行一次
   workflow_dispatch:  # 允许手动触发
 
 jobs:
