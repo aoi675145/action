@@ -3,7 +3,7 @@ name: Billing Kerit 续订
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 5 */5 * *'  
+    - cron: '33 1 */5 * *'  
 
 jobs:
   renew:
