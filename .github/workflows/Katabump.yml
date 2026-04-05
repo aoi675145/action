@@ -31,7 +31,7 @@ jobs:
             echo "run=false" >> $GITHUB_OUTPUT
           fi
           
-      - name: Checkout private repository
+      - name: ☁️ 拉取私有代码
         if: steps.check.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
@@ -75,7 +75,6 @@ jobs:
       - name: Run Script in Stealth Mode (via Xvfb)
         if: steps.check.outputs.run == 'true'
         env:
-          # 同步更新为你截图中的新变量名
           Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
