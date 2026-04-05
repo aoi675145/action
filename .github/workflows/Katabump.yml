@@ -1,42 +1,60 @@
-name: Katabump Renew
+name: Auto Renew Katabump
 
 on:  
   schedule:
-    - cron: '23 1 */4 * *'  # 每4天运行一次
+    - cron: '17 2 * * *'  # 每天运行一次（UTC时间 02:17）
   workflow_dispatch:  # 允许手动触发
 
 jobs:
   auto_renew_katabump:
     runs-on: ubuntu-22.04
-
-    # 👇 修改 1：更新环境变量名，匹配新的 Secrets
-    env:
-      Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
-      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-
+    
     steps:
-      # 👇 修改 2：拉取私有仓库
-      - name: 📥 拉取私有代码
+      - name: Interval Check (Strict 4-day cycle)
+        id: check
+        run: |
+          # 如果是手动触发，则跳过检查直接运行
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # 计算当前 Unix 天数 (UTC)
+          DAYS=$(( $(date -u +%s) / 86400 ))
+          REMAINDER=$(( $DAYS % 4 ))
+          
+          if [ $REMAINDER -eq 1 ]; then
+            echo "Today is the scheduled day. Starting workflow..."
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "Not today. Skipping (Current remainder: $REMAINDER, Target: 1)."
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+          
+      - name: Checkout private repository
+        if: steps.check.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
-          repository: akina005/scripts
-          token: ${{ secrets.REPO_TOKEN }}
-          path: .
+          repository: 'akina005/scripts'
+          # 使用你指定的 REPO_TOKEN 变量名
+          token: ${{ secrets.REPO_TOKEN }} 
 
       - name: Set up Python
+        if: steps.check.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      # 👇 修改 3：加上工作目录，让系统能找到 requirements.txt
       - name: Install dependencies
-        working-directory: scripts/Katabump
+        if: steps.check.outputs.run == 'true'
         run: |
+          # 进入私库中对应的目录安装依赖
+          cd scripts/Katabump
           pip install -r requirements.txt
           sudo apt-get update && sudo apt-get install -y xvfb
           
       - name: Get Chromium Version
+        if: steps.check.outputs.run == 'true'
         id: get_version
         run: |
           CHROME_VERSION=$(chromium-browser --version 2>/dev/null | grep -oE 'Chromium\s[0-9]+' | grep -oE '[0-9]+')
@@ -51,14 +69,19 @@ jobs:
           echo "CHROME_VERSION=$CHROME_VERSION" >> $GITHUB_ENV
 
       - name: Start X Virtual Frame Buffer (Xvfb)
-        # 在后台启动 Xvfb，创建一个虚拟屏幕 :99
+        if: steps.check.outputs.run == 'true'
         run: Xvfb :99 -ac &
 
-      # 👇 修改 4：加上工作目录，让系统能找到 renew_katabump.py
       - name: Run Script in Stealth Mode (via Xvfb)
-        working-directory: scripts/Katabump
+        if: steps.check.outputs.run == 'true'
         env:
+          # 同步更新为你截图中的新变量名
+          Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           DISPLAY: ':99'
           HEADLESS: 'false'
         run: |
+          # 进入私库中对应的目录运行脚本
+          cd scripts/Katabump
           python renew_katabump.py
