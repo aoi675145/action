@@ -2,18 +2,34 @@ name: Katabump Renew
 
 on:  
   schedule:
-    - cron: '23 1 */4 * *'  # 每4天运行一次
+    - cron: '17 1 * * *'  # 每天运行一次（UTC时间 01:17）
   workflow_dispatch:  # 允许手动触发
 
 jobs:
   auto_renew_katabump:
     runs-on: ubuntu-22.04
-
-    # 👇 修改 1：更新环境变量名，匹配新的 Secrets
-    env:
-      Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
-      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+    
+    steps:
+      - name: Interval Check (Strict 4-day cycle)
+        id: check
+        run: |
+          # 如果是手动触发，则跳过检查直接运行
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # 计算当前 Unix 天数 (UTC)
+          DAYS=$(( $(date -u +%s) / 86400 ))
+          REMAINDER=$(( $DAYS % 4 ))
+          
+          if [ $REMAINDER -eq 1 ]; then
+            echo "Today is the scheduled day. Starting workflow..."
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "Not today. Skipping (Current remainder: $REMAINDER, Target: 1)."
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
 
     steps:
       # 👇 修改 2：拉取私有仓库
