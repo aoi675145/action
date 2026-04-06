@@ -1,0 +1,64 @@
+name: Katabump Renew
+
+on:  
+  schedule:
+    - cron: '23 1 */4 * *'  # 每4天运行一次
+  workflow_dispatch:  # 允许手动触发
+
+jobs:
+  auto_renew_katabump:
+    runs-on: ubuntu-22.04
+
+    # 👇 修改 1：更新环境变量名，匹配新的 Secrets
+    env:
+      Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
+      TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+      TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+
+    steps:
+      # 👇 修改 2：拉取私有仓库
+      - name: 📥 拉取私有代码
+        uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 👇 修改 3：加上工作目录，让系统能找到 requirements.txt
+      - name: Install dependencies
+        working-directory: scripts/Katabump
+        run: |
+          pip install -r requirements.txt
+          sudo apt-get update && sudo apt-get install -y xvfb
+          
+      - name: Get Chromium Version
+        id: get_version
+        run: |
+          CHROME_VERSION=$(chromium-browser --version 2>/dev/null | grep -oE 'Chromium\s[0-9]+' | grep -oE '[0-9]+')
+          if [ -z "$CHROME_VERSION" ]; then
+            CHROME_VERSION=$(google-chrome --version 2>/dev/null | grep -oE 'Chrome\s[0-9]+' | grep -oE '[0-9]+')
+          fi
+          if [ -z "$CHROME_VERSION" ]; then
+            echo "⚠️ 无法自动检测浏览器版本，使用最新稳定版本。"
+          CHROME_VERSION="144"
+          fi
+          echo "Detected Chrome/Chromium Major Version: $CHROME_VERSION"
+          echo "CHROME_VERSION=$CHROME_VERSION" >> $GITHUB_ENV
+
+      - name: Start X Virtual Frame Buffer (Xvfb)
+        # 在后台启动 Xvfb，创建一个虚拟屏幕 :99
+        run: Xvfb :99 -ac &
+
+      # 👇 修改 4：加上工作目录，让系统能找到 renew_katabump.py
+      - name: Run Script in Stealth Mode (via Xvfb)
+        working-directory: scripts/Katabump
+        env:
+          DISPLAY: ':99'
+          HEADLESS: 'false'
+        run: |
+          python renew_katabump.py
