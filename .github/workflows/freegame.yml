@@ -30,17 +30,32 @@ jobs:
           if [ -z "$FGH_PROXY_NODE" ]; then exit 0; fi
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -O xray.zip
           unzip -q xray.zip xray && chmod +x xray
+          
+          # 优化解析脚本，增加日志输出
           python -c '
           import os, urllib.parse, json
-          link = os.environ.get("FGH_PROXY_NODE", "").strip()
-          parsed = urllib.parse.urlparse(link)
-          params = dict(urllib.parse.parse_qsl(parsed.query))
-          outbound = {"protocol": "vless", "settings": {"vnext": [{"address": parsed.hostname, "port": int(parsed.port or 443), "users": [{"id": parsed.username, "encryption": params.get("encryption", "none"), "flow": params.get("flow", "")}]}]}, "streamSettings": {"network": params.get("type", "tcp"), "security": params.get("security", "none")}}
-          if params.get("security") == "reality": outbound["streamSettings"]["realitySettings"] = {"serverName": params.get("sni", parsed.hostname), "publicKey": params.get("pbk", ""), "fingerprint": params.get("fp", "chrome"), "shortId": params.get("sid", ""), "spiderX": params.get("spx", "")}
-          config = {"inbounds": [{"port": 8080, "listen": "127.0.0.1", "protocol": "http"}], "outbounds": [outbound]}
-          with open("config.json", "w") as f: json.dump(config, f)
+          try:
+              link = os.environ.get("FGH_PROXY_NODE", "").strip()
+              parsed = urllib.parse.urlparse(link)
+              params = dict(urllib.parse.parse_qsl(parsed.query))
+              outbound = {"protocol": "vless", "settings": {"vnext": [{"address": parsed.hostname, "port": int(parsed.port or 443), "users": [{"id": parsed.username, "encryption": params.get("encryption", "none"), "flow": params.get("flow", "")}]}]}, "streamSettings": {"network": params.get("type", "tcp"), "security": params.get("security", "none")}}
+              if params.get("security") == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {"serverName": params.get("sni", parsed.hostname), "fingerprint": params.get("fp", "chrome")}
+              elif params.get("security") == "reality":
+                  outbound["streamSettings"]["realitySettings"] = {"serverName": params.get("sni", parsed.hostname), "publicKey": params.get("pbk", ""), "fingerprint": params.get("fp", "chrome"), "shortId": params.get("sid", ""), "spiderX": params.get("spx", "")}
+              
+              config = {
+                  "log": {"loglevel": "info"},
+                  "inbounds": [{"port": 8080, "listen": "127.0.0.1", "protocol": "http"}],
+                  "outbounds": [outbound]
+              }
+              with open("config.json", "w") as f: json.dump(config, f)
+              print("✅ config.json 生成成功")
+          except Exception as e:
+              print(f"❌ 解析失败: {e}")
           '
-          ./xray -c config.json > /dev/null 2>&1 &
+          # 关键：将日志写入文件，不再丢弃
+          ./xray -c config.json > xray.log 2>&1 &
           sleep 5
 
       - name: 🛠️ 安装环境
