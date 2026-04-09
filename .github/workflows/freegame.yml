@@ -11,7 +11,6 @@ jobs:
     env:
       FGH_ACCOUNT: ${{ secrets.FGH_ACCOUNT }}
       TG_BOT: ${{ secrets.TG_BOT }}
-      # 这里使用你新提供的变量名，存放 vless:// 链接
       FGH_PROXY_NODE: ${{ secrets.FGH_PROXY_NODE }}
 
     steps:
@@ -85,18 +84,19 @@ jobs:
               outbound["streamSettings"]["grpcSettings"] = {"serviceName": params.get("serviceName", ""), "multiMode": params.get("mode", "multi") != "gun"}
           
           config = {
-              "inbounds": [{"port": 1080, "listen": "127.0.0.1", "protocol": "http", "settings": {}}],
+              # 关键修改：端口由 1080 改为 8080，适配你的脚本
+              "inbounds": [{"port": 8080, "listen": "127.0.0.1", "protocol": "http", "settings": {}}],
               "outbounds": [outbound]
           }
           with open("config.json", "w") as f:
               json.dump(config, f, indent=2)
           '
           
-          ./xray -c config.json > /dev/null 2>&1 &
+          ./xray -c config.json > xray.log 2>&1 &
           sleep 5
           
-          # 验证代理是否生效并掩码显示IP
-          RAW_IP=$(curl -s -x http://127.0.0.1:1080 https://api.ipify.org || echo "Failed")
+          # 验证代理
+          RAW_IP=$(curl -s -x http://127.0.0.1:8080 https://api.ipify.org || echo "Failed")
           MASKED_IP=$(echo "$RAW_IP" | sed 's/\([0-9]*\.[0-9]*\.[0-9]*\.\)[0-9]*/\1xx/')
           echo "✅ 代理已启动，出口IP: $MASKED_IP"
 
@@ -113,8 +113,8 @@ jobs:
       - name: 🚀 运行脚本
         env:
           PYTHONIOENCODING: utf-8
-          # 关键：告诉 Python 脚本使用 Xray 启动的本地 1080 端口
-          GOST_PROXY: "http://127.0.0.1:1080"
+          # 告诉脚本 GOST_PROXY 有值，它会自动去连 127.0.0.1:8080
+          GOST_PROXY: "TRUE"
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/freegame/renew.py
 
