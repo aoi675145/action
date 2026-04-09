@@ -1,4 +1,4 @@
-name: FGH-Renew
+name: Freegame-Renew
 
 on:
   workflow_dispatch:
