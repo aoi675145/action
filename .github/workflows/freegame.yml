@@ -18,6 +18,7 @@ jobs:
       - name: 📥 检出仓库 (使用 REPO_TOKEN 拉取)
         uses: actions/checkout@v4
         with:
+          repository: akina005/scripts  # 👈 必须指定目标私库的名称
           # 使用你指定的 REPO_TOKEN 变量名
           token: ${{ secrets.REPO_TOKEN }}
           persist-credentials: false
