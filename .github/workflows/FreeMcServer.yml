@@ -14,8 +14,11 @@ jobs:
       actions: write
 
     steps:
-      - name: 拉取仓库代码
+      - name: 拉取私有仓库代码
         uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts   # 指定你的目标私库
+          token: ${{ secrets.GH_PAT }}   # 需要在 Secrets 中配置 PAT 才能跨库拉取
 
       - name: 设置 Python
         uses: actions/setup-python@v5
