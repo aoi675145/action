@@ -24,41 +24,97 @@ jobs:
 
       - name: 安装依赖
         run: |
-          sudo apt-get update && sudo apt-get install -y xvfb
+          sudo apt-get update && sudo apt-get install -y xvfb unzip
           pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 requests>=2.31.0
 
       - name: 配置代理
         env:
-          HY2_URL: ${{ secrets.HY2_URL }}
+          freemc_PROXY_NODE: ${{ secrets.freemc_PROXY_NODE }}
         run: |
-          if [ -z "$HY2_URL" ]; then
+          if [ -z "$freemc_PROXY_NODE" ]; then
             echo "INFO: 无代理配置，使用直连模式"
             exit 0
           fi
           
-          echo "INFO: 配置 Hysteria2 代理"
-          wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
-          chmod +x hysteria
+          echo "INFO: 下载并配置 Xray-core"
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -O xray.zip
+          unzip -q xray.zip xray
+          chmod +x xray
           
-          URL="${HY2_URL#hysteria2://}"
-          PASSWORD="${URL%%@*}"
-          SERVER="${URL#*@}"; SERVER="${SERVER%%\?*}"
-          SNI=$(echo "$URL" | grep -oP 'sni=\K[^&]+' || echo "${SERVER%%:*}")
+          # 使用 Python 自动解析 VLESS 链接并生成 Xray JSON 配置文件
+          python -c '
+          import os, urllib.parse, json
           
-          cat > hy2.yaml << EOF
-          server: ${SERVER}
-          auth: ${PASSWORD}
-          tls:
-            sni: ${SNI}
-            insecure: true
-          http:
-            listen: 127.0.0.1:1080
-          EOF
+          link = os.environ.get("freemc_PROXY_NODE", "").strip()
+          if not link.startswith("vless://"):
+              print("ERROR: 不是有效的 VLESS 链接")
+              exit(1)
           
-          ./hysteria client -c hy2.yaml > /dev/null 2>&1 &
+          parsed = urllib.parse.urlparse(link)
+          uuid = parsed.username
+          host = parsed.hostname
+          port = int(parsed.port or 443)
+          params = dict(urllib.parse.parse_qsl(parsed.query))
+          
+          outbound = {
+              "protocol": "vless",
+              "settings": {
+                  "vnext": [{
+                      "address": host,
+                      "port": port,
+                      "users": [{"id": uuid, "encryption": params.get("encryption", "none"), "flow": params.get("flow", "")}]
+                  }]
+              },
+              "streamSettings": {
+                  "network": params.get("type", "tcp"),
+                  "security": params.get("security", "none")
+              }
+          }
+          
+          if params.get("security") == "tls":
+              outbound["streamSettings"]["tlsSettings"] = {
+                  "serverName": params.get("sni", host),
+                  "fingerprint": params.get("fp", "chrome")
+              }
+          elif params.get("security") == "reality":
+              outbound["streamSettings"]["realitySettings"] = {
+                  "serverName": params.get("sni", host),
+                  "publicKey": params.get("pbk", ""),
+                  "fingerprint": params.get("fp", "chrome"),
+                  "shortId": params.get("sid", ""),
+                  "spiderX": params.get("spx", "")
+              }
+          
+          if params.get("type") == "ws":
+              outbound["streamSettings"]["wsSettings"] = {
+                  "path": params.get("path", "/"),
+                  "headers": {"Host": params.get("host", host)}
+              }
+          elif params.get("type") == "grpc":
+              outbound["streamSettings"]["grpcSettings"] = {
+                  "serviceName": params.get("serviceName", ""),
+                  "multiMode": params.get("mode", "multi") != "gun"
+              }
+          
+          config = {
+              "inbounds": [{
+                  "port": 1080,
+                  "listen": "127.0.0.1",
+                  "protocol": "http",
+                  "settings": {}
+              }],
+              "outbounds": [outbound]
+          }
+          
+          with open("config.json", "w") as f:
+              json.dump(config, f, indent=2)
+          '
+          
+          echo "INFO: 启动 VLESS 代理"
+          ./xray -c config.json > /dev/null 2>&1 &
           sleep 3
           echo "PROXY_SERVER=http://127.0.0.1:1080" >> $GITHUB_ENV
-          echo "INFO: 代理已启动"
+          echo "INFO: 代理已成功启动"
 
       - name: 执行续订脚本
         env:
@@ -85,4 +141,4 @@ jobs:
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
-          keep_minimum_runs: 2
+          keep_minimum_runs: 5
