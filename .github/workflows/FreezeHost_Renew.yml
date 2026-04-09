@@ -9,86 +9,89 @@ jobs:
   renew:
     name: 执行续期
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     permissions:
       contents: write
       actions: write
 
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取当前配置仓库
+        uses: actions/checkout@v4
+        with:
+          # 使用你截图中的 REPO_TOKEN
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - name: 📥 拉取私有脚本库
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: .
+          path: scripts_repo
 
-      - name: 安装 Python
+      - name: 🐍 安装 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: |
           pip install playwright
           playwright install chromium --with-deps
 
-      - name: 启用 WARP 网络
+      - name: 🛡️ 启用 WARP 网络
         uses: fscarmen/warp-on-actions@v1.3
         with:
           stack: dual
           mode: client
 
-      - name: 修复 DNS
+      - name: 🔧 修复 DNS
         run: |
           sudo systemctl stop systemd-resolved 2>/dev/null || true
           sudo systemctl disable systemd-resolved 2>/dev/null || true
           sudo rm -f /etc/resolv.conf
           echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
 
-      - name: 运行续期脚本
+      - name: 🚀 运行续期脚本
         env:
           FREEZEHOST_DISCORD_TOKEN: ${{ secrets.FREEZEHOST_DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python scripts/freeze1/renew.py
+        run: python scripts_repo/scripts/freeze1/renew.py
 
-      - name: 自动修改下一次运行时间
+      - name: ⚙️ 自动修改下一次运行时间
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          WORKFLOW_FILE: .github/workflows/FreezeHost.yml # 确认你的文件名是这个
+          # ✅ 已经根据你的截图修正了文件名
+          WORKFLOW_FILE: .github/workflows/FreezeHost_Renew.yml 
         run: |
           python3 << 'EOF'
           import re
           import os
-          from datetime import datetime, timedelta
+          from datetime import datetime, timedelta, timezone
 
           workflow_file = os.environ.get("WORKFLOW_FILE")
           date_file = 'next_time.txt'
-          now_utc = datetime.utcnow()
+          now_utc = datetime.now(timezone.utc)
           target_date = None
           
           if os.path.exists(date_file):
               with open(date_file, 'r', encoding='utf-8') as f:
                   content = f.read().upper()
               
-              # 正则提取：支持 "1 DAY" 或 "2 DAYS" 以及 "22.19 HOURS"
               d_match = re.search(r'(\d+)\s*DAY', content)
               h_match = re.search(r'(\d+\.?\d*)\s*HOUR', content)
               
               days = int(d_match.group(1)) if d_match else 0
               hours = float(h_match.group(1)) if h_match else 0
               
-              # 计算到期时间
               expire_time = now_utc + timedelta(days=days, hours=hours)
-              # 目标：到期前 2 天运行
               target_date = expire_time - timedelta(days=2)
 
-          # 如果计算出的时间已经过去（说明不足2天了），或者解析失败，则12小时后重试
           if not target_date or target_date <= now_utc:
               target_date = now_utc + timedelta(hours=12)
-              reason = "不足2天或解析失败，12小时后重试"
+              reason = "时间不足或解析失败，12h后重试"
           else:
-              reason = "锁定在到期前2天"
+              reason = "到期前2天自动执行"
 
           cron_month = target_date.month
           cron_day = target_date.day
@@ -100,24 +103,28 @@ jobs:
 
           if os.path.exists(workflow_file):
               with open(workflow_file, 'r', encoding='utf-8') as f:
-                  lines = f.readlines()
+                  content = f.read()
+              
+              # 替换 cron 行
+              new_content = re.sub(r"- cron: '.*?'.*", f"- cron: '{new_cron}' # 下一个: {next_date_str}", content)
               
               with open(workflow_file, 'w', encoding='utf-8') as f:
-                  for line in lines:
-                      if "- cron:" in line:
-                          f.write(f"    - cron: '{new_cron}' # 下一个: {next_date_str}\n")
-                      else:
-                          f.write(line)
-              print(f"✅ 更新成功: {new_cron}")
+                  f.write(new_content)
+              print(f"✅ 成功计算并更新计划: {new_cron}")
+          else:
+              print(f"❌ 找不到文件: {workflow_file}")
+              exit(1)
           EOF
 
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add $WORKFLOW_FILE
-          git commit -m "🚀 auto: 根据剩余时间调整执行计划" || echo "无变更"
+          git commit -m "🚀 auto: 智能调整下一次续期时间" || echo "无变更"
+          
+          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
           git push
 
-      - name: 清理历史运行记录
+      - name: 🧹 清理运行记录
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ secrets.REPO_TOKEN }}
