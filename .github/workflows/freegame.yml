@@ -19,7 +19,6 @@ jobs:
         with:
           repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          persist-credentials: false
 
       - name: 🐍 设置 Python
         uses: actions/setup-python@v6
@@ -28,102 +27,48 @@ jobs:
 
       - name: 🛡️ 配置并启动 VLESS 代理 (Xray)
         run: |
-          if [ -z "$FGH_PROXY_NODE" ]; then
-            echo "⚠️ 无代理配置，将尝试直连模式"
-            exit 0
-          fi
-          
-          echo "📥 下载 Xray-core..."
+          if [ -z "$FGH_PROXY_NODE" ]; then exit 0; fi
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -O xray.zip
-          unzip -q xray.zip xray
-          chmod +x xray
-          
-          echo "⚙️ 解析 VLESS 链接并生成配置..."
+          unzip -q xray.zip xray && chmod +x xray
           python -c '
           import os, urllib.parse, json
           link = os.environ.get("FGH_PROXY_NODE", "").strip()
-          if not link.startswith("vless://"):
-              print("ERROR: 无效的 VLESS 链接")
-              exit(1)
-          
           parsed = urllib.parse.urlparse(link)
-          uuid = parsed.username
-          host = parsed.hostname
-          port = int(parsed.port or 443)
           params = dict(urllib.parse.parse_qsl(parsed.query))
-          
-          outbound = {
-              "protocol": "vless",
-              "settings": {
-                  "vnext": [{
-                      "address": host,
-                      "port": port,
-                      "users": [{"id": uuid, "encryption": params.get("encryption", "none"), "flow": params.get("flow", "")}]
-                  }]
-              },
-              "streamSettings": {
-                  "network": params.get("type", "tcp"),
-                  "security": params.get("security", "none")
-              }
-          }
-          
-          if params.get("security") == "tls":
-              outbound["streamSettings"]["tlsSettings"] = {"serverName": params.get("sni", host), "fingerprint": params.get("fp", "chrome")}
-          elif params.get("security") == "reality":
-              outbound["streamSettings"]["realitySettings"] = {
-                  "serverName": params.get("sni", host),
-                  "publicKey": params.get("pbk", ""),
-                  "fingerprint": params.get("fp", "chrome"),
-                  "shortId": params.get("sid", ""),
-                  "spiderX": params.get("spx", "")
-              }
-          
-          if params.get("type") == "ws":
-              outbound["streamSettings"]["wsSettings"] = {"path": params.get("path", "/"), "headers": {"Host": params.get("host", host)}}
-          elif params.get("type") == "grpc":
-              outbound["streamSettings"]["grpcSettings"] = {"serviceName": params.get("serviceName", ""), "multiMode": params.get("mode", "multi") != "gun"}
-          
-          config = {
-              # 关键修改：端口由 1080 改为 8080，适配你的脚本
-              "inbounds": [{"port": 8080, "listen": "127.0.0.1", "protocol": "http", "settings": {}}],
-              "outbounds": [outbound]
-          }
-          with open("config.json", "w") as f:
-              json.dump(config, f, indent=2)
+          outbound = {"protocol": "vless", "settings": {"vnext": [{"address": parsed.hostname, "port": int(parsed.port or 443), "users": [{"id": parsed.username, "encryption": params.get("encryption", "none"), "flow": params.get("flow", "")}]}]}, "streamSettings": {"network": params.get("type", "tcp"), "security": params.get("security", "none")}}
+          if params.get("security") == "reality": outbound["streamSettings"]["realitySettings"] = {"serverName": params.get("sni", parsed.hostname), "publicKey": params.get("pbk", ""), "fingerprint": params.get("fp", "chrome"), "shortId": params.get("sid", ""), "spiderX": params.get("spx", "")}
+          config = {"inbounds": [{"port": 8080, "listen": "127.0.0.1", "protocol": "http"}], "outbounds": [outbound]}
+          with open("config.json", "w") as f: json.dump(config, f)
           '
-          
-          ./xray -c config.json > xray.log 2>&1 &
+          ./xray -c config.json > /dev/null 2>&1 &
           sleep 5
-          
-          # 验证代理
-          RAW_IP=$(curl -s -x http://127.0.0.1:8080 https://api.ipify.org || echo "Failed")
-          MASKED_IP=$(echo "$RAW_IP" | sed 's/\([0-9]*\.[0-9]*\.[0-9]*\.\)[0-9]*/\1xx/')
-          echo "✅ 代理已启动，出口IP: $MASKED_IP"
 
-      - name: 🛠️ 安装系统依赖
+      - name: 🛠️ 安装依赖
         run: |
-          sudo apt-get update
-          sudo apt-get install -y google-chrome-stable xvfb x11-utils xdotool scrot
-
-      - name: 🐍 安装 Python 依赖
-        run: |
+          sudo apt-get update && sudo apt-get install -y google-chrome-stable xvfb
           pip install seleniumbase beautifulsoup4 requests
-          seleniumbase install chromedriver
 
       - name: 🚀 运行脚本
         env:
           PYTHONIOENCODING: utf-8
-          # 告诉脚本 GOST_PROXY 有值，它会自动去连 127.0.0.1:8080
           GOST_PROXY: "TRUE"
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/freegame/renew.py
 
-      - name: 📸 上传截图
+      - name: 📸 上传截图 (用于调试)
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: debug-screenshots
-          path: |
-            *.png
-            scripts/freegame/*.png
-          retention-days: 3
+          # 修正了路径，确保能抓到脚本生成的图片
+          path: "*.png" 
+          retention-days: 2
+
+      - name: 🧹 清理旧的运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 5
