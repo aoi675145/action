@@ -31,22 +31,126 @@ jobs:
         run: |
           pip install seleniumbase requests pynacl
 
-      - name: Install gost
+      - name: Install Xray
         run: |
-          wget -q https://github.com/ginuerzh/gost/releases/download/v2.12.0/gost_2.12.0_linux_amd64.tar.gz
-          tar -xzf gost_2.12.0_linux_amd64.tar.gz
-          chmod +x gost
-          sudo mv gost /usr/local/bin/gost
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip
+          chmod +x xray
+          sudo mv xray /usr/local/bin/xray
 
-      - name: Start gost proxy
+      - name: Build Xray config
         env:
           PROXY_URL: ${{ secrets.b4a_PROXY_URL }}
         run: |
-          nohup gost -D -L=http://:8080 -F="${PROXY_URL}" > gost.log 2>&1 &
+          python - <<'PY'
+          import json
+          import os
+          from urllib.parse import urlparse, parse_qs, unquote
+
+          proxy_url = os.environ["PROXY_URL"]
+          parsed = urlparse(proxy_url)
+          if parsed.scheme != "vless":
+              raise SystemExit(f"Unsupported proxy scheme: {parsed.scheme}")
+
+          qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+          transport_type = qs.get("type", "tcp")
+          if transport_type == "h2":
+              transport_type = "http"
+
+          host = parsed.hostname
+          port = parsed.port
+          user_id = unquote(parsed.username or "")
+          if not host or not port or not user_id:
+              raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+          stream_settings = {
+              "network": transport_type,
+              "security": qs.get("security", "none"),
+          }
+
+          if stream_settings["security"] == "reality":
+              reality = {
+                  "serverName": qs.get("sni", host),
+                  "fingerprint": qs.get("fp", "chrome"),
+                  "publicKey": qs.get("pbk", ""),
+              }
+              if qs.get("sid"):
+                  reality["shortId"] = qs["sid"]
+              if qs.get("spx"):
+                  reality["spiderX"] = qs["spx"]
+              stream_settings["realitySettings"] = reality
+          elif stream_settings["security"] == "tls":
+              stream_settings["tlsSettings"] = {
+                  "serverName": qs.get("sni", host),
+                  "fingerprint": qs.get("fp", "chrome"),
+              }
+
+          if transport_type == "tcp":
+              header_type = qs.get("headerType", "none")
+              stream_settings["tcpSettings"] = {"header": {"type": header_type}}
+          elif transport_type == "ws":
+              headers = {}
+              if qs.get("host"):
+                  headers["Host"] = qs["host"]
+              stream_settings["wsSettings"] = {
+                  "path": qs.get("path", "/"),
+                  "headers": headers,
+              }
+          elif transport_type == "http":
+              host_list = [h for h in qs.get("host", "").split(",") if h]
+              stream_settings["httpSettings"] = {
+                  "host": host_list,
+                  "path": qs.get("path", "/"),
+              }
+          elif transport_type == "grpc":
+              stream_settings["grpcSettings"] = {
+                  "serviceName": qs.get("serviceName", ""),
+                  "authority": qs.get("authority", ""),
+              }
+
+          config = {
+              "log": {"loglevel": "debug"},
+              "inbounds": [
+                  {
+                      "listen": "127.0.0.1",
+                      "port": 8080,
+                      "protocol": "http",
+                  }
+              ],
+              "outbounds": [
+                  {
+                      "protocol": "vless",
+                      "settings": {
+                          "vnext": [
+                              {
+                                  "address": host,
+                                  "port": port,
+                                  "users": [
+                                      {
+                                          "id": user_id,
+                                          "encryption": qs.get("encryption", "none"),
+                                          "flow": qs.get("flow", ""),
+                                      }
+                                  ],
+                              }
+                          ]
+                      },
+                      "streamSettings": stream_settings,
+                  }
+              ],
+          }
+
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PY
+
+      - name: Start Xray proxy
+        run: |
+          nohup xray run -c xray-config.json > xray.log 2>&1 &
           sleep 2
-          gost -V
-          sed -n '1,120p' gost.log || true
-          echo "gost started"
+          xray version
+          sed -n '1,160p' xray.log || true
+          echo "xray started"
 
       - name: Test proxy connectivity
         run: |
@@ -68,4 +172,5 @@ jobs:
           name: diagnostics
           path: |
             *.png
-            gost.log
+            xray.log
+            xray-config.json
