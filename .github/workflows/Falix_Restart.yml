@@ -63,9 +63,20 @@ jobs:
             listen: 127.0.0.1:1080
           EOF
           
-          ./hysteria client -c hy2.yaml > /dev/null 2>&1 &
+          # 【修改点】不再丢弃日志，输出并打印，方便查看报错原因
+          ./hysteria client -c hy2.yaml > hysteria.log 2>&1 &
           sleep 3
-          echo "[INFO] 代理已启动"
+          
+          echo "========== Hysteria 启动日志 =========="
+          cat hysteria.log
+          echo "======================================="
+          
+          # 【修改点】检查 Hysteria2 进程是否真的还在运行
+          if ! pgrep -x "hysteria" > /dev/null; then
+             echo "[ERROR] Hysteria2 代理启动失败或已闪退！请检查上方日志或节点链接！"
+             exit 1
+          fi
+          echo "[INFO] 代理已成功启动"
 
       - name: 执行重启脚本
         env:
