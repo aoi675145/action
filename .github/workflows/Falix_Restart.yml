@@ -6,6 +6,8 @@ on:
       accounts:
         description: '指定邮箱（留空全部，多个用逗号）'
         required: false
+#  schedule:
+#    - cron: '0 */6 * * *'  # 每 6 小时执行一次
 
 jobs:
   restart:
@@ -16,12 +18,8 @@ jobs:
       actions: write
 
     steps:
-      - name: 拉取私有仓库
+      - name: 拉取代码
         uses: actions/checkout@v4
-        with:
-          repository: ${{ github.repository_owner }}/scripts
-          token: ${{ secrets.REPO_TOKEN }}
-          path: .
 
       - name: 配置 Python
         uses: actions/setup-python@v5
@@ -36,18 +34,18 @@ jobs:
 
       - name: 配置代理
         env:
-          HY2_URL: ${{ secrets.HY2_URL }}
+          skybots_PROXY_NODE: ${{ secrets.skybots_PROXY_NODE }}
         run: |
-          if [ -z "$HY2_URL" ]; then
+          if [ -z "$skybots_PROXY_NODE" ]; then
             echo "[INFO] 无代理配置，使用直连模式"
             exit 0
           fi
           
           echo "[INFO] 配置 Hysteria2 代理"
-          wget -q https://github.com/oyz6/action/releases/download/proxy/hysteria-linux-amd64 -O hysteria
+          wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
           chmod +x hysteria
           
-          URL="${HY2_URL#hysteria2://}"
+          URL="${skybots_PROXY_NODE#hysteria2://}"
           PASSWORD="${URL%%@*}"
           SERVER="${URL#*@}"; SERVER="${SERVER%%\?*}"
           SNI=$(echo "$URL" | grep -oP 'sni=\K[^&]+' || echo "${SERVER%%:*}")
@@ -71,17 +69,19 @@ jobs:
           FALIX: ${{ secrets.FALIX }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          HY2_URL: ${{ secrets.HY2_URL }}
+          skybots_PROXY_NODE: ${{ secrets.skybots_PROXY_NODE }}
         run: |
-          # 根据是否有 HY2_URL 设置代理
-          if [ -n "$HY2_URL" ]; then
+          # 根据是否有 skybots_PROXY_NODE 设置代理
+          if [ -n "$skybots_PROXY_NODE" ]; then
             export PROXY_SERVER="http://127.0.0.1:1080"
             echo "[INFO] 使用代理: $PROXY_SERVER"
           else
             echo "[INFO] 直连模式"
           fi
           
-          python scripts/Falix/main.py
+          # 切换到脚本所在目录再执行
+          cd scripts/Falix
+          python main.py
 
 #      - name: 上传截图
 #        if: always()
@@ -100,4 +100,4 @@ jobs:
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
-          keep_minimum_runs: 2
+          keep_minimum_runs: 5
