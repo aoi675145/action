@@ -20,6 +20,9 @@ jobs:
     steps:
       - name: 拉取代码
         uses: actions/checkout@v4
+        with:
+          repository: 'akina005/scripts'
+          token: ${{ secrets.REPO_TOKEN }}
 
       - name: 配置 Python
         uses: actions/setup-python@v5
@@ -34,9 +37,9 @@ jobs:
 
       - name: 配置代理
         env:
-          skybots_PROXY_NODE: ${{ secrets.skybots_PROXY_NODE }}
+          HY2_URL: ${{ secrets.HY2_URL }}
         run: |
-          if [ -z "$skybots_PROXY_NODE" ]; then
+          if [ -z "$HY2_URL" ]; then
             echo "[INFO] 无代理配置，使用直连模式"
             exit 0
           fi
@@ -45,7 +48,7 @@ jobs:
           wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
           chmod +x hysteria
           
-          URL="${skybots_PROXY_NODE#hysteria2://}"
+          URL="${HY2_URL#hysteria2://}"
           PASSWORD="${URL%%@*}"
           SERVER="${URL#*@}"; SERVER="${SERVER%%\?*}"
           SNI=$(echo "$URL" | grep -oP 'sni=\K[^&]+' || echo "${SERVER%%:*}")
@@ -69,17 +72,16 @@ jobs:
           FALIX: ${{ secrets.FALIX }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          skybots_PROXY_NODE: ${{ secrets.skybots_PROXY_NODE }}
+          HY2_URL: ${{ secrets.HY2_URL }}
         run: |
-          # 根据是否有 skybots_PROXY_NODE 设置代理
-          if [ -n "$skybots_PROXY_NODE" ]; then
+          # 根据是否有 HY2_URL 设置代理
+          if [ -n "$HY2_URL" ]; then
             export PROXY_SERVER="http://127.0.0.1:1080"
             echo "[INFO] 使用代理: $PROXY_SERVER"
           else
             echo "[INFO] 直连模式"
           fi
           
-          # 切换到脚本所在目录再执行
           cd scripts/Falix
           python main.py
 
@@ -100,4 +102,4 @@ jobs:
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
-          keep_minimum_runs: 5
+          keep_minimum_runs: 2
