@@ -40,6 +40,10 @@ jobs:
         env:
           HY2_URL: ${{ secrets.HY2_URL }}
         run: |
+          if [ -z "$HY2_URL" ]; then
+            echo "[INFO] 未配置 HY2_URL，跳过代理。"
+            exit 0
+          fi
           wget -q https://github.com/oyz6/action/releases/download/proxy/hysteria-linux-amd64 -O hysteria
           chmod +x hysteria
           URL="${HY2_URL#hysteria2://}"
@@ -57,6 +61,12 @@ jobs:
           EOF
           ./hysteria client -c hy2.yaml > /dev/null 2>&1 &
           sleep 3
+          if curl -s --proxy http://127.0.0.1:7890 https://api.ipify.org >/dev/null; then
+            echo "PROXY_SERVER=http://127.0.0.1:7890" >> $GITHUB_ENV
+            echo "[INFO] 代理已连通，启用浏览器代理。"
+          else
+            echo "[WARN] 代理未连通，本次任务改为直连。"
+          fi
 
       - name: 执行 Rustix 任务
         env:
@@ -66,7 +76,6 @@ jobs:
           RUSTIX_3: ${{ secrets.RUSTIX_3 }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_SERVER: http://127.0.0.1:7890
           HEADLESS: "false"
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
