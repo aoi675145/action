@@ -1,0 +1,103 @@
+name: FalixNodes 重启
+
+on:
+  workflow_dispatch:
+    inputs:
+      accounts:
+        description: '指定邮箱（留空全部，多个用逗号）'
+        required: false
+
+jobs:
+  restart:
+    name: 执行脚本
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ github.repository_owner }}/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 配置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y ffmpeg
+          pip install -q seleniumbase requests pyvirtualdisplay
+
+      - name: 配置代理
+        env:
+          HY2_URL: ${{ secrets.HY2_URL }}
+        run: |
+          if [ -z "$HY2_URL" ]; then
+            echo "[INFO] 无代理配置，使用直连模式"
+            exit 0
+          fi
+          
+          echo "[INFO] 配置 Hysteria2 代理"
+          wget -q https://github.com/oyz6/action/releases/download/proxy/hysteria-linux-amd64 -O hysteria
+          chmod +x hysteria
+          
+          URL="${HY2_URL#hysteria2://}"
+          PASSWORD="${URL%%@*}"
+          SERVER="${URL#*@}"; SERVER="${SERVER%%\?*}"
+          SNI=$(echo "$URL" | grep -oP 'sni=\K[^&]+' || echo "${SERVER%%:*}")
+          
+          cat > hy2.yaml << EOF
+          server: ${SERVER}
+          auth: ${PASSWORD}
+          tls:
+            sni: ${SNI}
+            insecure: true
+          http:
+            listen: 127.0.0.1:1080
+          EOF
+          
+          ./hysteria client -c hy2.yaml > /dev/null 2>&1 &
+          sleep 3
+          echo "[INFO] 代理已启动"
+
+      - name: 执行重启脚本
+        env:
+          FALIX: ${{ secrets.FALIX }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          HY2_URL: ${{ secrets.HY2_URL }}
+        run: |
+          # 根据是否有 HY2_URL 设置代理
+          if [ -n "$HY2_URL" ]; then
+            export PROXY_SERVER="http://127.0.0.1:1080"
+            echo "[INFO] 使用代理: $PROXY_SERVER"
+          else
+            echo "[INFO] 直连模式"
+          fi
+          
+          python scripts/Falix/main.py
+
+#      - name: 上传截图
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: screenshots-${{ github.run_number }}
+#          path: output/falix/*.png
+#          retention-days: 7
+#          if-no-files-found: ignore
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
