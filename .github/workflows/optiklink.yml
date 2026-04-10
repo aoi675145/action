@@ -1,4 +1,4 @@
-name: 🎮 OptikLink-Keep
+name: OptikLink-Keep
 on:
   schedule:
     - cron: '25 1 */2 * *'
