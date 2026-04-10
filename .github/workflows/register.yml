@@ -1,4 +1,4 @@
-name: Buster Register (WARP)
+name: Teohe Register (WARP)
 
 on:
   workflow_dispatch:
