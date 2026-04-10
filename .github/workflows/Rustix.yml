@@ -32,6 +32,8 @@ jobs:
 
       - name: 安装精简依赖
         run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
           pip install -q seleniumbase pyvirtualdisplay requests PyNaCl
 
       - name: 配置固定 IP 代理 (Hysteria2)
@@ -65,10 +67,10 @@ jobs:
           TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: http://127.0.0.1:7890
+          HEADLESS: "false"
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          # 👈 已更新为截图中的实际路径
-          python scripts/Rustix.py
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/Rustix.py
           echo "完成"
 
       - name: 清理运行记录
