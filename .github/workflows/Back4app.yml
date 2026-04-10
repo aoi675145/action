@@ -1,5 +1,9 @@
 name: B4A Auto Redeploy
 
+permissions:
+  actions: write
+  contents: read
+
 on:
   schedule:
     - cron: '55 23 * * *'
@@ -175,3 +179,34 @@ jobs:
             *.png
             xray.log
             xray-config.json
+
+      - name: Cleanup old workflow runs
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const workflow_id = 'b4a_redeploy.yml';
+            const keep = 5;
+
+            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+              owner,
+              repo,
+              workflow_id,
+              per_page: 100,
+            });
+
+            const oldRuns = runs
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+              .slice(keep);
+
+            core.info(`Found ${runs.length} runs, deleting ${oldRuns.length} old runs for ${workflow_id}.`);
+
+            for (const run of oldRuns) {
+              await github.rest.actions.deleteWorkflowRun({
+                owner,
+                repo,
+                run_id: run.id,
+              });
+              core.info(`Deleted run ${run.id}`);
+            }
