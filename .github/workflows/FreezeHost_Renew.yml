@@ -56,7 +56,7 @@ jobs:
           FREEZEHOST_DISCORD_TOKEN: ${{ secrets.FREEZEHOST_DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python scripts_repo/scripts/freeze1/renew.py
+        run: python scripts_repo/scripts/freezehost/renew.py
 
       - name: ⚙️ 自动修改下一次运行时间
         env:
