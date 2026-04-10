@@ -50,7 +50,7 @@ jobs:
       - name: Run redeploy script
         env:
           CONNECT_SID: ${{ secrets.CONNECT_SID }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
           TG_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python private-scripts/scripts/Back4App/b4a_redeploy.py
