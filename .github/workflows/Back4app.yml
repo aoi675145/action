@@ -34,9 +34,10 @@ jobs:
       - name: Install Xray
         run: |
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip
-          chmod +x xray
-          sudo mv xray /usr/local/bin/xray
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
 
       - name: Build Xray config
         env:
