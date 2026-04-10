@@ -47,6 +47,12 @@ jobs:
           gost -V
           echo "gost started"
 
+      - name: Inject Back4App app id
+        env:
+          B4A_APP_ID: ${{ secrets.b4a_app_id }}
+        run: |
+          perl -0pi -e 's/APP_ID = ".*?"/APP_ID = "'"${B4A_APP_ID}"'"/' private-scripts/scripts/Back4App/b4a_redeploy.py
+
       - name: Run redeploy script
         env:
           CONNECT_SID: ${{ secrets.CONNECT_SID }}
