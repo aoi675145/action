@@ -5,9 +5,9 @@ permissions:
   contents: read
 
 on:
-  schedule:
-    - cron: '55 23 * * *'
-    - cron: '55 0-14 * * *'  # 每60分钟
+  # schedule:
+  # - cron: '55 23 * * *'
+  # - cron: '55 0-14 * * *'  # 每60分钟
   workflow_dispatch:
 
 jobs:
