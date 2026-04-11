@@ -1,8 +1,8 @@
 name: Runox 自动续期
 
 on:
-   #schedule:
-    #- cron: '5 * * * *'   # 每小时第 05 分执行
+  schedule:
+    - cron: '5 * * * *'   # 每小时第 05 分执行
   workflow_dispatch:        # 支持手动触发
 
 jobs:
@@ -49,11 +49,3 @@ jobs:
           TG_CHAT_ID:      ${{ secrets.TG_CHAT_ID }}
         run: |
           xvfb-run -a python runox_auto.py
-
-      - name: 上传截图（始终保留，方便调试）
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshots-${{ github.run_number }}
-          path: artifacts/
-          retention-days: 3
