@@ -176,7 +176,7 @@ jobs:
         with:
           name: diagnostics
           path: |
-            *.png
+            after_click.png
             xray.log
             xray-config.json
 
