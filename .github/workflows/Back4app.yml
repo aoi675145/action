@@ -6,8 +6,8 @@ permissions:
 
 on:
   # schedule:
-  # - cron: '55 23 * * *'
-  # - cron: '55 0-14 * * *'  # 每60分钟
+  #   - cron: '55 23 * * *'
+  #   - cron: '55 0-14 * * *'  # 每60分钟
   workflow_dispatch:
 
 jobs:
@@ -169,16 +169,6 @@ jobs:
           TG_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python private-scripts/scripts/Back4App/b4a_redeploy.py
-
-      - name: Upload screenshots
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: diagnostics
-          path: |
-            after_click.png
-            xray.log
-            xray-config.json
 
       - name: Cleanup old workflow runs
         if: always()
