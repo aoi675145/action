@@ -184,23 +184,25 @@ jobs:
         if: always()
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.REPO_TOKEN }}
           script: |
             const { owner, repo } = context.repo;
-            const workflow_id = 'b4a_redeploy.yml';
             const keep = 5;
+            const workflowPath = '.github/workflows/b4a_redeploy.yml';
 
-            const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
               owner,
               repo,
-              workflow_id,
               per_page: 100,
             });
 
-            const oldRuns = runs
+            const matchedRuns = runs.filter((run) => run.path === workflowPath);
+
+            const oldRuns = matchedRuns
               .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
               .slice(keep);
 
-            core.info(`Found ${runs.length} runs, deleting ${oldRuns.length} old runs for ${workflow_id}.`);
+            core.info(`Found ${matchedRuns.length} runs for ${workflowPath}, deleting ${oldRuns.length} old runs.`);
 
             for (const run of oldRuns) {
               await github.rest.actions.deleteWorkflowRun({
