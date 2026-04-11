@@ -1,0 +1,59 @@
+name: Runox 自动续期
+
+on:
+  schedule:
+    - cron: '5 * * * *'   # 每小时第 05 分执行
+  workflow_dispatch:        # 支持手动触发
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 拉取私库脚本
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: token ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            "https://api.github.com/repos/akina005/scripts/contents/scripts/runox/runox_auto.py?ref=main" \
+            -o runox_auto.py
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb scrot python3-xlib
+
+      - name: 安装 Python 依赖
+        run: |
+          pip install seleniumbase requests pyautogui
+
+      - name: 安装 ChromeDriver
+        run: |
+          seleniumbase install chromedriver
+
+      - name: 运行续期脚本
+        env:
+          RUNOX_ACCOUNTS: ${{ secrets.RUNOX_ACCOUNTS }}
+          TG_BOT_TOKEN:    ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID:      ${{ secrets.TG_CHAT_ID }}
+        run: |
+          xvfb-run -a python runox_auto.py
+
+      - name: 上传截图（始终保留，方便调试）
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ github.run_number }}
+          path: artifacts/
+          retention-days: 3
