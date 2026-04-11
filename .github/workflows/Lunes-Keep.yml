@@ -36,27 +36,204 @@ jobs:
 
       - name: 配置代理
         env:
-          HY2_URL: ${{ secrets.HY2_URL }}
+          lunes__PROXY_NODE: ${{ secrets.lunes__PROXY_NODE }}
         run: |
-          wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
-          chmod +x hysteria
+          if [ -z "$lunes__PROXY_NODE" ]; then
+            echo "lunes__PROXY_NODE 未设置，跳过代理配置"
+            exit 0
+          fi
 
-          URL="${HY2_URL#hysteria2://}"
-          PASSWORD="${URL%%@*}"
-          SERVER="${URL#*@}"; SERVER="${SERVER%%\?*}"
-          SNI=$(echo "$URL" | grep -oP 'sni=\K[^&]+' || echo "${SERVER%%:*}")
+          PROXY_NODE="$lunes__PROXY_NODE"
+          SCHEME="${PROXY_NODE%%://*}"
 
-          cat > hy2.yaml << EOF
-          server: ${SERVER}
-          auth: ${PASSWORD}
-          tls:
-            sni: ${SNI}
-            insecure: true
-          http:
-            listen: 127.0.0.1:7890
-          EOF
+          case "$SCHEME" in
+            hysteria2)
+              wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+              chmod +x hysteria
 
-          ./hysteria client -c hy2.yaml &
+              URL="${PROXY_NODE#hysteria2://}"
+              PASSWORD="${URL%%@*}"
+              SERVER="${URL#*@}"
+              SERVER="${SERVER%%\?*}"
+              SNI=$(printf '%s' "$URL" | grep -oP 'sni=\K[^&]+' || true)
+              if [ -z "$SNI" ]; then
+                SNI="${SERVER%%:*}"
+              fi
+
+              cat > hy2.yaml << EOF
+              server: ${SERVER}
+              auth: ${PASSWORD}
+              tls:
+                sni: ${SNI}
+                insecure: true
+              http:
+                listen: 127.0.0.1:7890
+              EOF
+
+              ./hysteria client -c hy2.yaml > hysteria.log 2>&1 &
+              ;;
+            vless|vmess)
+              wget -q https://github.com/SagerNet/sing-box/releases/latest/download/sing-box-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')-unknown-linux-gnu.tar.gz -O sing-box.tar.gz
+              tar -xzf sing-box.tar.gz
+              SING_BOX_DIR=$(find . -maxdepth 1 -type d -name 'sing-box-*' | head -n 1)
+              cp "$SING_BOX_DIR/sing-box" ./sing-box
+              chmod +x ./sing-box
+
+              cat > sing-box.json << EOF
+              {
+                "log": {
+                  "level": "info"
+                },
+                "inbounds": [
+                  {
+                    "type": "http",
+                    "tag": "http-in",
+                    "listen": "127.0.0.1",
+                    "listen_port": 7890
+                  }
+                ],
+                "outbounds": [
+                  {
+                    "type": "$SCHEME",
+                    "tag": "proxy-out",
+                    "server": "placeholder",
+                    "server_port": 443,
+                    "uuid": "placeholder"
+                  }
+                ],
+                "route": {
+                  "final": "proxy-out"
+                }
+              }
+              EOF
+
+              export PROXY_NODE
+              python3 <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlparse
+
+node = os.environ["PROXY_NODE"].strip()
+config_path = Path("sing-box.json")
+config = json.loads(config_path.read_text(encoding="utf-8"))
+
+if node.startswith("vless://"):
+    parsed = urlparse(node)
+    query = parse_qs(parsed.query)
+    outbound = {
+        "type": "vless",
+        "tag": "proxy-out",
+        "server": parsed.hostname,
+        "server_port": parsed.port or 443,
+        "uuid": unquote(parsed.username or ""),
+        "tls": {
+            "enabled": True,
+            "server_name": query.get("sni", [parsed.hostname or ""])[0],
+            "insecure": True,
+        },
+    }
+    flow = query.get("flow", [""])[0]
+    if flow:
+        outbound["flow"] = flow
+    packet_encoding = query.get("packetEncoding", [""])[0]
+    if packet_encoding:
+        outbound["packet_encoding"] = packet_encoding
+    transport_type = query.get("type", ["tcp"])[0]
+    if transport_type == "ws":
+        outbound["transport"] = {
+            "type": "ws",
+            "path": query.get("path", ["/"])[0],
+            "headers": {},
+        }
+        host = query.get("host", [""])[0]
+        if host:
+            outbound["transport"]["headers"]["Host"] = host
+    elif transport_type == "grpc":
+        outbound["transport"] = {
+            "type": "grpc",
+            "service_name": query.get("serviceName", [""])[0],
+        }
+    elif transport_type == "tcp":
+        pass
+    else:
+        raise SystemExit(f"Unsupported VLESS transport: {transport_type}")
+
+    security = query.get("security", ["tls"])[0]
+    if security == "reality":
+        outbound["tls"] = {
+            "enabled": True,
+            "server_name": query.get("sni", [parsed.hostname or ""])[0],
+            "insecure": True,
+            "reality": {
+                "enabled": True,
+                "public_key": query.get("pbk", [""])[0],
+            },
+        }
+        short_id = query.get("sid", [""])[0]
+        if short_id:
+            outbound["tls"]["reality"]["short_id"] = short_id
+        fingerprint = query.get("fp", [""])[0]
+        if fingerprint:
+            outbound["tls"]["utls"] = {
+                "enabled": True,
+                "fingerprint": fingerprint,
+            }
+elif node.startswith("vmess://"):
+    payload = node[len("vmess://"):].strip()
+    padding = "=" * (-len(payload) % 4)
+    vmess = json.loads(base64.urlsafe_b64decode(payload + padding).decode("utf-8"))
+    outbound = {
+        "type": "vmess",
+        "tag": "proxy-out",
+        "server": vmess["add"],
+        "server_port": int(vmess.get("port") or 443),
+        "uuid": vmess["id"],
+        "security": vmess.get("scy") or "auto",
+        "alter_id": int(vmess.get("aid") or 0),
+    }
+    host = vmess.get("host") or vmess.get("add")
+    tls_enabled = (vmess.get("tls") or "").lower() == "tls"
+    if tls_enabled:
+        outbound["tls"] = {
+            "enabled": True,
+            "server_name": vmess.get("sni") or host,
+            "insecure": True,
+        }
+    network = (vmess.get("net") or "tcp").lower()
+    if network == "ws":
+        outbound["transport"] = {
+            "type": "ws",
+            "path": vmess.get("path") or "/",
+            "headers": {},
+        }
+        if vmess.get("host"):
+            outbound["transport"]["headers"]["Host"] = vmess["host"]
+    elif network == "grpc":
+        outbound["transport"] = {
+            "type": "grpc",
+            "service_name": vmess.get("path") or vmess.get("serviceName") or "",
+        }
+    elif network == "tcp":
+        pass
+    else:
+        raise SystemExit(f"Unsupported VMess transport: {network}")
+else:
+    raise SystemExit("Unsupported proxy node scheme")
+
+config["outbounds"] = [outbound]
+config_path.write_text(json.dumps(config, ensure_ascii=True, indent=2), encoding="utf-8")
+PY
+
+              ./sing-box run -c sing-box.json > sing-box.log 2>&1 &
+              ;;
+            *)
+              echo "不支持的代理协议: $SCHEME"
+              exit 1
+              ;;
+          esac
+
           sleep 3
 
       - name: 执行保活
@@ -70,7 +247,7 @@ jobs:
           LUNES_5: ${{ secrets.LUNES_5 }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_SERVER: http://127.0.0.1:7890
+          lunes__PROXY_NODE: ${{ secrets.lunes__PROXY_NODE }}
         run: python scripts/Lunes/Lunes-Keep.py
 
 #      - name: 上传截图
