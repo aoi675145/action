@@ -1,4 +1,4 @@
-name: Buster Login (WARP)
+name: Teohe Auto Renew
 
 on:
   workflow_dispatch:
