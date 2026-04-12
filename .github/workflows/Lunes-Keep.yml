@@ -2,8 +2,9 @@ name: Lunes Host 自动保活
 
 on:
   schedule:
-    # 每10天运行：1号、11号、21号 09:15 (北京时间)
-    - cron: '14 1 1,11,21 * *'
+    # 每10天运行：1号、11号、21号 中午12:12 (北京时间)
+    # UTC 时间 = 北京时间 - 8小时 = 04:12
+    - cron: '12 4 1,11,21 * *'
   workflow_dispatch:
 
 jobs:
@@ -34,112 +35,182 @@ jobs:
           sudo apt-get update && sudo apt-get install -y xvfb unzip
           pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 requests>=2.31.0
 
-      - name: 配置 Xray 代理 (Vless/Vmess)
+      - name: 配置代理
         env:
           LUNES__PROXY_NODE: ${{ secrets.LUNES__PROXY_NODE }}
         run: |
-          # 下载并解压 Xray-core
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray-core
-          chmod +x xray-core/xray
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -O xray.zip
+          unzip -q xray.zip -d xray-bin
+          chmod +x xray-bin/xray
 
-          # 编写 Python 脚本自动将链接解析为 Xray JSON 配置
-          cat << 'EOF' > generate_config.py
-          import os, sys, json, base64, urllib.parse
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
 
-          node_url = os.environ.get('LUNES__PROXY_NODE', '').strip()
-          if not node_url:
-              sys.exit("未找到 LUNES__PROXY_NODE 环境变量，请在 Secrets 中添加")
+          node = os.environ.get("LUNES__PROXY_NODE", "").strip()
+          if not node:
+              raise SystemExit("LUNES__PROXY_NODE 未配置")
 
-          outbound = {}
-          if node_url.startswith('vmess://'):
-              b64_str = node_url[8:]
-              b64_str += "=" * ((4 - len(b64_str) % 4) % 4)
-              v = json.loads(base64.urlsafe_b64decode(b64_str).decode('utf-8'))
-              
-              outbound = {
-                  "protocol": "vmess",
-                  "settings": {
-                      "vnext": [{
-                          "address": v.get("add", ""),
-                          "port": int(v.get("port", 443)),
-                          "users": [{"id": v.get("id", ""), "alterId": int(v.get("aid", 0)), "security": v.get("scy", "auto")}]
-                      }]
+          def to_bool(value: str) -> bool:
+              return str(value).lower() in {"1", "true", "yes", "on"}
+
+          def build_common_stream(network: str, security: str, query: dict, host: str) -> dict:
+              stream = {
+                  "network": network or "tcp",
+                  "security": "none",
+              }
+
+              if security and security != "none":
+                  stream["security"] = security
+
+              if security == "tls":
+                  tls_settings = {
+                      "serverName": query.get("sni", [host])[0] or host,
+                      "allowInsecure": True,
                   }
-              }
-              tls_val = str(v.get("tls", "")).lower()
-              stream_settings = {
-                  "network": v.get("net", "tcp"),
-                  "security": "tls" if tls_val in ["tls", "1", "true"] else "none"
-              }
-              if stream_settings["security"] == "tls":
-                  stream_settings["tlsSettings"] = {"serverName": v.get("sni", v.get("host", ""))}
-              
-              if stream_settings["network"] == "ws":
-                  stream_settings["wsSettings"] = {"path": v.get("path", "/"), "headers": {"Host": v.get("host", "")}}
-              elif stream_settings["network"] == "grpc":
-                  stream_settings["grpcSettings"] = {"serviceName": v.get("path", "")}
-                  
-              outbound["streamSettings"] = stream_settings
+                  alpn = query.get("alpn", [""])[0]
+                  if alpn:
+                      tls_settings["alpn"] = [item.strip() for item in alpn.split(",") if item.strip()]
+                  fp = query.get("fp", [""])[0] or query.get("fingerprint", [""])[0]
+                  if fp:
+                      tls_settings["fingerprint"] = fp
+                  stream["tlsSettings"] = tls_settings
 
-          elif node_url.startswith('vless://'):
-              parsed = urllib.parse.urlparse(node_url)
-              qs = urllib.parse.parse_qs(parsed.query)
-              
-              outbound = {
+              if network == "ws":
+                  ws_headers = {}
+                  ws_host = query.get("host", [host])[0]
+                  if ws_host:
+                      ws_headers["Host"] = ws_host
+                  stream["wsSettings"] = {
+                      "path": unquote(query.get("path", ["/"])[0] or "/"),
+                      "headers": ws_headers,
+                  }
+              elif network == "grpc":
+                  stream["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", [""])[0],
+                      "multiMode": to_bool(query.get("mode", [""])[0] == "multi"),
+                  }
+
+              return stream
+
+          def parse_vless(url: str) -> dict:
+              parsed = urlparse(url)
+              query = parse_qs(parsed.query)
+              host = parsed.hostname
+              port = parsed.port
+              uuid = parsed.username
+              if not host or not port or not uuid:
+                  raise SystemExit("VLESS 节点格式无效")
+
+              user = {
+                  "id": uuid,
+                  "encryption": "none",
+              }
+              flow = query.get("flow", [""])[0]
+              if flow:
+                  user["flow"] = flow
+
+              network = query.get("type", ["tcp"])[0]
+              security = query.get("security", ["none"])[0]
+
+              return {
                   "protocol": "vless",
                   "settings": {
                       "vnext": [{
-                          "address": parsed.hostname,
-                          "port": int(parsed.port or 443),
-                          "users": [{"id": parsed.username, "encryption": qs.get("encryption", ["none"])[0]}]
+                          "address": host,
+                          "port": port,
+                          "users": [user],
                       }]
-                  }
+                  },
+                  "streamSettings": build_common_stream(network, security, query, host),
               }
-              stream_settings = {
-                  "network": qs.get("type", ["tcp"])[0],
-                  "security": qs.get("security", ["none"])[0]
-              }
-              
-              if stream_settings["security"] in ["tls", "reality"]:
-                  sec_settings = {"serverName": qs.get("sni", [""])[0]}
-                  if stream_settings["security"] == "reality":
-                      sec_settings.update({
-                          "publicKey": qs.get("pbk", [""])[0],
-                          "shortId": qs.get("sid", [""])[0],
-                          "spiderX": qs.get("spx", [""])[0]
-                      })
-                  stream_settings[f'{stream_settings["security"]}Settings'] = sec_settings
 
-              if stream_settings["network"] == "ws":
-                  stream_settings["wsSettings"] = {"path": qs.get("path", ["/"])[0], "headers": {"Host": qs.get("host", [""])[0]} if qs.get("host") else {}}
-              elif stream_settings["network"] == "grpc":
-                  stream_settings["grpcSettings"] = {"serviceName": qs.get("serviceName", [""])[0]}
-                  
-              outbound["streamSettings"] = stream_settings
+          def parse_vmess(url: str) -> dict:
+              payload = url[len("vmess://"):].strip()
+              padding = "=" * (-len(payload) % 4)
+              try:
+                  config = json.loads(base64.urlsafe_b64decode(payload + padding).decode("utf-8"))
+              except Exception as exc:
+                  raise SystemExit(f"VMess 节点解析失败: {exc}")
+
+              host = config.get("add")
+              port = int(config.get("port", 0))
+              uuid = config.get("id")
+              if not host or not port or not uuid:
+                  raise SystemExit("VMess 节点格式无效")
+
+              network = config.get("net", "tcp")
+              security = "tls" if str(config.get("tls", "")).lower() == "tls" else "none"
+
+              query = {
+                  "path": [config.get("path", "/")],
+                  "host": [config.get("host", host)],
+                  "sni": [config.get("sni", host)],
+              }
+              if config.get("alpn"):
+                  query["alpn"] = [config.get("alpn")]
+              if config.get("fp"):
+                  query["fp"] = [config.get("fp")]
+
+              return {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": uuid,
+                              "alterId": int(config.get("aid", 0) or 0),
+                              "security": config.get("scy", "auto") or "auto",
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_common_stream(network, security, query, host),
+              }
+
+          if node.startswith("vless://"):
+              outbound = parse_vless(node)
+          elif node.startswith("vmess://"):
+              outbound = parse_vmess(node)
           else:
-              sys.exit("代理协议不受支持：仅支持 vmess:// 或 vless:// 节点链接")
+              raise SystemExit("仅支持 vless:// 或 vmess:// 节点")
 
-          config = {
+          xray_config = {
               "log": {"loglevel": "warning"},
-              "inbounds": [{"port": 7890, "protocol": "http", "listen": "127.0.0.1"}],
-              "outbounds": [outbound, {"protocol": "freedom", "tag": "direct"}]
+              "inbounds": [{
+                  "tag": "http-in",
+                  "port": 7890,
+                  "listen": "127.0.0.1",
+                  "protocol": "http",
+                  "settings": {},
+              }],
+              "outbounds": [
+                  {"tag": "proxy", **outbound},
+                  {"tag": "direct", "protocol": "freedom", "settings": {}},
+              ],
+              "routing": {
+                  "domainStrategy": "AsIs",
+                  "rules": [{
+                      "type": "field",
+                      "inboundTag": ["http-in"],
+                      "outboundTag": "proxy",
+                  }],
+              },
           }
 
-          with open('config.json', 'w') as f:
-              json.dump(config, f, indent=2)
-          print("Xray 配置解析并生成成功")
-          EOF
+          with open("xray.json", "w", encoding="utf-8") as f:
+              json.dump(xray_config, f, ensure_ascii=True, indent=2)
+          PY
 
-          # 生成配置并后台启动 Xray 代理
-          python3 generate_config.py
-          ./xray-core/xray run -c config.json &
+          ./xray-bin/xray run -c xray.json &
           sleep 3
 
       - name: 执行保活
         env:
-#         LUNES_EMAIL: ${{ secrets.LUNES_EMAIL }}
-#         LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+#          LUNES_EMAIL: ${{ secrets.LUNES_EMAIL }}
+#          LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
           LUNES_1: ${{ secrets.LUNES_1 }}
           LUNES_2: ${{ secrets.LUNES_2 }}
           LUNES_3: ${{ secrets.LUNES_3 }}
@@ -150,13 +221,13 @@ jobs:
           PROXY_SERVER: http://127.0.0.1:7890
         run: python scripts/Lunes/Lunes-Keep.py
 
-#     - name: 上传截图
-#       uses: actions/upload-artifact@v4
-#       if: always()
-#       with:
-#         name: screenshots-${{ github.run_number }}
-#         path: output/screenshots/
-#         retention-days: 3
+#      - name: 上传截图
+#        uses: actions/upload-artifact@v4
+#        if: always()
+#        with:
+#          name: screenshots-${{ github.run_number }}
+#          path: output/screenshots/
+#          retention-days: 3
 
       - name: 清理旧运行
         uses: Mattraks/delete-workflow-runs@v2
