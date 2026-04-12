@@ -236,6 +236,16 @@ jobs:
           mkdir -p extensions/buster/unpacked
           7z x -y extensions/buster/buster.zip -oextensions/buster/unpacked
 
+      - name: Fetch private login script
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -L \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            -o login.py \
+            "https://api.github.com/repos/akina005/scripts/contents/scripts/teohe/login.py?ref=main"
+
       - name: Check IP
         run: |
           echo "🌍 当前代理出口 IP:"
