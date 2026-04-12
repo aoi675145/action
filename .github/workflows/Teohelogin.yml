@@ -1,11 +1,11 @@
-name: Buster Login (Python)
+name: Teohe Auto Renew
 
 on:
   workflow_dispatch:
 
   push:
     paths:
-      - "login.py"
+      - "login.js"
       - ".github/workflows/login.yml"
 
 jobs:
@@ -19,10 +19,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
 
       - name: Install Xray
         run: |
@@ -211,19 +207,17 @@ jobs:
           sudo apt-get install -y xvfb wget unzip curl jq p7zip-full \
             pulseaudio alsa-utils ffmpeg
 
-          wget -q https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-          sudo apt-get install -y ./google-chrome-stable_current_amd64.deb
-
           pulseaudio --start --exit-idle-time=-1 || true
           pactl load-module module-null-sink sink_name=virtual_speaker || true
           pactl set-default-sink virtual_speaker || true
           pactl load-module module-virtual-source source_name=virtual_mic || true
           pactl set-default-source virtual_mic || true
 
-      - name: Install Python deps
+      - name: Install playwright
         run: |
-          python -m pip install --upgrade pip
-          pip install seleniumbase requests
+          npm init -y
+          npm install playwright
+          npx playwright install chromium
 
       - name: Download Buster
         run: |
@@ -243,8 +237,27 @@ jobs:
           curl -L \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -H "Accept: application/vnd.github.raw" \
-            -o login.py \
-            "https://api.github.com/repos/akina005/scripts/contents/scripts/teohe/login.py?ref=main"
+            -o login.js \
+            "https://api.github.com/repos/akina005/scripts/contents/scripts/teohe/login.js?ref=main"
+
+      - name: Inject browser proxy
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          file = Path("login.js")
+          source = file.read_text(encoding="utf-8")
+          needle = 'launchPersistentContext(profile, {'
+          replacement = 'launchPersistentContext(profile, {\n      proxy: { server: "http://127.0.0.1:8080" },'
+
+          if replacement in source:
+              raise SystemExit("Proxy already injected")
+
+          if needle not in source:
+              raise SystemExit("Unable to locate launchPersistentContext profile block")
+
+          file.write_text(source.replace(needle, replacement, 1), encoding="utf-8")
+          PY
 
       - name: Check IP
         run: |
@@ -260,7 +273,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           mkdir -p screenshots
-          xvfb-run -a python login.py
+          xvfb-run -a node login.js
 
       - uses: actions/upload-artifact@v4
         if: failure()
