@@ -216,7 +216,7 @@ jobs:
       - name: Install playwright
         run: |
           npm init -y
-          npm install playwright
+          npm install playwright playwright-stealth
           npx playwright install chromium
 
       - name: Download Buster
