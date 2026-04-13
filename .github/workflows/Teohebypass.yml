@@ -217,7 +217,7 @@ jobs:
           BYPASS_PROXY: http://127.0.0.1:8080
         run: |
           mkdir -p screenshots
-          xvfb-run -a python bypass_uc.py "https://linkvertise.com/1235005/727/dynamic?r=aHR0cHM6Ly9tYW5hZ2VyLnRlb2hlYmVyZy5mci9saW5rdmVydGlzZS92ZXJpZnkvcUozdEJrS3h1WjZjdzI5UzNHcm8=&o=sharing"
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python bypass_uc.py "https://bypass.city/bypass?bypass=https%3A%2F%2Flinkvertise.com%2F1235005%2F78%2Fdynamic%3Fr%3DaHR0cHM6Ly9tYW5hZ2VyLnRlb2hlYmVyZy5mci9saW5rdmVydGlzZS92ZXJpZnkvTjRhZmNWZEhMa2N1MEZJSnZ3WDE%253D%26o%3Dsharing"
 
       - uses: actions/upload-artifact@v4
         if: failure()
