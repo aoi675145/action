@@ -290,3 +290,52 @@ jobs:
           name: screenshots
           path: screenshots/*
           retention-days: 1
+
+      - name: Cleanup old runs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_NAME: Teohe Auto Renew
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          repo = os.environ["REPO"]
+          workflow_name = os.environ["WORKFLOW_NAME"]
+
+          result = subprocess.run(
+              [
+                  "gh",
+                  "api",
+                  f"repos/{repo}/actions/runs",
+                  "--paginate",
+              ],
+              check=True,
+              capture_output=True,
+              text=True,
+          )
+
+          payload = json.loads(result.stdout)
+          runs = payload.get("workflow_runs", [])
+          target_runs = [
+              run for run in runs if run.get("name") == workflow_name
+          ]
+          target_runs.sort(key=lambda run: run.get("created_at", ""), reverse=True)
+
+          for run in target_runs[5:]:
+              run_id = str(run["id"])
+              print(f"Deleting old run: {run_id}")
+              subprocess.run(
+                  [
+                      "gh",
+                      "api",
+                      "-X",
+                      "DELETE",
+                      f"repos/{repo}/actions/runs/{run_id}",
+                  ],
+                  check=True,
+              )
+          PY
