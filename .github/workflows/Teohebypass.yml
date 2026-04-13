@@ -193,15 +193,6 @@ jobs:
           python -m pip install --upgrade pip
           pip install seleniumbase requests pyvirtualdisplay
 
-      - name: Download Violentmonkey
-        run: |
-          curl -L "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Djinjaccalgkegednnccohejagnlnfdag%26installsource%3Dondemand%26uc" --create-dirs -o extensions/violentmonkey/violentmonkey.crx
-
-      - name: Unzip Violentmonkey
-        run: |
-          mkdir -p extensions/violentmonkey/unpacked
-          7z x -y extensions/violentmonkey/violentmonkey.crx -oextensions/violentmonkey/unpacked
-
       - name: Fetch private bypass script
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
