@@ -232,12 +232,7 @@ jobs:
 
       - name: Download Turnstile Bypasser
         run: |
-          curl -L "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" --create-dirs -o extensions/turnstile-bypasser/turnstile.crx
-
-      - name: Unzip Turnstile Bypasser
-        run: |
-          mkdir -p extensions/turnstile-bypasser/unpacked
-          7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked
+          true
 
       - name: Fetch private login script
         env:
@@ -248,6 +243,16 @@ jobs:
             -H "Accept: application/vnd.github.raw" \
             -o login.js \
             "https://api.github.com/repos/akina005/scripts/contents/scripts/teohe/login.js?ref=main"
+
+      - name: Fetch private bypass script
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -L \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            -o bypass_uc.py \
+            "https://api.github.com/repos/akina005/scripts/contents/scripts/teohe/bypass_uc.py?ref=main"
 
       - name: Inject browser proxy
         run: |
@@ -275,6 +280,11 @@ jobs:
           echo
           curl -s --proxy http://127.0.0.1:8080 https://ipinfo.io
 
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install seleniumbase requests pyvirtualdisplay
+
       - name: Run login script
         env:
           teohe_ACCOUNTS: ${{ secrets.teohe_ACCOUNTS }}
@@ -283,6 +293,16 @@ jobs:
         run: |
           mkdir -p screenshots
           xvfb-run -a node login.js
+
+      - name: Run bypass UC script
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          BYPASS_PROXY: http://127.0.0.1:8080
+        run: |
+          test -f bypass-url.txt
+          URL=$(tr -d '\r\n' < bypass-url.txt)
+          xvfb-run -a python bypass_uc.py "$URL"
 
       - uses: actions/upload-artifact@v4
         if: failure()
