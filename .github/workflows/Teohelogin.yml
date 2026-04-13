@@ -273,16 +273,18 @@ jobs:
 
           file = Path("login.js")
           source = file.read_text(encoding="utf-8")
-          pattern = r'launchPersistentContext\(\s*profile\s*,\s*\{'
-          replacement = 'launchPersistentContext(profile, {\n      proxy: { server: "http://127.0.0.1:8080" },'
+          pattern = r'chromium\.launchPersistentContext\(\s*[^,]+\s*,\s*\{'
 
-          if replacement in source:
+          def inject_proxy(match):
+              return match.group(0) + '\n      proxy: { server: "http://127.0.0.1:8080" },'
+
+          if 'proxy: { server: "http://127.0.0.1:8080" }' in source:
               raise SystemExit("Proxy already injected")
 
           if not re.search(pattern, source):
               raise SystemExit("Unable to locate launchPersistentContext profile block")
 
-          file.write_text(re.sub(pattern, replacement, source, count=1), encoding="utf-8")
+          file.write_text(re.sub(pattern, inject_proxy, source, count=1), encoding="utf-8")
           PY
 
       - name: Check IP
