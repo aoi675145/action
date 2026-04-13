@@ -216,7 +216,7 @@ jobs:
       - name: Install playwright
         run: |
           npm init -y
-          npm install playwright playwright-stealth
+          npm install playwright
           npx playwright install chromium
 
       - name: Download Buster
@@ -229,31 +229,6 @@ jobs:
         run: |
           mkdir -p extensions/buster/unpacked
           7z x -y extensions/buster/buster.zip -oextensions/buster/unpacked
-
-      - name: Download Turnstile Bypasser
-        run: |
-          mkdir -p extensions/turnstile-bypasser
-          curl -L "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" --create-dirs -o extensions/turnstile-bypasser/turnstile.crx
-
-      - name: Unzip Turnstile Bypasser
-        run: |
-          mkdir -p extensions/turnstile-bypasser/unpacked
-          7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked
-
-      - name: Validate Turnstile Bypasser
-        run: |
-          test -f extensions/turnstile-bypasser/turnstile.crx
-          test -f extensions/turnstile-bypasser/unpacked/manifest.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          manifest_path = Path("extensions/turnstile-bypasser/unpacked/manifest.json")
-          manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-          print("turnstile manifest name:", manifest.get("name"))
-          print("turnstile manifest version:", manifest.get("version"))
-          print("turnstile manifest version key:", manifest.get("manifest_version"))
-          PY
 
       - name: Fetch private login script
         env:
