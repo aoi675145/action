@@ -6,7 +6,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -175,43 +175,27 @@ jobs:
           nohup xray run -c xray-config.json > xray.log 2>&1 &
           sleep 2
           xray version
-          sed -n '1,160p' xray.log || true
-          echo "xray started"
+          sed -n '1,20p' xray.log || true
 
-      - name: Install deps
+      - name: Setup environment
         env:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
         run: |
-          sudo apt-get update
-          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb wget unzip curl jq p7zip-full pulseaudio alsa-utils ffmpeg
-          pulseaudio --start --exit-idle-time=-1 || true
-          pactl load-module module-null-sink sink_name=virtual_speaker || true
-          pactl set-default-sink virtual_speaker || true
-          pactl load-module module-virtual-source source_name=virtual_mic || true
-          pactl set-default-source virtual_mic || true
-
-      - name: Install Playwright
-        run: |
-          npm init -y
-          npm install playwright
-          npx playwright install chromium
-
-      - name: Download Turnstile Bypasser
-        run: |
-          mkdir -p extensions/turnstile-bypasser
-          curl -L "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" --create-dirs -o extensions/turnstile-bypasser/turnstile.crx
-
-      - name: Unzip Turnstile Bypasser
-        run: |
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb p7zip-full 2>&1 | tail -5
+          npm init -y --silent
+          npm install --silent playwright
+          npx playwright install --with-deps chromium 2>&1 | tail -5
           mkdir -p extensions/turnstile-bypasser/unpacked
-          7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked
+          curl -sL "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" -o extensions/turnstile-bypasser/turnstile.crx
+          7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
 
       - name: Fetch private bypass script
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          curl -L \
+          curl -sL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -H "Accept: application/vnd.github.raw" \
             -o bypass_js.js \
@@ -219,9 +203,7 @@ jobs:
 
       - name: Check IP
         run: |
-          echo "🌍 当前代理出口 IP:"
-          curl -s --proxy http://127.0.0.1:8080 https://api.ipify.org
-          echo
+          curl -s --proxy http://127.0.0.1:8080 https://api.ipify.org && echo
           curl -s --proxy http://127.0.0.1:8080 https://ipinfo.io
 
       - name: Run bypass JS script
