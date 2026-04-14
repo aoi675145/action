@@ -179,9 +179,12 @@ jobs:
           echo "xray started"
 
       - name: Install deps
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb wget unzip curl jq p7zip-full pulseaudio alsa-utils ffmpeg
+          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb wget unzip curl jq p7zip-full pulseaudio alsa-utils ffmpeg
           pulseaudio --start --exit-idle-time=-1 || true
           pactl load-module module-null-sink sink_name=virtual_speaker || true
           pactl set-default-sink virtual_speaker || true
