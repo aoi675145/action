@@ -194,6 +194,16 @@ jobs:
           npm install playwright
           npx playwright install chromium
 
+      - name: Download Turnstile Bypasser
+        run: |
+          mkdir -p extensions/turnstile-bypasser
+          curl -L "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" --create-dirs -o extensions/turnstile-bypasser/turnstile.crx
+
+      - name: Unzip Turnstile Bypasser
+        run: |
+          mkdir -p extensions/turnstile-bypasser/unpacked
+          7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked
+
       - name: Fetch private bypass script
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
