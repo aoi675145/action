@@ -1,12 +1,12 @@
-name: Teohe Auto Renew
+name: VPS8 Login
 
 on:
   workflow_dispatch:
 
   push:
     paths:
-      - "login.js"
-      - ".github/workflows/Teohelogin.yml"
+      - "checkin.js"
+      - "vps8.yml"
 
 jobs:
   run:
@@ -30,7 +30,7 @@ jobs:
 
       - name: Build Xray config
         env:
-          PROXY_URL: ${{ secrets.teohe_ROXY_NODE }}
+          vps8_PROXY: ${{ secrets.vps8_PROXY }}
         run: |
           python - <<'PY'
           import base64
@@ -38,7 +38,7 @@ jobs:
           import os
           from urllib.parse import parse_qs, unquote, urlparse
 
-          proxy_url = os.environ["PROXY_URL"]
+          proxy_url = os.environ["vps8_PROXY"]
           parsed = urlparse(proxy_url)
           scheme = parsed.scheme
 
@@ -203,30 +203,31 @@ jobs:
           curl -sL "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" -o extensions/turnstile-bypasser/turnstile.crx
           7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
 
-      - name: Fetch private login script
+      - name: Fetch vps8 checkin script
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           curl -sL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
-            -H "Accept: application/vnd.github.raw" \
-            -o login.js \
-            "https://api.github.com/repos/akina005/scripts/contents/scripts/teohe/login.js?ref=main"
+            -o checkin.js \
+            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.js"
 
       - name: Check IP
-        run: |
-          curl -s --proxy http://127.0.0.1:8080 https://api.ipify.org && echo
-          curl -s --proxy http://127.0.0.1:8080 https://ipinfo.io
-
-      - name: Run full flow
         env:
-          teohe_ACCOUNTS: ${{ secrets.teohe_ACCOUNTS }}
+          vps8_PROXY: http://127.0.0.1:8080
+        run: |
+          curl -s --proxy "$vps8_PROXY" https://api.ipify.org && echo
+          curl -s --proxy "$vps8_PROXY" https://ipinfo.io
+
+      - name: Run login flow
+        env:
+          vps8_ACCOUNTS: ${{ secrets.vps8_ACCOUNTS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          BYPASS_PROXY: http://127.0.0.1:8080
+          vps8_PROXY: http://127.0.0.1:8080
         run: |
           mkdir -p screenshots
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node login.js
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node checkin.js
 
       - uses: actions/upload-artifact@v4
         if: failure()
@@ -240,7 +241,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          WORKFLOW_NAME: Teohe Auto Renew
+          WORKFLOW_NAME: VPS8 Login
         run: |
           python - <<'PY'
           import json, os, subprocess
