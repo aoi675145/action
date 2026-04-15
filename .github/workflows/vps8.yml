@@ -1,4 +1,4 @@
-name: VPS8 Login
+name: VPS8 Auto Checkin
 
 on:
   workflow_dispatch:
