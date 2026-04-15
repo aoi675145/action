@@ -2,6 +2,8 @@ name: VPS8 Login
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '26 0 * * *' # 北京时间每天早上 08:26 运行
 
   push:
     paths:
