@@ -1,0 +1,498 @@
+name: HidenCloud 续期
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '34 3 20 4 *'   # 自动更新下次运行时间
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          
+      - name: 安装依赖 
+        run: |
+          pip install --quiet seleniumbase requests beautifulsoup4
+
+      - name: 安装并启动代理
+        env:
+          Hiden_PROXY_NODE: ${{ secrets.Hiden_PROXY_NODE }}
+        run: |
+          if [ -z "$Hiden_PROXY_NODE" ]; then
+            echo "[INFO] 未配置代理，直连模式"
+            exit 0
+          fi
+          
+          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
+          
+          python3 << 'PYEOF'
+          import os, sys, json, base64
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          def mask(s):
+              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
+
+          url = os.environ.get("Hiden_PROXY_NODE", "").strip()
+          if not url:
+              print("[ERROR] Hiden_PROXY_NODE 为空")
+              sys.exit(1)
+
+          if url.startswith("vless://"):
+              protocol = "vless"
+              content = url[8:]
+          elif url.startswith("vmess://"):
+              protocol = "vmess"
+              content = url[8:]
+          elif url.startswith("trojan://"):
+              protocol = "trojan"
+              content = url[9:]
+          elif url.startswith("ss://"):
+              protocol = "ss"
+              content = url[5:]
+          elif url.startswith("socks5://") or url.startswith("socks://"):
+              protocol = "socks5"
+              content = url.split("://")[1].split("#")[0]
+              if "@" in content:
+                  server = content.split("@")[1].split(":")[0]
+              else:
+                  server = content.split(":")[0]
+              print(f"[INFO] SOCKS5 -> {mask(server)}")
+              with open("use_external_socks.txt", "w") as f:
+                  f.write(url.split("#")[0])
+              sys.exit(0)
+          else:
+              print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
+              sys.exit(1)
+
+          if "#" in content:
+              content = content.rsplit("#", 1)[0]
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [
+                  {"port": 1080, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                  {"port": 1081, "listen": "127.0.0.1", "protocol": "http"}
+              ],
+              "outbounds": []
+          }
+
+          if protocol == "vless":
+              uuid, rest = content.split("@", 1)
+              if "?" in rest:
+                  host_port, params_str = rest.split("?", 1)
+              else:
+                  host_port, params_str = rest, ""
+              
+              if ":" in host_port:
+                  address, port = host_port.rsplit(":", 1)
+              else:
+                  address, port = host_port, "443"
+              
+              params = parse_qs(params_str)
+              security = params.get("security", ["none"])[0]
+              network = params.get("type", ["tcp"])[0]
+              sni = params.get("sni", [address])[0]
+              fp = params.get("fp", ["chrome"])[0]
+              flow = params.get("flow", [""])[0]
+              pbk = params.get("pbk", [""])[0]
+              host = params.get("host", [sni])[0]
+              path = unquote(params.get("path", ["/"])[0])
+              
+              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
+              
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": address,
+                          "port": int(port),
+                          "users": [{"id": uuid, "encryption": "none"}]
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": security
+                  }
+              }
+              
+              if flow:
+                  outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
+              
+              if security == "reality":
+                  outbound["streamSettings"]["realitySettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "publicKey": pbk
+                  }
+              elif security == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "allowInsecure": False
+                  }
+              
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+              elif network == "grpc":
+                  service_name = params.get("serviceName", [""])[0]
+                  outbound["streamSettings"]["grpcSettings"] = {
+                      "serviceName": service_name
+                  }
+              
+              config["outbounds"].append(outbound)
+
+          elif protocol == "vmess":
+              try:
+                  padding = 4 - len(content) % 4
+                  if padding != 4:
+                      content += "=" * padding
+                  decoded = base64.b64decode(content).decode("utf-8")
+                  vm = json.loads(decoded)
+              except Exception as e:
+                  print(f"[ERROR] VMess 解析失败: {e}")
+                  sys.exit(1)
+              
+              address = vm.get("add", "")
+              port = int(vm.get("port", 443))
+              uuid = vm.get("id", "")
+              aid = int(vm.get("aid", 0))
+              network = vm.get("net", "tcp")
+              tls = vm.get("tls", "")
+              sni = vm.get("sni", "") or vm.get("host", address)
+              host = vm.get("host", address)
+              path = vm.get("path", "/")
+              fp = vm.get("fp", "chrome")
+              
+              print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
+              
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": address,
+                          "port": port,
+                          "users": [{"id": uuid, "alterId": aid, "security": "auto"}]
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": "tls" if tls == "tls" else "none"
+                  }
+              }
+              
+              if tls == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "allowInsecure": False
+                  }
+              
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+              
+              config["outbounds"].append(outbound)
+
+          elif protocol == "trojan":
+              password, rest = content.split("@", 1)
+              if "?" in rest:
+                  host_port, params_str = rest.split("?", 1)
+              else:
+                  host_port, params_str = rest, ""
+              
+              if ":" in host_port:
+                  address, port = host_port.rsplit(":", 1)
+              else:
+                  address, port = host_port, "443"
+              
+              params = parse_qs(params_str)
+              sni = params.get("sni", [address])[0]
+              network = params.get("type", ["tcp"])[0]
+              host = params.get("host", [sni])[0]
+              path = unquote(params.get("path", ["/"])[0])
+              fp = params.get("fp", ["chrome"])[0]
+              
+              print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
+              
+              outbound = {
+                  "protocol": "trojan",
+                  "settings": {
+                      "servers": [{
+                          "address": address,
+                          "port": int(port),
+                          "password": password
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": "tls",
+                      "tlsSettings": {
+                          "serverName": sni,
+                          "fingerprint": fp,
+                          "allowInsecure": False
+                      }
+                  }
+              }
+              
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+              
+              config["outbounds"].append(outbound)
+
+          elif protocol == "ss":
+              try:
+                  if "@" in content:
+                      encoded, server_part = content.split("@", 1)
+                      decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                      method, password = decoded.split(":", 1)
+                      address, port = server_part.split(":", 1)
+                  else:
+                      decoded = base64.b64decode(content + "==").decode("utf-8")
+                      if "@" in decoded:
+                          user_part, server_part = decoded.split("@", 1)
+                          method, password = user_part.split(":", 1)
+                          address, port = server_part.split(":", 1)
+                      else:
+                          raise ValueError("无法解析")
+              except Exception as e:
+                  print(f"[ERROR] Shadowsocks 解析失败: {e}")
+                  sys.exit(1)
+              
+              print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
+              
+              outbound = {
+                  "protocol": "shadowsocks",
+                  "settings": {
+                      "servers": [{
+                          "address": address,
+                          "port": int(port),
+                          "method": method,
+                          "password": password
+                      }]
+                  }
+              }
+              
+              config["outbounds"].append(outbound)
+
+          with open("xray_config.json", "w") as f:
+              json.dump(config, f, indent=2)
+          
+          print("[INFO] ✅ 代理配置已生成")
+          PYEOF
+          
+          if [ -f "use_external_socks.txt" ]; then
+            EXTERNAL_SOCKS=$(cat use_external_socks.txt)
+            echo "Hiden_PROXY_SERVER=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "[INFO] ✅ 使用外部 SOCKS5 代理"
+            exit 0
+          fi
+          
+          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          sleep 5
+          
+          echo "[INFO] 测试代理连接..."
+          for i in 1 2 3 4 5; do
+            if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "[INFO] ✅ 代理连接成功"
+              echo "Hiden_PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+              exit 0
+            fi
+            echo "[WARN] 尝试 $i/5..."
+            sleep 3
+          done
+          
+          echo "[ERROR] ❌ 代理连接失败"
+          cat xray.log
+          exit 1
+
+      - name: 恢复浏览器状态缓存
+        id: cache-restore
+        uses: actions/cache/restore@v4
+        with:
+          path: browser_state
+          key: hidencloud-state-${{ github.run_id }}
+          restore-keys: |
+            hidencloud-state-
+
+      - name: 运行续期脚本
+        id: run_renew
+        env:
+          HIDENCLOUD: ${{ secrets.HIDENCLOUD }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          Hiden_PROXY_SERVER: ${{ env.Hiden_PROXY_SERVER }}
+        run: |
+          PROXY_SERVER="$Hiden_PROXY_SERVER" python3 scripts/hiden/main.py 2>&1 | tee renew.log
+
+     # 如需上传日志截图，可取消注释以下步骤
+     # - name: 上传日志和截图
+     #   if: always()
+     #   uses: actions/upload-artifact@v4
+     #   with:
+     #     name: hidencloud-logs
+     #     path: |
+     #       screenshots/*.png
+     #       renew.log
+     #     retention-days: 3
+
+      - name: 删除旧浏览器状态缓存
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "🗑️ 清理旧缓存..."
+          
+          # 缓存键前缀（必须与 cache 步骤中使用的 key 前缀一致）
+          PREFIX="hidencloud-state-"
+          
+          # 获取所有匹配前缀的缓存键列表
+          CACHE_KEYS=$(gh cache list --limit 100 --json key -q '.[].key' --repo ${{ github.repository }} | grep "^${PREFIX}" || true)
+          
+          if [ -z "$CACHE_KEYS" ]; then
+            echo "没有找到旧缓存"
+          else
+            echo "找到以下缓存:"
+            echo "$CACHE_KEYS"
+            echo ""
+            
+            for key in $CACHE_KEYS; do
+              echo "删除: $key"
+              gh cache delete "$key" --repo ${{ github.repository }} || true
+            done
+            
+            echo "✅ 旧缓存清理完成"
+          fi
+
+      - name: 保存浏览器状态缓存
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: browser_state
+          key: hidencloud-state-${{ github.run_id }}
+
+      - name: 提取到期时间
+        id: extract_due
+        if: success()
+        run: |
+          DUE_DATE=$(grep -oP '到期时间\(标准\): \K\d{4}-\d{2}-\d{2}' renew.log | tail -1 || echo "")
+          if [ -z "$DUE_DATE" ]; then
+            echo "skip_update=true" >> $GITHUB_OUTPUT
+            echo "::warning::未能提取到期时间，跳过 Cron 更新"
+            exit 0
+          fi
+          echo "due_date=$DUE_DATE" >> $GITHUB_OUTPUT
+          echo "skip_update=false" >> $GITHUB_OUTPUT
+          echo "::notice::📅 当前到期时间: $DUE_DATE"
+
+      - name: 修改下次 Cron 时间
+        if: success() && steps.extract_due.outputs.skip_update != 'true'
+        run: |
+          set -e
+
+          DUE_DATE="${{ steps.extract_due.outputs.due_date }}"
+          echo "📅 当前到期时间: $DUE_DATE"
+
+          # 计算距离到期还有多少小时
+          CURRENT_EPOCH=$(date -u +%s)
+          # 加上 00:00:00 确保解析到当天的 0 点
+          DUE_EPOCH=$(date -u -d "$DUE_DATE 00:00:00" +%s)
+          REMAINING_SECONDS=$((DUE_EPOCH - CURRENT_EPOCH))
+          
+          # 用于展示的带小数的时间
+          REMAINING_HOURS_DISPLAY=$(echo "scale=2; $REMAINING_SECONDS / 3600" | bc)
+          echo "⏳ 距离到期还有 $REMAINING_HOURS_DISPLAY 小时"
+
+          # 用于计算的纯整数的时间 (直接利用 bash 的整数除法，舍弃小数)
+          REMAINING_HOURS_INT=$((REMAINING_SECONDS / 3600))
+
+          # 提前 20 小时运行续期
+          if [ "$REMAINING_HOURS_INT" -gt 20 ]; then
+            HOURS_UNTIL_NEXT_RUN=$((REMAINING_HOURS_INT - 20))
+          else
+            HOURS_UNTIL_NEXT_RUN=4
+            echo "::warning::剩余时间不足 20 小时，4 小时后重试"
+          fi
+
+          # 计算下次运行时间 (此时 HOURS_UNTIL_NEXT_RUN 是标准的整数，如 113)
+          NEXT_DATE=$(date -u -d "+${HOURS_UNTIL_NEXT_RUN} hours" +"%Y-%m-%d %H:%M")
+          NEXT_MINUTE=$(date -u -d "+${HOURS_UNTIL_NEXT_RUN} hours" +"%-M")
+          NEXT_HOUR=$(date -u -d "+${HOURS_UNTIL_NEXT_RUN} hours" +"%-H")
+          NEXT_DAY=$(date -u -d "+${HOURS_UNTIL_NEXT_RUN} hours" +"%-d")
+          NEXT_MONTH=$(date -u -d "+${HOURS_UNTIL_NEXT_RUN} hours" +"%-m")
+
+          NEW_CRON="$NEXT_MINUTE $NEXT_HOUR $NEXT_DAY $NEXT_MONTH *"
+
+          echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
+          echo "::notice::📟 新 Cron: $NEW_CRON"
+
+          # 克隆仓库并修改 workflow 文件
+          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git workflow_repo
+          cd workflow_repo
+
+          WORKFLOW_FILE=".github/workflows/HidenCloud_Renew.yml"
+
+          # 查找 cron 行
+          LINE_NUM=$(grep -n "cron: '" "$WORKFLOW_FILE" | head -n1 | cut -d: -f1)
+
+          if [ -z "$LINE_NUM" ]; then
+            echo "::error::找不到 cron 行"
+            exit 1
+          fi
+
+          echo "::notice::更新第 $LINE_NUM 行"
+
+          # 替换整行为新的 cron 表达式
+          sed -i "${LINE_NUM}c\\    - cron: '$NEW_CRON'   # 自动更新下次运行时间" "$WORKFLOW_FILE"
+
+          # 检查并提交
+          if git diff --quiet "$WORKFLOW_FILE"; then
+            echo "::notice::没有变化需要提交"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$WORKFLOW_FILE"
+          git commit -m "🔄 自动更新 HidenCloud 续期 Cron" \
+                     -m "下次运行: $NEXT_DATE UTC" \
+                     -m "Cron: $NEW_CRON" \
+                     -m "到期时间: $DUE_DATE"
+          git push
+
+          echo "::notice::✅ Cron 更新成功"
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
