@@ -2,6 +2,8 @@ name: Teohe Auto Renew
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: '33 0 * * *' # 北京时间每天早上 08:33 运行
 
   push:
     paths:
