@@ -1,9 +1,10 @@
 name: H2play Auto Renew 
 
 on:
+  schedule:
+    - cron: '0 0,11,22 * * *'    # 触发点: 00:00, 11:00, 22:00
+    - cron: '30 5,16 * * *'      # 触发点: 05:30, 16:30
   workflow_dispatch:
-  #schedule:
-  # - cron: '0 */3 * * *'
 
 # 只保留最近 10 次运行记录
 run-name: "H2play Renew - ${{ github.run_number }}"
