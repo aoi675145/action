@@ -5,7 +5,7 @@ on:
 
   push:
     paths:
-      - "checkin.js"
+      - "checkin.py"
       - "vps8.yml"
 
 jobs:
@@ -15,10 +15,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
 
       - name: Install Xray
         run: |
@@ -190,40 +186,19 @@ jobs:
           echo "[setup] apt update"
           sudo -E apt-get update
           echo "[setup] apt install"
-          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb p7zip-full ffmpeg python3 python3-pip
-          echo "[setup] npm init"
-          npm init -y
-          echo "[setup] npm install playwright"
-          npm install playwright
-          echo "[setup] playwright install chromium"
-          npx playwright install --with-deps chromium
-          echo "[setup] pip install speech libs"
-          python3 -m pip install SpeechRecognition pydub
-          # Buster extension
-          echo "[setup] download buster"
-          mkdir -p extensions/buster
-          wget -qO extensions/buster/buster.zip \
-            https://github.com/dessant/buster/releases/download/v3.1.0/buster_captcha_solver_for_humans-3.1.0-chrome.zip
-          mkdir -p extensions/buster/unpacked
-          7z x -y extensions/buster/buster.zip -oextensions/buster/unpacked > /dev/null
-          # Turnstile bypasser extension
-          echo "[setup] download turnstile bypasser"
-          mkdir -p extensions/turnstile-bypasser/unpacked
-          curl -sL "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" -o extensions/turnstile-bypasser/turnstile.crx
-          7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
+          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb ffmpeg python3 python3-pip google-chrome-stable
+          echo "[setup] pip install python deps"
+          python3 -m pip install --upgrade pip
+          python3 -m pip install DrissionPage xvfbwrapper SpeechRecognition pydub requests
 
-      - name: Fetch vps8 scripts
+      - name: Fetch vps8 script
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           curl -sL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
-            -o checkin.js \
-            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.js"
-          curl -sL \
-            -H "Authorization: Bearer ${REPO_TOKEN}" \
-            -o transcribe_audio.py \
-            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/transcribe_audio.py"
+            -o checkin.py \
+            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.py"
 
       - name: Check IP
         env:
@@ -232,15 +207,14 @@ jobs:
           curl -s --proxy "$vps8_PROXY" https://api.ipify.org && echo
           curl -s --proxy "$vps8_PROXY" https://ipinfo.io
 
-      - name: Run login flow
+      - name: Run python checkin flow
         env:
           vps8_ACCOUNTS: ${{ secrets.vps8_ACCOUNTS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           vps8_PROXY: http://127.0.0.1:8080
         run: |
-          mkdir -p screenshots
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node checkin.js
+          python3 checkin.py
 
       - uses: actions/upload-artifact@v4
         if: failure()
