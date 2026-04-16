@@ -1,0 +1,236 @@
+name: H2play Auto Renew 
+
+on:
+  workflow_dispatch:
+  #schedule:
+  # - cron: '0 */3 * * *'
+
+jobs:
+  run-renew:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Download Script from Private Repo
+        run: |
+          echo "从私库下载脚本..."
+          curl -H "Authorization: token ${{ secrets.REPO_TOKEN }}" \
+               -H "Accept: application/vnd.github.v3.raw" \
+               -o main.py \
+               -L https://api.github.com/repos/akina005/scripts/contents/scripts/host2play/main.py
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ffmpeg unzip
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get install -y google-chrome-stable
+
+      - name: 🛡️ 解析并启动代理节点
+        run: |
+          wget https://github.com/v2fly/v2ray-core/releases/download/v5.16.1/v2ray-linux-64.zip
+          unzip v2ray-linux-64.zip -d v2ray
+          chmod +x v2ray/v2ray
+          
+          echo "解析节点配置..."
+          NODE="${{ secrets.H2play_PROXY_NODE }}"
+          
+          # 判断节点类型并生成配置
+          if [[ $NODE == vless://* ]]; then
+            echo "检测到 VLESS 节点"
+            
+            # 解析 vless 链接
+            NODE_DATA=$(echo $NODE | sed 's/vless:\/\///')
+            UUID=$(echo $NODE_DATA | cut -d'@' -f1)
+            SERVER_INFO=$(echo $NODE_DATA | cut -d'@' -f2 | cut -d'?' -f1)
+            ADDRESS=$(echo $SERVER_INFO | cut -d':' -f1)
+            PORT=$(echo $SERVER_INFO | cut -d':' -f2)
+            
+            # 解析查询参数
+            PARAMS=$(echo $NODE_DATA | cut -d'?' -f2 | cut -d'#' -f1)
+            
+            # 提取各个参数
+            FLOW=$(echo "$PARAMS" | grep -oP 'flow=\K[^&]+' || echo "")
+            SECURITY=$(echo "$PARAMS" | grep -oP 'security=\K[^&]+' || echo "")
+            SNI=$(echo "$PARAMS" | grep -oP 'sni=\K[^&]+' || echo "")
+            FP=$(echo "$PARAMS" | grep -oP 'fp=\K[^&]+' || echo "")
+            PBK=$(echo "$PARAMS" | grep -oP 'pbk=\K[^&]+' || echo "")
+            
+            echo "节点信息: $ADDRESS:$PORT"
+            echo "UUID: $UUID"
+            echo "Flow: $FLOW"
+            echo "Security: $SECURITY"
+            echo "SNI: $SNI"
+            
+            # 根据 security 类型生成配置
+            if [[ "$SECURITY" == "reality" ]]; then
+              echo "使用 REALITY 配置"
+              cat > config.json << EOF
+          {
+            "inbounds": [{
+              "port": 8080,
+              "protocol": "http",
+              "settings": {}
+            }],
+            "outbounds": [{
+              "protocol": "vless",
+              "settings": {
+                "vnext": [{
+                  "address": "$ADDRESS",
+                  "port": $PORT,
+                  "users": [{
+                    "id": "$UUID",
+                    "encryption": "none",
+                    "flow": "$FLOW"
+                  }]
+                }]
+              },
+              "streamSettings": {
+                "network": "tcp",
+                "security": "reality",
+                "realitySettings": {
+                  "show": false,
+                  "fingerprint": "$FP",
+                  "serverName": "$SNI",
+                  "publicKey": "$PBK",
+                  "shortId": ""
+                }
+              }
+            }]
+          }
+          EOF
+            elif [[ "$SECURITY" == "tls" ]]; then
+              echo "使用 TLS 配置"
+              cat > config.json << EOF
+          {
+            "inbounds": [{
+              "port": 8080,
+              "protocol": "http",
+              "settings": {}
+            }],
+            "outbounds": [{
+              "protocol": "vless",
+              "settings": {
+                "vnext": [{
+                  "address": "$ADDRESS",
+                  "port": $PORT,
+                  "users": [{
+                    "id": "$UUID",
+                    "encryption": "none",
+                    "flow": "$FLOW"
+                  }]
+                }]
+              },
+              "streamSettings": {
+                "network": "tcp",
+                "security": "tls",
+                "tlsSettings": {
+                  "serverName": "$SNI",
+                  "fingerprint": "$FP"
+                }
+              }
+            }]
+          }
+          EOF
+            else
+              echo "使用基础 TCP 配置"
+              cat > config.json << EOF
+          {
+            "inbounds": [{
+              "port": 8080,
+              "protocol": "http",
+              "settings": {}
+            }],
+            "outbounds": [{
+              "protocol": "vless",
+              "settings": {
+                "vnext": [{
+                  "address": "$ADDRESS",
+                  "port": $PORT,
+                  "users": [{
+                    "id": "$UUID",
+                    "encryption": "none"
+                  }]
+                }]
+              },
+              "streamSettings": {
+                "network": "tcp"
+              }
+            }]
+          }
+          EOF
+            fi
+            
+          elif [[ $NODE == vmess://* ]]; then
+            echo "检测到 VMess 节点"
+            NODE_DATA=$(echo $NODE | sed 's/vmess:\/\///' | base64 -d)
+            
+            cat > config.json << EOF
+          {
+            "inbounds": [{
+              "port": 8080,
+              "protocol": "http",
+              "settings": {}
+            }],
+            "outbounds": [{
+              "protocol": "vmess",
+              "settings": {
+                "vnext": [$NODE_DATA]
+              }
+            }]
+          }
+          EOF
+          else
+            echo "⚠️ 未识别的节点格式，使用直连"
+            cat > config.json << EOF
+          {
+            "inbounds": [{
+              "port": 8080,
+              "protocol": "http",
+              "settings": {}
+            }],
+            "outbounds": [{
+              "protocol": "freedom"
+            }]
+          }
+          EOF
+          fi
+          
+          echo "生成的配置文件:"
+          cat config.json
+          
+          echo "启动 V2Ray..."
+          nohup ./v2ray/v2ray run -c config.json > v2ray.log 2>&1 &
+          sleep 5
+          
+          echo "V2Ray 日志:"
+          cat v2ray.log || echo "暂无日志"
+          
+          echo "测试本地代理连通性..."
+          curl -x http://127.0.0.1:8080 https://api.ipify.org -v || echo "代理测试失败，但继续执行"
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install DrissionPage xvfbwrapper requests SpeechRecognition pydub
+
+      - name: Run Renew Script
+        env:
+          RENEW_URL: ${{ secrets.RENEW_URL }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROXY: http://127.0.0.1:8080
+        run: python main.py
+
+      - name: Upload Error Screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debug-screenshots
+          path: ./*.html
+          retention-days: 5
