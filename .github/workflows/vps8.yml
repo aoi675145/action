@@ -1,9 +1,7 @@
-name: VPS8 Auto Checkin
+name: VPS8 Login
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: '26 0 * * *' # 北京时间每天早上 08:26 运行
 
   push:
     paths:
@@ -190,10 +188,11 @@ jobs:
           NEEDRESTART_MODE: a
         run: |
           sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb p7zip-full 2>&1 | tail -5
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb p7zip-full ffmpeg python3 python3-pip 2>&1 | tail -5
           npm init -y --silent
           npm install --silent playwright
           npx playwright install --with-deps chromium 2>&1 | tail -5
+          python3 -m pip install --quiet SpeechRecognition pydub
           # Buster extension
           mkdir -p extensions/buster
           wget -qO extensions/buster/buster.zip \
@@ -205,7 +204,7 @@ jobs:
           curl -sL "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" -o extensions/turnstile-bypasser/turnstile.crx
           7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
 
-      - name: Fetch vps8 checkin script
+      - name: Fetch vps8 scripts
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -213,6 +212,10 @@ jobs:
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -o checkin.js \
             "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.js"
+          curl -sL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o transcribe_audio.py \
+            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/transcribe_audio.py"
 
       - name: Check IP
         env:
