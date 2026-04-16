@@ -5,11 +5,21 @@ on:
   #schedule:
   # - cron: '0 */3 * * *'
 
+# 只保留最近 10 次运行记录
+run-name: "H2play Renew - ${{ github.run_number }}"
+
 jobs:
   run-renew:
     runs-on: ubuntu-latest
 
     steps:
+      - name: 清理旧的 workflow 运行记录
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 10
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -22,19 +32,22 @@ jobs:
                -H "Accept: application/vnd.github.v3.raw" \
                -o main.py \
                -L https://api.github.com/repos/akina005/scripts/contents/scripts/host2play/main.py
+          echo "脚本下载完成"
 
       - name: Install System Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg unzip
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb ffmpeg unzip wget curl > /dev/null 2>&1
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add - > /dev/null 2>&1
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-          sudo apt-get install -y google-chrome-stable
+          sudo apt-get update -qq
+          sudo apt-get install -y google-chrome-stable > /dev/null 2>&1
+          echo "系统依赖安装完成"
 
       - name: 🛡️ 解析并启动代理节点
         run: |
-          wget https://github.com/v2fly/v2ray-core/releases/download/v5.16.1/v2ray-linux-64.zip
-          unzip v2ray-linux-64.zip -d v2ray
+          wget -q https://github.com/v2fly/v2ray-core/releases/download/v5.16.1/v2ray-linux-64.zip
+          unzip -q v2ray-linux-64.zip -d v2ray
           chmod +x v2ray/v2ray
           
           echo "解析节点配置..."
@@ -61,15 +74,10 @@ jobs:
             FP=$(echo "$PARAMS" | grep -oP 'fp=\K[^&]+' || echo "")
             PBK=$(echo "$PARAMS" | grep -oP 'pbk=\K[^&]+' || echo "")
             
-            echo "节点信息: $ADDRESS:$PORT"
-            echo "UUID: $UUID"
-            echo "Flow: $FLOW"
-            echo "Security: $SECURITY"
-            echo "SNI: $SNI"
+            echo "节点已解析完成"
             
             # 根据 security 类型生成配置
             if [[ "$SECURITY" == "reality" ]]; then
-              echo "使用 REALITY 配置"
               cat > config.json << EOF
           {
             "inbounds": [{
@@ -105,7 +113,6 @@ jobs:
           }
           EOF
             elif [[ "$SECURITY" == "tls" ]]; then
-              echo "使用 TLS 配置"
               cat > config.json << EOF
           {
             "inbounds": [{
@@ -138,7 +145,6 @@ jobs:
           }
           EOF
             else
-              echo "使用基础 TCP 配置"
               cat > config.json << EOF
           {
             "inbounds": [{
@@ -201,23 +207,16 @@ jobs:
           EOF
           fi
           
-          echo "生成的配置文件:"
-          cat config.json
-          
           echo "启动 V2Ray..."
           nohup ./v2ray/v2ray run -c config.json > v2ray.log 2>&1 &
           sleep 5
-          
-          echo "V2Ray 日志:"
-          cat v2ray.log || echo "暂无日志"
-          
-          echo "测试本地代理连通性..."
-          curl -x http://127.0.0.1:8080 https://api.ipify.org -v || echo "代理测试失败，但继续执行"
+          echo "代理服务已启动"
 
       - name: Install Python Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install DrissionPage xvfbwrapper requests SpeechRecognition pydub
+          python -m pip install --upgrade pip > /dev/null 2>&1
+          pip install DrissionPage xvfbwrapper requests SpeechRecognition pydub > /dev/null 2>&1
+          echo "Python 依赖安装完成"
 
       - name: Run Renew Script
         env:
@@ -225,12 +224,19 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY: http://127.0.0.1:8080
-        run: python main.py
+        run: |
+          python main.py
+          echo "续期脚本执行完成"
 
-      - name: Upload Error Screenshots
-        uses: actions/upload-artifact@v4
+      - name: 发送截图到 Telegram
         if: always()
-        with:
-          name: debug-screenshots
-          path: ./*.html
-          retention-days: 5
+        run: |
+          if [ -f "final_screenshot.png" ]; then
+            curl -F chat_id="${{ secrets.TG_CHAT_ID }}" \
+                 -F photo=@final_screenshot.png \
+                 -F caption="H2play 续期结果截图" \
+                 https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendPhoto
+            echo "截图已发送到 Telegram"
+          else
+            echo "未找到截图文件"
+          fi
