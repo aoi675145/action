@@ -44,188 +44,167 @@ jobs:
           sudo apt-get install -y google-chrome-stable > /dev/null 2>&1
           echo "系统依赖安装完成"
 
-      - name: 🛡️ 解析并启动代理节点
+      - name: 🛡️ 安装并配置 Xray 代理
+        env:
+          H2play_PROXY_NODE: ${{ secrets.H2play_PROXY_NODE }}
         run: |
-          wget -q https://github.com/v2fly/v2ray-core/releases/download/v5.16.1/v2ray-linux-64.zip
-          unzip -q v2ray-linux-64.zip -d v2ray
-          chmod +x v2ray/v2ray
+          echo "下载 Xray..."
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
           
           echo "解析节点配置..."
-          NODE="${{ secrets.H2play_PROXY_NODE }}"
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          proxy_url = os.environ["H2play_PROXY_NODE"]
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
+
+              if stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                  }
+
+              if transport_type == "tcp":
+                  header_type = query.get("headerType", "none")
+                  stream_settings["tcpSettings"] = {
+                      "header": {"type": header_type}
+                  }
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {
+                      "path": query.get("path", "/"),
+                      "headers": headers,
+                  }
+              elif transport_type == "http":
+                  host_list = [h for h in query.get("host", "").split(",") if h]
+                  stream_settings["httpSettings"] = {
+                      "host": host_list,
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "encryption": qs.get("encryption", "none"),
+                              "flow": qs.get("flow", ""),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(qs, host),
+              }
+          else:
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+              }
+
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "alterId": int(vmess.get("aid", 0) or 0),
+                              "security": vmess.get("scy", "auto"),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(query, host),
+              }
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{
+                  "listen": "127.0.0.1",
+                  "port": 8080,
+                  "protocol": "http",
+              }],
+              "outbounds": [outbound],
+          }
+
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PY
           
-          # 判断节点类型并生成配置
-          if [[ $NODE == vless://* ]]; then
-            echo "检测到 VLESS 节点"
-            
-            # 解析 vless 链接
-            NODE_DATA=$(echo $NODE | sed 's/vless:\/\///')
-            UUID=$(echo $NODE_DATA | cut -d'@' -f1)
-            SERVER_INFO=$(echo $NODE_DATA | cut -d'@' -f2 | cut -d'?' -f1)
-            ADDRESS=$(echo $SERVER_INFO | cut -d':' -f1)
-            PORT=$(echo $SERVER_INFO | cut -d':' -f2)
-            
-            # 解析查询参数
-            PARAMS=$(echo $NODE_DATA | cut -d'?' -f2 | cut -d'#' -f1)
-            
-            # 提取各个参数
-            FLOW=$(echo "$PARAMS" | grep -oP 'flow=\K[^&]+' || echo "")
-            SECURITY=$(echo "$PARAMS" | grep -oP 'security=\K[^&]+' || echo "")
-            SNI=$(echo "$PARAMS" | grep -oP 'sni=\K[^&]+' || echo "")
-            FP=$(echo "$PARAMS" | grep -oP 'fp=\K[^&]+' || echo "")
-            PBK=$(echo "$PARAMS" | grep -oP 'pbk=\K[^&]+' || echo "")
-            
-            echo "节点已解析完成"
-            
-            # 根据 security 类型生成配置
-            if [[ "$SECURITY" == "reality" ]]; then
-              cat > config.json << EOF
-          {
-            "inbounds": [{
-              "port": 1080,
-              "protocol": "socks",
-              "settings": {
-                "auth": "noauth",
-                "udp": true
-              }
-            }],
-            "outbounds": [{
-              "protocol": "vless",
-              "settings": {
-                "vnext": [{
-                  "address": "$ADDRESS",
-                  "port": $PORT,
-                  "users": [{
-                    "id": "$UUID",
-                    "encryption": "none",
-                    "flow": "$FLOW"
-                  }]
-                }]
-              },
-              "streamSettings": {
-                "network": "tcp",
-                "security": "reality",
-                "realitySettings": {
-                  "show": false,
-                  "fingerprint": "$FP",
-                  "serverName": "$SNI",
-                  "publicKey": "$PBK",
-                  "shortId": ""
-                }
-              }
-            }]
-          }
-          EOF
-            elif [[ "$SECURITY" == "tls" ]]; then
-              cat > config.json << EOF
-          {
-            "inbounds": [{
-              "port": 1080,
-              "protocol": "socks",
-              "settings": {
-                "auth": "noauth",
-                "udp": true
-              }
-            }],
-            "outbounds": [{
-              "protocol": "vless",
-              "settings": {
-                "vnext": [{
-                  "address": "$ADDRESS",
-                  "port": $PORT,
-                  "users": [{
-                    "id": "$UUID",
-                    "encryption": "none",
-                    "flow": "$FLOW"
-                  }]
-                }]
-              },
-              "streamSettings": {
-                "network": "tcp",
-                "security": "tls",
-                "tlsSettings": {
-                  "serverName": "$SNI",
-                  "fingerprint": "$FP"
-                }
-              }
-            }]
-          }
-          EOF
-            else
-              cat > config.json << EOF
-          {
-            "inbounds": [{
-              "port": 1080,
-              "protocol": "socks",
-              "settings": {
-                "auth": "noauth",
-                "udp": true
-              }
-            }],
-            "outbounds": [{
-              "protocol": "vless",
-              "settings": {
-                "vnext": [{
-                  "address": "$ADDRESS",
-                  "port": $PORT,
-                  "users": [{
-                    "id": "$UUID",
-                    "encryption": "none"
-                  }]
-                }]
-              },
-              "streamSettings": {
-                "network": "tcp"
-              }
-            }]
-          }
-          EOF
-            fi
-            
-          elif [[ $NODE == vmess://* ]]; then
-            echo "检测到 VMess 节点"
-            NODE_DATA=$(echo $NODE | sed 's/vmess:\/\///' | base64 -d)
-            
-            cat > config.json << EOF
-          {
-            "inbounds": [{
-              "port": 1080,
-              "protocol": "socks",
-              "settings": {
-                "auth": "noauth",
-                "udp": true
-              }
-            }],
-            "outbounds": [{
-              "protocol": "vmess",
-              "settings": {
-                "vnext": [$NODE_DATA]
-              }
-            }]
-          }
-          EOF
-          else
-            echo "⚠️ 未识别的节点格式，使用直连"
-            cat > config.json << EOF
-          {
-            "inbounds": [{
-              "port": 1080,
-              "protocol": "socks",
-              "settings": {
-                "auth": "noauth",
-                "udp": true
-              }
-            }],
-            "outbounds": [{
-              "protocol": "freedom"
-            }]
-          }
-          EOF
-          fi
+          echo "启动 Xray 代理..."
+          nohup xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 3
           
-          echo "启动 V2Ray..."
-          nohup ./v2ray/v2ray run -c config.json > v2ray.log 2>&1 &
-          sleep 5
-          echo "代理服务已启动"
+          echo "测试代理连接..."
+          curl -s --proxy http://127.0.0.1:8080 https://api.ipify.org && echo || echo "代理测试失败，但继续执行"
 
       - name: Install Python Dependencies
         run: |
@@ -238,7 +217,7 @@ jobs:
           RENEW_URL: ${{ secrets.H2play_RENEW_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY: socks5://127.0.0.1:1080
+          PROXY: http://127.0.0.1:8080
         run: |
           python main.py
           echo "续期脚本执行完成"
