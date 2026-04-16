@@ -187,19 +187,27 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
         run: |
-          sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb p7zip-full ffmpeg python3 python3-pip 2>&1 | tail -5
-          npm init -y --silent
-          npm install --silent playwright
-          npx playwright install --with-deps chromium 2>&1 | tail -5
-          python3 -m pip install --quiet SpeechRecognition pydub
+          echo "[setup] apt update"
+          sudo -E apt-get update
+          echo "[setup] apt install"
+          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb p7zip-full ffmpeg python3 python3-pip
+          echo "[setup] npm init"
+          npm init -y
+          echo "[setup] npm install playwright"
+          npm install playwright
+          echo "[setup] playwright install chromium"
+          npx playwright install --with-deps chromium
+          echo "[setup] pip install speech libs"
+          python3 -m pip install SpeechRecognition pydub
           # Buster extension
+          echo "[setup] download buster"
           mkdir -p extensions/buster
           wget -qO extensions/buster/buster.zip \
             https://github.com/dessant/buster/releases/download/v3.1.0/buster_captcha_solver_for_humans-3.1.0-chrome.zip
           mkdir -p extensions/buster/unpacked
           7z x -y extensions/buster/buster.zip -oextensions/buster/unpacked > /dev/null
           # Turnstile bypasser extension
+          echo "[setup] download turnstile bypasser"
           mkdir -p extensions/turnstile-bypasser/unpacked
           curl -sL "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" -o extensions/turnstile-bypasser/turnstile.crx
           7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
