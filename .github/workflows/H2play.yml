@@ -221,16 +221,3 @@ jobs:
         run: |
           python main.py
           echo "续期脚本执行完成"
-
-      - name: 发送截图到 Telegram
-        if: always()
-        run: |
-          if [ -f "final_screenshot.png" ]; then
-            curl -F chat_id="${{ secrets.TG_CHAT_ID }}" \
-                 -F photo=@final_screenshot.png \
-                 -F caption="H2play 续期结果截图" \
-                 https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendPhoto
-            echo "截图已发送到 Telegram"
-          else
-            echo "未找到截图文件"
-          fi
