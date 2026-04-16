@@ -6,9 +6,6 @@ on:
     - cron: '30 5,16 * * *'      # 触发点: 05:30, 16:30
   workflow_dispatch:
 
-# 只保留最近 10 次运行记录
-run-name: "H2play Renew - ${{ github.run_number }}"
-
 jobs:
   run-renew:
     runs-on: ubuntu-latest
