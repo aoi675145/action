@@ -81,9 +81,12 @@ jobs:
               cat > config.json << EOF
           {
             "inbounds": [{
-              "port": 8080,
-              "protocol": "http",
-              "settings": {}
+              "port": 1080,
+              "protocol": "socks",
+              "settings": {
+                "auth": "noauth",
+                "udp": true
+              }
             }],
             "outbounds": [{
               "protocol": "vless",
@@ -116,9 +119,12 @@ jobs:
               cat > config.json << EOF
           {
             "inbounds": [{
-              "port": 8080,
-              "protocol": "http",
-              "settings": {}
+              "port": 1080,
+              "protocol": "socks",
+              "settings": {
+                "auth": "noauth",
+                "udp": true
+              }
             }],
             "outbounds": [{
               "protocol": "vless",
@@ -148,9 +154,12 @@ jobs:
               cat > config.json << EOF
           {
             "inbounds": [{
-              "port": 8080,
-              "protocol": "http",
-              "settings": {}
+              "port": 1080,
+              "protocol": "socks",
+              "settings": {
+                "auth": "noauth",
+                "udp": true
+              }
             }],
             "outbounds": [{
               "protocol": "vless",
@@ -179,9 +188,12 @@ jobs:
             cat > config.json << EOF
           {
             "inbounds": [{
-              "port": 8080,
-              "protocol": "http",
-              "settings": {}
+              "port": 1080,
+              "protocol": "socks",
+              "settings": {
+                "auth": "noauth",
+                "udp": true
+              }
             }],
             "outbounds": [{
               "protocol": "vmess",
@@ -196,9 +208,12 @@ jobs:
             cat > config.json << EOF
           {
             "inbounds": [{
-              "port": 8080,
-              "protocol": "http",
-              "settings": {}
+              "port": 1080,
+              "protocol": "socks",
+              "settings": {
+                "auth": "noauth",
+                "udp": true
+              }
             }],
             "outbounds": [{
               "protocol": "freedom"
@@ -223,7 +238,7 @@ jobs:
           RENEW_URL: ${{ secrets.H2play_RENEW_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY: http://127.0.0.1:8080
+          PROXY: socks5://127.0.0.1:1080
         run: |
           python main.py
           echo "续期脚本执行完成"
