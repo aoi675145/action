@@ -1,0 +1,82 @@
+name: VPS8 每日签到
+
+on:
+  schedule:
+    - cron: '19 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  sign:
+    name: 执行签到
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb ffmpeg google-chrome-stable fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei
+          pip install -q DrissionPage xvfbwrapper SpeechRecognition pydub requests
+
+      - name: 启用 WARP
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: client
+
+      - name: 配置 DNS
+        run: |
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\noptions timeout:2 attempts:3" | sudo tee /etc/resolv.conf
+          sudo chattr +i /etc/resolv.conf 2>/dev/null || true
+          sleep 3
+          echo "🌍 当前出口信息："
+          curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace | grep -E 'warp=|ip=|loc='
+
+      - name: 验证 WARP
+        run: |
+          for i in {1..30}; do
+            status=$(curl -s --max-time 5 https://www.cloudflare.com/cdn-cgi/trace | grep -oP 'warp=\K\w+' || echo "unknown")
+            [[ "$status" =~ ^(on|plus)$ ]] && echo "✅ WARP 已连接" && break
+            echo "⏳ WARP 连接中... ($i/30)"
+            sleep 2
+          done
+
+      - name: 执行 VPS8 签到
+        env:
+          VPS8: ${{ secrets.VPS8 }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python scripts/vps8/VPS8.py
+
+#      - name: 上传截图
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: screenshots-${{ github.run_number }}
+#          path: screenshots/*.png
+#          retention-days: 3
+#          if-no-files-found: ignore
+
+      - name: 清理历史运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
