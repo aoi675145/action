@@ -3,7 +3,7 @@ name: Weirdhost 多账号自动续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '19 16 22 4 *'   # 自动更新下次运行时间
+    - cron: '20 4 * * *'   # 自动更新下次运行时间
 
 permissions:
   contents: write
@@ -52,8 +52,6 @@ jobs:
           WEIRDHOST_COOKIE_3: ${{ secrets.WEIRDHOST_COOKIE_3 }}
           WEIRDHOST_COOKIE_4: ${{ secrets.WEIRDHOST_COOKIE_4 }}
           WEIRDHOST_COOKIE_5: ${{ secrets.WEIRDHOST_COOKIE_5 }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: akina005/action
         run: |
@@ -87,7 +85,43 @@ jobs:
           print(f"::notice::📅 当前最早到期时间: {due_dt.strftime('%Y-%m-%d %H:%M:%S')}")
           PYEOF
 
+      - name: 选择通知截图
+        id: pick_screenshot
+        if: always()
+        run: |
+          python - <<'PYEOF'
+          import os
+          from pathlib import Path
+
+          candidates = []
+          preferred_suffixes = [
+              "_btn_disabled.png",
+              "_final.png",
+              "_no_btn.png",
+              "_popup.png",
+              "_error.png",
+              "_login_fail.png",
+          ]
+
+          for suffix in preferred_suffixes:
+              for path in sorted(Path(".").glob(f"*{suffix}"), key=lambda p: p.stat().st_mtime, reverse=True):
+                  candidates.append(path)
+              if candidates:
+                  break
+
+          output_path = os.environ["GITHUB_OUTPUT"]
+          with open(output_path, "a", encoding="utf-8") as f:
+              if candidates:
+                  f.write(f"screenshot_path={candidates[0].as_posix()}\n")
+                  f.write("has_screenshot=true\n")
+                  print(f"::notice::🖼 已选择截图: {candidates[0].as_posix()}")
+              else:
+                  f.write("has_screenshot=false\n")
+                  print("::warning::未找到可用于通知的截图")
+          PYEOF
+
       - name: 修改下次 Cron 时间
+        id: update_cron
         if: success() && steps.extract_due.outputs.skip_update != 'true'
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -112,6 +146,8 @@ jobs:
           NEXT_DAY=$(date -u -d "@$NEXT_EPOCH" +"%-d")
           NEXT_MONTH=$(date -u -d "@$NEXT_EPOCH" +"%-m")
           NEW_CRON="$NEXT_MINUTE $NEXT_HOUR $NEXT_DAY $NEXT_MONTH *"
+          echo "next_run_date=$NEXT_DATE UTC" >> "$GITHUB_OUTPUT"
+          echo "next_cron=$NEW_CRON" >> "$GITHUB_OUTPUT"
 
           echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
           echo "::notice::📟 新 Cron: $NEW_CRON"
@@ -138,6 +174,138 @@ jobs:
           git -C workflow_repo commit -m "chore: update Weirdhost renew cron" -m "Next run: $NEXT_DATE UTC" -m "Cron: $NEW_CRON" -m "Due time: $DUE_DATETIME"
           git -C workflow_repo push
           echo "::notice::✅ Cron 更新成功"
+
+      - name: 发送 Telegram 统一通知
+        if: always()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          SCREENSHOT_PATH: ${{ steps.pick_screenshot.outputs.screenshot_path }}
+          DUE_DATETIME: ${{ steps.extract_due.outputs.due_datetime }}
+          NEXT_RUN_DATE: ${{ steps.update_cron.outputs.next_run_date }}
+          NEXT_CRON: ${{ steps.update_cron.outputs.next_cron }}
+        run: |
+          python - <<'PYEOF'
+          import json
+          import os
+          import re
+          import urllib.request
+          from datetime import datetime, timedelta
+          from pathlib import Path
+
+          token = os.environ.get("TG_BOT_TOKEN", "").strip()
+          chat_id = os.environ.get("TG_CHAT_ID", "").strip()
+          if not token or not chat_id:
+              print("[INFO] 未配置 TG_BOT_TOKEN 或 TG_CHAT_ID，跳过统一通知")
+              raise SystemExit(0)
+
+          log_text = Path("renew.log").read_text(encoding="utf-8", errors="ignore") if Path("renew.log").exists() else ""
+          due_text = os.environ.get("DUE_DATETIME", "").strip() or "未提取到"
+
+          account_text = "Unknown"
+          account_match = re.search(r"\[INFO\]\s*邮箱:\s*([^\s]+)", log_text)
+          if account_match:
+              account_text = account_match.group(1).strip()
+
+          remaining_text = "未提取到"
+          remaining_match = re.search(r"到期:\s*\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}\s*\|\s*剩余:\s*([^\(\n]+)", log_text)
+          if remaining_match:
+              remaining_text = remaining_match.group(1).strip()
+
+          server_status = "Unknown"
+          if "[INFO] 登录成功" in log_text:
+              server_status = "Running"
+
+          next_run = os.environ.get("NEXT_RUN_DATE", "").strip() or "未更新"
+          next_cron = os.environ.get("NEXT_CRON", "").strip()
+          if next_run != "未更新":
+              try:
+                  utc_dt = datetime.strptime(next_run, "%Y-%m-%d %H:%M UTC")
+                  beijing_dt = utc_dt + timedelta(hours=8)
+                  next_run = beijing_dt.strftime("%Y-%m-%d %H:%M 北京时间")
+              except ValueError:
+                  pass
+
+          result_text = "执行完成"
+          failure_reason = ""
+          if "续期按钮已禁用（可能在冷却期）" in log_text:
+              result_text = "续期按钮已禁用（可能在冷却期）"
+          elif "✅ 续期成功" in log_text or "续期成功!" in log_text:
+              result_text = "续期成功！"
+          else:
+              error_patterns = [
+                  r"\[ERROR\]\s*(.+)",
+                  r"\[WARN\]\s*结果:\s*(.+)",
+                  r"浏览器启动失败",
+              ]
+              for pattern in error_patterns:
+                  match = re.search(pattern, log_text)
+                  if match:
+                      failure_reason = match.group(1).strip() if match.groups() else match.group(0).strip()
+                      break
+              result_text = failure_reason or "执行失败"
+
+          message_lines = [
+              "Weiedhost 续期通知",
+              f"🎮 账号：{account_text}",
+              f"⏳  剩余 {remaining_text}",
+              f"📊 执行结果:  {result_text}",
+              f"💻 服务器状态： {server_status}",
+              f"🕐 下次运行时间: {next_run}",
+          ]
+
+          if result_text not in ["续期成功！", "续期按钮已禁用（可能在冷却期）"] and failure_reason:
+              message_lines.append(f"❌ 失败原因: {failure_reason}")
+
+          caption = "\n".join(message_lines)
+
+          screenshot_path = os.environ.get("SCREENSHOT_PATH", "").strip()
+          if screenshot_path and Path(screenshot_path).exists():
+              boundary = "----OpenCodeTelegramBoundary"
+              with open(screenshot_path, "rb") as img:
+                  image_bytes = img.read()
+
+              parts = []
+              def add_field(name, value):
+                  parts.append(f"--{boundary}\r\n".encode())
+                  parts.append(f'Content-Disposition: form-data; name="{name}"\r\n\r\n'.encode())
+                  parts.append(str(value).encode("utf-8"))
+                  parts.append(b"\r\n")
+
+              add_field("chat_id", chat_id)
+              add_field("caption", caption)
+              add_field("parse_mode", "HTML")
+              parts.append(f"--{boundary}\r\n".encode())
+              parts.append(f'Content-Disposition: form-data; name="photo"; filename="{Path(screenshot_path).name}"\r\n'.encode())
+              parts.append(b"Content-Type: image/png\r\n\r\n")
+              parts.append(image_bytes)
+              parts.append(b"\r\n")
+              parts.append(f"--{boundary}--\r\n".encode())
+              body = b"".join(parts)
+
+              req = urllib.request.Request(
+                  f"https://api.telegram.org/bot{token}/sendPhoto",
+                  data=body,
+                  headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+                  method="POST",
+              )
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  print(resp.read().decode("utf-8", errors="ignore"))
+          else:
+              payload = json.dumps({
+                  "chat_id": chat_id,
+                  "text": caption,
+                  "parse_mode": "HTML",
+              }).encode("utf-8")
+              req = urllib.request.Request(
+                  f"https://api.telegram.org/bot{token}/sendMessage",
+                  data=payload,
+                  headers={"Content-Type": "application/json"},
+                  method="POST",
+              )
+              with urllib.request.urlopen(req, timeout=30) as resp:
+                  print(resp.read().decode("utf-8", errors="ignore"))
+          PYEOF
 
       - name: 清理旧的工作流运行记录
         if: always()
