@@ -272,7 +272,7 @@ jobs:
 
         raise SystemExit(proc.wait())
         PY
-      env:
+        env:
         USE_PROXY: ${{ steps.start_xray.outputs.use_proxy || 'false' }}
 
     - name: 清理旧的工作流运行记录
