@@ -51,10 +51,17 @@ jobs:
           "https://api.github.com/repos/akina005/scripts/contents/scripts/bytenut/bytenut.py?ref=main"
 
     - name: Build Xray config
+      id: build_xray
       env:
         PROXY_URL: ${{ secrets.bytenut_PROXY_NODE }}
       run: |
-        python - <<'PY'
+        if [ -z "${PROXY_URL}" ]; then
+          echo "use_proxy=false" >> "$GITHUB_OUTPUT"
+          echo "[INFO] 未配置 bytenut_PROXY_NODE，使用直连"
+          exit 0
+        fi
+
+        if python - <<'PY'
         import base64
         import json
         import os
@@ -196,20 +203,36 @@ jobs:
         with open("xray-config.json", "w", encoding="ascii") as f:
             json.dump(config, f, indent=2)
         PY
+        then
+          echo "use_proxy=true" >> "$GITHUB_OUTPUT"
+          echo "[INFO] 代理节点解析成功"
+        else
+          echo "use_proxy=false" >> "$GITHUB_OUTPUT"
+          echo "[WARN] 代理节点解析失败，自动回退直连"
+        fi
 
     - name: Start Xray proxy
+      id: start_xray
+      if: steps.build_xray.outputs.use_proxy == 'true'
+      continue-on-error: true
       run: |
         nohup xray run -c xray-config.json > xray.log 2>&1 &
-        sleep 2
-        xray version
-        curl -s --proxy http://127.0.0.1:8080 https://api.ipify.org && echo
+        sleep 3
+        if curl -s --max-time 15 --proxy http://127.0.0.1:8080 https://api.ipify.org; then
+          echo
+          echo "use_proxy=true" >> "$GITHUB_OUTPUT"
+          echo "[INFO] Xray 代理可用"
+        else
+          echo "use_proxy=false" >> "$GITHUB_OUTPUT"
+          echo "[WARN] Xray 代理不可用，自动回退直连"
+        fi
 
     - name: Run Script
       env:
-        PROXY: http://127.0.0.1:8080
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         bytenut_ACCOUNTS: ${{ secrets.bytenut_ACCOUNTS }}
+        BYTENUT_NETWORK_MODE: ${{ steps.start_xray.outputs.use_proxy == 'true' && '代理' || '直连' }}
       run: |
         python - <<'PY'
         import os
@@ -218,6 +241,13 @@ jobs:
         import sys
 
         env = os.environ.copy()
+        if os.environ.get("USE_PROXY") == "true":
+            env["PROXY"] = "http://127.0.0.1:8080"
+            print("[INFO] 当前使用代理模式", flush=True)
+        else:
+            env.pop("PROXY", None)
+            print("[INFO] 当前使用直连模式", flush=True)
+
         proc = subprocess.Popen(
             ["xvfb-run", "-a", "python", "bytenut.py"],
             stdout=subprocess.PIPE,
@@ -242,6 +272,8 @@ jobs:
 
         raise SystemExit(proc.wait())
         PY
+      env:
+        USE_PROXY: ${{ steps.start_xray.outputs.use_proxy || 'false' }}
 
     - name: 清理旧的工作流运行记录
       if: always()
