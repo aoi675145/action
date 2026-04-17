@@ -61,9 +61,8 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF_NAME: ${{ github.ref_name }}
           WORKFLOW_FILE_PATH: .github/workflows/Weirdhost_renew.yml
-          PRIVATE_SCRIPT_PATH: private-scripts/scripts/Weirdhost/Weirdhost_renew.py
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/weirdhost_runner.py
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/weirdhost_renew.py
 
 #      - name: 上传调试截图
 #        if: always()
