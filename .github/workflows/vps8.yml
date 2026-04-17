@@ -3,6 +3,9 @@ name: VPS8 Login
 on:
   workflow_dispatch:
 
+  schedule:
+    - cron: "19 0 * * *"
+
   push:
     paths:
       - "checkin.py"
@@ -186,10 +189,12 @@ jobs:
           echo "[setup] apt update"
           sudo -E apt-get update
           echo "[setup] apt install"
-          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb ffmpeg python3 python3-pip google-chrome-stable
+          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb ffmpeg python3 python3-pip google-chrome-stable fontconfig fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei
           echo "[setup] pip install python deps"
           python3 -m pip install --upgrade pip
           python3 -m pip install DrissionPage xvfbwrapper SpeechRecognition pydub requests
+          echo "[setup] rebuild font cache"
+          fc-cache -fv
 
       - name: Fetch vps8 script
         env:
