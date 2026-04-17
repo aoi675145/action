@@ -3,7 +3,6 @@ name: Weirdhost 多账号自动续期
 
 on:
   schedule:
-    # 每天北京时间 12:20
     - cron: '20 4 * * *'
   workflow_dispatch:
 
@@ -16,12 +15,19 @@ jobs:
       actions: write
 
     steps:
-      - name: 拉取私有仓库
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
+          ref: main
           token: ${{ secrets.REPO_TOKEN }}
-          path: . 
+          path: private-scripts
+          sparse-checkout: |
+            scripts/Weirdhost/Weirdhost_renew.py
+          sparse-checkout-cone-mode: false
 
       - name: 设置 Python 环境
         uses: actions/setup-python@v4
@@ -53,25 +59,16 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          # 续期阈值
-          RENEW_THRESHOLD_DAYS: "5"       # Bot 服务器阈值（天）
-          FREE_RENEW_THRESHOLD_DAYS: "2"  # Minecraft 服务器阈值（天）
         run: |
-          # 路径已修改为私库实际路径：scripts/Weirdhost/Weirdhost_renew.py
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" \
-          python scripts/Weirdhost/Weirdhost_renew.py
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python private-scripts/scripts/Weirdhost/Weirdhost_renew.py
 
-      - name: 上传调试截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-screenshots
-          path: |
-            *.png
-            scripts/*.png
-            /tmp/*.png
-          if-no-files-found: ignore
-          retention-days: 3
+#      - name: 上传调试截图
+#        if: always()
+#        uses: actions/upload-artifact@v4
+#        with:
+#          name: debug-screenshots
+#          path: "*.png"
+#          retention-days: 3
 
       - name: 清理旧的工作流运行记录
         uses: Mattraks/delete-workflow-runs@v2
