@@ -1,21 +1,21 @@
-# .github/workflows/Weirdhost_renew.yml
 name: Weirdhost 多账号自动续期
 
 on:
-  schedule:
-    - cron: '20 4 * * *'
   workflow_dispatch:
+  schedule:
+    - cron: '20 4 * * *'   # 自动更新下次运行时间
+
+permissions:
+  contents: write
+  actions: write
 
 jobs:
-  add_time:
+  renew:
     runs-on: ubuntu-latest
     timeout-minutes: 30
-    permissions:
-      contents: write
-      actions: write
 
     steps:
-      - name: 检出代码
+      - name: 检出当前仓库
         uses: actions/checkout@v4
 
       - name: 拉取私库脚本
@@ -30,18 +30,14 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: 设置 Python 环境
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: '3.11'
 
       - name: 安装系统依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb x11-utils xdotool scrot
-
-      - name: 安装韩文字体
-        run: |
-          sudo apt-get install -y fonts-nanum fonts-noto-cjk
+          sudo apt-get install -y xvfb x11-utils xdotool scrot fonts-nanum fonts-noto-cjk
 
       - name: 安装 Python 依赖
         run: |
@@ -49,6 +45,7 @@ jobs:
           pip install seleniumbase aiohttp pynacl
 
       - name: 运行续期脚本
+        id: run_renew
         env:
           WEIRDHOST_COOKIE_1: ${{ secrets.WEIRDHOST_COOKIE_1 }}
           WEIRDHOST_COOKIE_2: ${{ secrets.WEIRDHOST_COOKIE_2 }}
@@ -59,20 +56,91 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: akina005/action
-          GITHUB_REF_NAME: ${{ github.ref_name }}
-          WORKFLOW_FILE_PATH: .github/workflows/Weirdhost_Renew.yml
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python private-scripts/scripts/Weirdhost/Weirdhost_renew.py
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python private-scripts/scripts/Weirdhost/Weirdhost_renew.py 2>&1 | tee renew.log
 
-#      - name: 上传调试截图
-#        if: always()
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: debug-screenshots
-#          path: "*.png"
-#          retention-days: 3
+      - name: 提取到期时间
+        id: extract_due
+        if: success()
+        run: |
+          python - <<'PYEOF'
+          import os
+          import re
+          from datetime import datetime
+          from pathlib import Path
+
+          log_path = Path("renew.log")
+          text = log_path.read_text(encoding="utf-8", errors="ignore") if log_path.exists() else ""
+          matches = re.findall(r"到期:\s*(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2})", text)
+
+          output_path = os.environ["GITHUB_OUTPUT"]
+          if not matches:
+              with open(output_path, "a", encoding="utf-8") as f:
+                  f.write("skip_update=true\n")
+              print("::warning::未能提取到期时间，跳过 Cron 更新")
+              raise SystemExit(0)
+
+          due_dt = min(datetime.strptime(value, "%Y-%m-%d %H:%M:%S") for value in matches)
+          with open(output_path, "a", encoding="utf-8") as f:
+              f.write(f"due_datetime={due_dt.strftime('%Y-%m-%d %H:%M:%S')}\n")
+              f.write("skip_update=false\n")
+          print(f"::notice::📅 当前最早到期时间: {due_dt.strftime('%Y-%m-%d %H:%M:%S')}")
+          PYEOF
+
+      - name: 修改下次 Cron 时间
+        if: success() && steps.extract_due.outputs.skip_update != 'true'
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          set -e
+          DUE_DATETIME="${{ steps.extract_due.outputs.due_datetime }}"
+          echo "📅 当前最早到期时间: $DUE_DATETIME"
+          DUE_EPOCH=$(date -u -d "$DUE_DATETIME" +%s)
+          CURRENT_EPOCH=$(date -u +%s)
+          TARGET_EPOCH=$((DUE_EPOCH - 48 * 3600))
+
+          if [ "$TARGET_EPOCH" -le "$CURRENT_EPOCH" ]; then
+            NEXT_EPOCH=$((CURRENT_EPOCH + 4 * 3600))
+            echo "::warning::距离到期不足 2 天，改为 4 小时后重试"
+          else
+            NEXT_EPOCH=$TARGET_EPOCH
+          fi
+
+          NEXT_DATE=$(date -u -d "@$NEXT_EPOCH" +"%Y-%m-%d %H:%M")
+          NEXT_MINUTE=$(date -u -d "@$NEXT_EPOCH" +"%-M")
+          NEXT_HOUR=$(date -u -d "@$NEXT_EPOCH" +"%-H")
+          NEXT_DAY=$(date -u -d "@$NEXT_EPOCH" +"%-d")
+          NEXT_MONTH=$(date -u -d "@$NEXT_EPOCH" +"%-m")
+          NEW_CRON="$NEXT_MINUTE $NEXT_HOUR $NEXT_DAY $NEXT_MONTH *"
+
+          echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
+          echo "::notice::📟 新 Cron: $NEW_CRON"
+
+          git clone "https://x-access-token:${REPO_TOKEN}@github.com/akina005/action.git" workflow_repo
+          WORKFLOW_FILE="workflow_repo/.github/workflows/Weirdhost_Renew.yml"
+          LINE_NUM=$(grep -n "cron: '" "$WORKFLOW_FILE" | head -n1 | cut -d: -f1)
+
+          if [ -z "$LINE_NUM" ]; then
+            echo "::error::找不到 cron 行"
+            exit 1
+          fi
+
+          sed -i "${LINE_NUM}c\    - cron: '$NEW_CRON'   # 自动更新下次运行时间" "$WORKFLOW_FILE"
+
+          if git -C workflow_repo diff --quiet ".github/workflows/Weirdhost_Renew.yml"; then
+            echo "::notice::没有变化需要提交"
+            exit 0
+          fi
+
+          git -C workflow_repo config user.name "github-actions[bot]"
+          git -C workflow_repo config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C workflow_repo add ".github/workflows/Weirdhost_Renew.yml"
+          git -C workflow_repo commit -m "chore: update Weirdhost renew cron" -m "Next run: $NEXT_DATE UTC" -m "Cron: $NEW_CRON" -m "Due time: $DUE_DATETIME"
+          git -C workflow_repo push
+          echo "::notice::✅ Cron 更新成功"
 
       - name: 清理旧的工作流运行记录
+        if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
