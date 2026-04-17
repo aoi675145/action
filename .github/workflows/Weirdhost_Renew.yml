@@ -3,7 +3,7 @@ name: Weirdhost 多账号自动续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '19 16 22 4 *'   # 自动更新下次运行时间
+    - cron: '20 4 * * *'   # 自动更新下次运行时间
 
 permissions:
   contents: write
@@ -95,6 +95,7 @@ jobs:
 
           candidates = []
           preferred_suffixes = [
+              "_expiry.png",
               "_btn_disabled.png",
               "_final.png",
               "_no_btn.png",
