@@ -2,8 +2,8 @@ name: Bytenut Auto Renew
 
 on:
   workflow_dispatch:
-#  schedule:
-#    - cron: '0 16 * * *'
+  schedule:
+    - cron: '0 16 * * *'
 
 # ⚠️ 必须添加权限配置，允许 Action 修改仓库文件
 permissions:
