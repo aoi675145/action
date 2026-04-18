@@ -6,10 +6,6 @@ on:
   schedule:
     - cron: '23 0 * * *'
 
-  push:
-    paths:
-      - "**.js"          # ⭐ 只要 JS 改动就触发
-      - ".github/workflows/**"
 
 jobs:
   run:
