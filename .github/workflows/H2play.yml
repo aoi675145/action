@@ -36,13 +36,17 @@ jobs:
           echo "脚本下载完成"
 
       - name: Install System Dependencies
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
         run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y xvfb ffmpeg wget curl fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei > /dev/null 2>&1
+          set -euo pipefail
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb ffmpeg wget curl fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei mesa-utils libgl1-mesa-glx libgl1-mesa-dri
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add - > /dev/null 2>&1
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-          sudo apt-get update -qq
-          sudo apt-get install -y google-chrome-stable > /dev/null 2>&1
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 google-chrome-stable
           echo "系统依赖安装完成"
 
       - name: 启用 WARP
@@ -53,6 +57,7 @@ jobs:
 
       - name: 配置 DNS
         run: |
+          set -euo pipefail
           sudo systemctl stop systemd-resolved 2>/dev/null || true
           sudo rm -f /etc/resolv.conf
           echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\noptions timeout:2 attempts:3" | sudo tee /etc/resolv.conf
@@ -63,12 +68,19 @@ jobs:
 
       - name: 验证 WARP
         run: |
+          set -euo pipefail
           for i in {1..30}; do
             status=$(curl -s --max-time 5 https://www.cloudflare.com/cdn-cgi/trace | grep -oP 'warp=\K\w+' || echo "unknown")
             [[ "$status" =~ ^(on|plus)$ ]] && echo "✅ WARP 已连接" && break
             echo "⏳ WARP 连接中... ($i/30)"
             sleep 2
           done
+
+      - name: 输出当前出口 IP
+        run: |
+          echo -n "出口 IP: "
+          curl -s https://api.ipify.org
+          echo
 
       - name: Install Python Dependencies
         run: |
@@ -81,6 +93,9 @@ jobs:
           RENEW_URL: ${{ secrets.H2play_RENEW_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          DISPLAY: :99
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: "llvmpipe"
         run: |
-          python main.py
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" python main.py
           echo "续期脚本执行完成"
