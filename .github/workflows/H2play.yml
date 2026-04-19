@@ -8,10 +8,7 @@ on:
 
 jobs:
   run-renew:
-    runs-on: ubuntu-22.04
-    permissions:
-      contents: read
-      actions: write
+    runs-on: ubuntu-latest
 
     steps:
       - name: 清理旧的 workflow 运行记录
@@ -24,7 +21,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.10'
 
       - name: Download Script from Private Repo
         run: |
@@ -36,51 +33,176 @@ jobs:
           echo "脚本下载完成"
 
       - name: Install System Dependencies
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          NEEDRESTART_MODE: a
         run: |
-          set -euo pipefail
-          sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb ffmpeg wget curl fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei mesa-utils libgl1-mesa-glx libgl1-mesa-dri
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb ffmpeg unzip wget curl > /dev/null 2>&1
           wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add - > /dev/null 2>&1
           sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-          sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 google-chrome-stable
+          sudo apt-get update -qq
+          sudo apt-get install -y google-chrome-stable > /dev/null 2>&1
           echo "系统依赖安装完成"
 
-      - name: 启用 WARP
-        uses: fscarmen/warp-on-actions@v1.3
-        with:
-          stack: dual
-          mode: client
-
-      - name: 配置 DNS
+      - name: 🛡️ 安装并配置 Xray 代理
+        env:
+          H2play_PROXY_NODE: ${{ secrets.H2play_PROXY_NODE }}
         run: |
-          set -euo pipefail
-          sudo systemctl stop systemd-resolved 2>/dev/null || true
-          sudo rm -f /etc/resolv.conf
-          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\noptions timeout:2 attempts:3" | sudo tee /etc/resolv.conf
-          sudo chattr +i /etc/resolv.conf 2>/dev/null || true
+          echo "下载 Xray..."
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+          
+          echo "解析节点配置..."
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          proxy_url = os.environ["H2play_PROXY_NODE"]
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
+
+              if stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                  }
+
+              if transport_type == "tcp":
+                  header_type = query.get("headerType", "none")
+                  stream_settings["tcpSettings"] = {
+                      "header": {"type": header_type}
+                  }
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {
+                      "path": query.get("path", "/"),
+                      "headers": headers,
+                  }
+              elif transport_type == "http":
+                  host_list = [h for h in query.get("host", "").split(",") if h]
+                  stream_settings["httpSettings"] = {
+                      "host": host_list,
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "encryption": qs.get("encryption", "none"),
+                              "flow": qs.get("flow", ""),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(qs, host),
+              }
+          else:
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+              }
+
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "alterId": int(vmess.get("aid", 0) or 0),
+                              "security": vmess.get("scy", "auto"),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(query, host),
+              }
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{
+                  "listen": "127.0.0.1",
+                  "port": 8080,
+                  "protocol": "http",
+              }],
+              "outbounds": [outbound],
+          }
+
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PY
+          
+          echo "启动 Xray 代理..."
+          nohup xray run -c xray-config.json > xray.log 2>&1 &
           sleep 3
-          echo "🌍 当前出口信息："
-          curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace | grep -E 'warp=|ip=|loc='
-
-      - name: 验证 WARP
-        run: |
-          set -euo pipefail
-          for i in {1..30}; do
-            status=$(curl -s --max-time 5 https://www.cloudflare.com/cdn-cgi/trace | grep -oP 'warp=\K\w+' || echo "unknown")
-            [[ "$status" =~ ^(on|plus)$ ]] && echo "✅ WARP 已连接" && break
-            echo "⏳ WARP 连接中... ($i/30)"
-            sleep 2
-          done
-
-      - name: 输出当前出口 IP
-        run: |
-          echo -n "出口 IP: "
-          curl -s https://api.ipify.org
-          echo
+          
+          echo "测试代理连接..."
+          curl -s --proxy http://127.0.0.1:8080 https://api.ipify.org && echo || echo "代理测试失败，但继续执行"
 
       - name: Install Python Dependencies
         run: |
@@ -93,9 +215,7 @@ jobs:
           RENEW_URL: ${{ secrets.H2play_RENEW_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          DISPLAY: :99
-          LIBGL_ALWAYS_SOFTWARE: "1"
-          GALLIUM_DRIVER: "llvmpipe"
+          PROXY: http://127.0.0.1:8080
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" python main.py
+          python main.py
           echo "续期脚本执行完成"
