@@ -30,27 +30,6 @@ jobs:
           sudo apt-get install -y xvfb wget unzip curl jq p7zip-full
           popd
 
-      - name: Install sing-box
-        run: |
-          mkdir -p runtime
-          pushd runtime
-          SING_BOX_URL=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r 'first(.assets[] | select(.name | test("linux-amd64.*\\.(tar\\.gz|tgz)$")) | .browser_download_url)')
-          if [ -z "$SING_BOX_URL" ] || [ "$SING_BOX_URL" = "null" ]; then
-            echo "[错误] 无法获取 sing-box 安装包下载地址。"
-            exit 1
-          fi
-          curl -fsSL -o sing-box.tar.gz "$SING_BOX_URL"
-          tar -xzf sing-box.tar.gz
-          SING_BOX_BIN=$(find . -type f -name sing-box | head -n 1)
-          if [ -z "$SING_BOX_BIN" ]; then
-            echo "[错误] 解压后未找到 sing-box 可执行文件。"
-            exit 1
-          fi
-          chmod +x "$SING_BOX_BIN"
-          sudo install "$SING_BOX_BIN" /usr/local/bin/sing-box
-          sing-box version
-          popd
-
       - name: Install Node dependencies
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
