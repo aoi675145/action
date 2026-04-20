@@ -1,118 +1,76 @@
-name: Host2Play Auto Renew
-
+name: FGH-Renew
 on:
   workflow_dispatch:
   schedule:
-    # 每天 0:30 / 8:30 UTC 运行
-    - cron: "30 0,8 * * *"
-
-permissions:
-  contents: read
+    - cron: '30 2,6,10,14,18,22 * * *'
 
 jobs:
-  renew:
-    runs-on: ubuntu-22.04
-    timeout-minutes: 30
+  run_fgh_renew:
+    runs-on: ubuntu-latest
     steps:
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
+      - name: 📥 检出仓库
+        uses: actions/checkout@v4
 
-      - name: Clone private scripts repository
+      - name: 🐍 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: 🛠️ 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable xvfb x11-utils xdotool scrot unzip curl
+
+      - name: 🐍 安装 Python 依赖
+        run: |
+          pip install seleniumbase requests
+          seleniumbase install chromedriver
+
+      - name: 📥 从私库拉取续期脚本
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          git clone https://${REPO_TOKEN}@github.com/akina005/scripts.git
-          ls -la scripts/scripts/host2play
+          test -n "$REPO_TOKEN"
+          curl -L \
+            -H "Authorization: Bearer $REPO_TOKEN" \
+            -H "Accept: application/vnd.github.raw+json" \
+            https://api.github.com/repos/akina005/scripts/contents/scripts/freegame/renew.py?ref=main \
+            -o renew.py
 
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb wget unzip curl jq p7zip-full
-
-      - name: Install Xray
-        run: |
-          curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip xray.zip
-          chmod +x xray
-          sudo mv xray /usr/local/bin/
-          xray version
-
-      - name: Install Node dependencies
-        working-directory: scripts/scripts/host2play
-        run: |
-          npm install
-          npx playwright install --with-deps chromium
-
-      - name: Download Buster extension
-        working-directory: scripts/scripts/host2play
-        run: |
-          mkdir -p extensions/buster
-          wget -qO extensions/buster/buster.zip \
-            https://github.com/dessant/buster/releases/download/v3.1.0/buster_captcha_solver_for_humans-3.1.0-chrome.zip
-      
-      - name: Unpack Buster extension
-        working-directory: scripts/scripts/host2play
-        run: |
-          mkdir -p extensions/buster/unpacked
-          7z x -y extensions/buster/buster.zip -oextensions/buster/unpacked
-
-      - name: Run renew script
-        working-directory: scripts/scripts/host2play
+      - name: 🚀 部署并启动 Xray 代理
         env:
-          H2PLAY_RENEW_URLS: ${{ secrets.H2PLAY_RENEW_URLS }}
-          H2PLAY_PROXY_NODE: ${{ secrets.H2PLAY_PROXY_NODE }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          XRAY_CONFIG: ${{ secrets.XRAY_CONFIG }}
         run: |
-          mkdir -p screenshots
-          xvfb-run -a node renew.js
+          # 1. 下载并解压 Xray-core
+          wget -qO xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip xray.zip xray -d ./xray-bin
+          chmod +x ./xray-bin/xray
+          
+          # 2. 将 GitHub Secret 中的 JSON 写入配置文件
+          echo "$XRAY_CONFIG" > ./xray-bin/config.json
+          
+          # 3. 后台静默启动 Xray
+          nohup ./xray-bin/xray run -c ./xray-bin/config.json > xray.log 2>&1 &
+          
+          # 4. 等待 3 秒确保代理启动，并测试连通性获取出口 IP
+          sleep 3
+          echo "测试代理出口 IP:"
+          curl -x socks5h://127.0.0.1:10808 https://api.ipify.org
+          echo ""
 
-      # =========================
-      # 🚀 发送 Telegram 截图通知
-      # =========================
-      - name: Send Telegram Notification
+      - name: 🚀 运行自动化续期脚本
+        env:
+          PYTHONIOENCODING: utf-8
+          FGH_ACCOUNT: ${{ secrets.FGH_ACCOUNT }}
+          FGH_COOKIES: ${{ secrets.FGH_COOKIES }}  
+          TG_BOT: ${{ secrets.TG_BOT }}
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python renew.py
+          
+      - name: 📸 上传运行截图 (仅保留最新)
         if: always()
-        working-directory: scripts/scripts/host2play
-        env:
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: |
-          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
-            echo "[TG通知] 未配置 Telegram 变量，跳过通知。"
-            exit 0
-          fi
-
-          shopt -s nullglob # 防止匹配不到文件时报错
-
-          # 遍历所有成功的截图
-          for img in screenshots/4_final_result_*.png; do
-            task_num=$(echo "$img" | grep -o '[0-9]\+\.png$' | grep -o '[0-9]\+')
-            curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendPhoto" \
-              -F "chat_id=${TG_CHAT_ID}" \
-              -F "photo=@$img" \
-              -F "caption=✅ 机器 [${task_num}] 续期流程执行完毕！请看图确认是否成功。"
-            echo "[TG通知] 发送成功截图: $img"
-            sleep 1 # 稍微停顿一下，防止被 TG 限制发送频率
-          done
-          
-          # 遍历所有崩溃的截图
-          for img in screenshots/error_crash_*.png; do
-            task_num=$(echo "$img" | grep -o '[0-9]\+\.png$' | grep -o '[0-9]\+')
-            curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendPhoto" \
-              -F "chat_id=${TG_CHAT_ID}" \
-              -F "photo=@$img" \
-              -F "caption=❌ 机器 [${task_num}] 续期发生崩溃！请检查截图报错。"
-            echo "[TG通知] 发送崩溃截图: $img"
-            sleep 1
-          done
-          
-      - name: Upload screenshots
         uses: actions/upload-artifact@v4
-        if: always()
         with:
-          name: screenshots
-          path: scripts/scripts/host2play/screenshots/**
-          if-no-files-found: warn
-          compression-level: 6
+          name: debug-screenshots
+          path: "*.png"
+          retention-days: 3
