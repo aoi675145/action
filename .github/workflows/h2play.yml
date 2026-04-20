@@ -1,4 +1,4 @@
-name: Host2Play Auto Renew 
+name: Host2Play Auto Renew (Node.js)
 
 on:
   workflow_dispatch:
@@ -40,8 +40,17 @@ jobs:
       - name: Install Playwright Browsers
         run: npx playwright install chromium --with-deps
 
-      - name: Setup Proxy (if configured)
-        if: ${{ secrets.H2PLAY_PROXY_NODE != '' }}
+      - name: Check if proxy is configured
+        id: check_proxy
+        run: |
+          if [ -n "${{ secrets.H2PLAY_PROXY_NODE }}" ]; then
+            echo "use_proxy=true" >> $GITHUB_OUTPUT
+          else
+            echo "use_proxy=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Setup Proxy
+        if: steps.check_proxy.outputs.use_proxy == 'true'
         run: |
           wget https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
           gunzip gost-linux-amd64-2.11.5.gz
