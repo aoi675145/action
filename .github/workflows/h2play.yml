@@ -45,28 +45,30 @@ jobs:
           npm install
           npx playwright install --with-deps chromium
 
-      - name: Download NopeCHA extension
+      - name: Download Buster extension
         working-directory: scripts/scripts/host2play
         run: |
-          mkdir -p extensions/nopecha
-          wget -O extensions/nopecha/chromium.zip https://github.com/NopeCHALLC/nopecha-extension/releases/latest/download/chromium.zip
+          mkdir -p extensions/buster
+          wget -qO extensions/buster/buster.zip \
+            https://github.com/dessant/buster/releases/download/v3.1.0/buster_captcha_solver_for_humans-3.1.0-chrome.zip
       
-      - name: Unpack NopeCHA extension
+      - name: Unpack Buster extension
         working-directory: scripts/scripts/host2play
         run: |
-          mkdir -p extensions/nopecha/unpacked
-          7z x -y extensions/nopecha/chromium.zip -oextensions/nopecha/unpacked
+          mkdir -p extensions/buster/unpacked
+          7z x -y extensions/buster/buster.zip -oextensions/buster/unpacked
 
       - name: Run renew script
         working-directory: scripts/scripts/host2play
         env:
-          H2P_EMAIL: ${{ secrets.H2P_EMAIL }}
-          H2P_PASSWORD: ${{ secrets.H2P_PASSWORD }}
           H2PLAY_RENEW_URLS: ${{ secrets.H2PLAY_RENEW_URLS }}
           H2PLAY_PROXY_NODE: ${{ secrets.H2PLAY_PROXY_NODE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          BYPASS_PROXY: http://127.0.0.1:8080
         run: |
           mkdir -p screenshots
-          xvfb-run -a node renew.js
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node renew.js
 
       # =========================
       # 🚀 发送 Telegram 截图通知
