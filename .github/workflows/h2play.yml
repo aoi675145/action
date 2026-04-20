@@ -247,3 +247,23 @@ jobs:
             screenshots/*.png
             xray.log
           retention-days: 7
+
+      - name: Cleanup old workflow runs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_NAME: Host2Play Auto Renew
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          repo = os.environ["REPO"]
+          name = os.environ["WORKFLOW_NAME"]
+          r = subprocess.run(["gh","api",f"repos/{repo}/actions/runs","--paginate"], capture_output=True, text=True, check=True)
+          runs = json.loads(r.stdout).get("workflow_runs", [])
+          target = sorted([x for x in runs if x.get("name") == name], key=lambda x: x.get("created_at",""), reverse=True)
+          for run in target[5:]:
+              rid = str(run["id"])
+              print(f"Deleting run {rid}")
+              subprocess.run(["gh","api","-X","DELETE",f"repos/{repo}/actions/runs/{rid}"], check=True)
+          PY
