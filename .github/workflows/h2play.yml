@@ -15,14 +15,21 @@ jobs:
         with:
           node-version: '18'
 
+      - name: Setup environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
+        run: |
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 p7zip-full 2>&1 | tail -5
+
       - name: Download Buster Extension
         run: |
           mkdir -p extensions/buster
           wget -qO extensions/buster/buster.zip \
             https://github.com/dessant/buster/releases/download/v3.1.0/buster_captcha_solver_for_humans-3.1.0-chrome.zip
           mkdir -p extensions/buster/unpacked
-          unzip -q extensions/buster/buster.zip -d extensions/buster/unpacked
-          rm extensions/buster/buster.zip
+          7z x -y extensions/buster/buster.zip -oextensions/buster/unpacked > /dev/null
 
       - name: Download Scripts from Private Repository
         run: |
@@ -69,7 +76,9 @@ jobs:
           H2PLAY_PROXY_NODE: ${{ secrets.H2PLAY_PROXY_NODE }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: node renew.js
+        run: |
+          mkdir -p screenshots
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x720x24" node renew.js
 
       - name: Upload Screenshots and Logs
         uses: actions/upload-artifact@v4
