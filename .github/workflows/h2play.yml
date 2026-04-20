@@ -30,6 +30,182 @@ jobs:
           sudo apt-get install -y xvfb wget unzip curl jq p7zip-full
           popd
 
+      - name: Install Xray
+        run: |
+          mkdir -p runtime
+          pushd runtime
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+          xray version
+          popd
+
+      - name: Build Xray config
+        env:
+          PROXY_URL: ${{ secrets.h2play_PROXY_NODE }}
+        run: |
+          mkdir -p runtime
+          pushd runtime
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          proxy_url = os.environ["PROXY_URL"]
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
+
+              if stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  tls_settings = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "allowInsecure": query.get("allowInsecure") in {"1", "true", "True"} or query.get("insecure") in {"1", "true", "True"},
+                  }
+                  stream_settings["tlsSettings"] = tls_settings
+
+              if transport_type == "tcp":
+                  header_type = query.get("headerType", "none")
+                  stream_settings["tcpSettings"] = {
+                      "header": {"type": header_type}
+                  }
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {
+                      "path": query.get("path", "/"),
+                      "headers": headers,
+                  }
+              elif transport_type == "http":
+                  host_list = [h for h in query.get("host", "").split(",") if h]
+                  stream_settings["httpSettings"] = {
+                      "host": host_list,
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "encryption": qs.get("encryption", "none"),
+                              "flow": qs.get("flow", ""),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(qs, host),
+              }
+          else:
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+                  "allowInsecure": str(vmess.get("allowInsecure", "")).lower(),
+                  "insecure": str(vmess.get("insecure", "")).lower(),
+              }
+
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "alterId": int(vmess.get("aid", 0) or 0),
+                              "security": vmess.get("scy", "auto"),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(query, host),
+              }
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{
+                  "listen": "127.0.0.1",
+                  "port": 8080,
+                  "protocol": "http",
+              }],
+              "outbounds": [outbound],
+          }
+
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PY
+          popd
+
+      - name: Start Xray proxy
+        run: |
+          mkdir -p runtime
+          pushd runtime
+          nohup xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 2
+          xray version
+          powershell -NoProfile -Command "Get-Content -Path xray.log -TotalCount 20" 2>/dev/null || sed -n '1,20p' xray.log || true
+          popd
+
       - name: Install Node dependencies
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -69,9 +245,9 @@ jobs:
       - name: Run renew script
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          h2play_PROXY_NODE: ${{ secrets.h2play_PROXY_NODE }}
           h2play_ACCOUNTS: ${{ secrets.h2play_ACCOUNTS }}
           h2play_RENEW_URLS: ${{ secrets.h2play_RENEW_URLS }}
+          BYPASS_PROXY: http://127.0.0.1:8080
         run: |
           if [ -z "$REPO_TOKEN" ]; then
             echo "[错误] 未配置 REPO_TOKEN，无法拉取私库脚本。"
@@ -86,6 +262,7 @@ jobs:
             -H "Accept: application/vnd.github.raw+json" \
             https://api.github.com/repos/akina005/scripts/contents/scripts/host2play/renew.js \
             -o renew.remote.js
+          curl -s --proxy http://127.0.0.1:8080 https://api.ipify.org && echo
           xvfb-run -a node renew.remote.js
           popd
 
