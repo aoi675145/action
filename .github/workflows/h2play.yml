@@ -23,14 +23,17 @@ jobs:
           node-version: 20
 
       - name: Install system dependencies
-        working-directory: host2paly-renew-main/scripts
         run: |
+          mkdir -p runtime
+          pushd runtime
           sudo apt-get update
           sudo apt-get install -y xvfb wget unzip curl jq p7zip-full
+          popd
 
       - name: Install sing-box
-        working-directory: host2paly-renew-main/scripts
         run: |
+          mkdir -p runtime
+          pushd runtime
           SING_BOX_DEB_URL=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r 'first(.assets[] | select(.name | test("linux-amd64\\.deb$")) | .browser_download_url)')
           if [ -z "$SING_BOX_DEB_URL" ] || [ "$SING_BOX_DEB_URL" = "null" ]; then
             echo "[错误] 无法获取 sing-box 安装包下载地址。"
@@ -39,9 +42,9 @@ jobs:
           curl -fsSL -o sing-box.deb "$SING_BOX_DEB_URL"
           sudo dpkg -i sing-box.deb
           sing-box version
+          popd
 
       - name: Install Node dependencies
-        working-directory: host2paly-renew-main/scripts
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -50,6 +53,8 @@ jobs:
             exit 1
           fi
 
+          mkdir -p runtime
+          pushd runtime
           curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -H "Accept: application/vnd.github.raw+json" \
@@ -57,21 +62,25 @@ jobs:
             -o package.json
           npm install
           npx playwright install --with-deps chromium
+          popd
 
       - name: Download NopeCHA extension
-        working-directory: host2paly-renew-main/scripts
         run: |
+          mkdir -p runtime
+          pushd runtime
           mkdir -p extensions/nopecha
           wget -O extensions/nopecha/chromium.zip https://github.com/NopeCHALLC/nopecha-extension/releases/latest/download/chromium.zip
+          popd
       
       - name: Unpack NopeCHA extension
-        working-directory: host2paly-renew-main/scripts
         run: |
+          mkdir -p runtime
+          pushd runtime
           mkdir -p extensions/nopecha/unpacked
           7z x -y extensions/nopecha/chromium.zip -oextensions/nopecha/unpacked
+          popd
 
       - name: Run renew script
-        working-directory: host2paly-renew-main/scripts
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           h2play_PROXY_NODE: ${{ secrets.h2play_PROXY_NODE }}
@@ -83,6 +92,8 @@ jobs:
             exit 1
           fi
 
+          mkdir -p runtime
+          pushd runtime
           mkdir -p screenshots
           curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
@@ -90,13 +101,13 @@ jobs:
             https://api.github.com/repos/akina005/scripts/contents/scripts/host2play/renew.js \
             -o renew.remote.js
           xvfb-run -a node renew.remote.js
+          popd
 
       # =========================
       # 🚀 发送 Telegram 截图通知
       # =========================
       - name: Send Telegram Notification
         if: always()
-        working-directory: host2paly-renew-main/scripts
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
@@ -106,6 +117,12 @@ jobs:
             exit 0
           fi
 
+          if [ ! -d runtime ]; then
+            echo "[错误] 未找到 runtime 目录，跳过通知。"
+            exit 0
+          fi
+
+          pushd runtime
           shopt -s nullglob # 防止匹配不到文件时报错
 
           # 遍历所有成功的截图
@@ -129,12 +146,13 @@ jobs:
             echo "[TG通知] 发送崩溃截图: $img"
             sleep 1
           done
+          popd
           
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: screenshots
-          path: host2paly-renew-main/scripts/screenshots/**
+          path: runtime/screenshots/**
           if-no-files-found: warn
           compression-level: 6
