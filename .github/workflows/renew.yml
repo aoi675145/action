@@ -1,0 +1,118 @@
+name: Host2Play Auto Renew
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每天 0:30 / 8:30 UTC 运行
+    - cron: "30 0,8 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  renew:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Clone private scripts repository
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          git clone https://${REPO_TOKEN}@github.com/akina005/scripts.git
+          ls -la scripts/scripts/host2play
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb wget unzip curl jq p7zip-full
+
+      - name: Install Xray
+        run: |
+          curl -L -o xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          unzip xray.zip
+          chmod +x xray
+          sudo mv xray /usr/local/bin/
+          xray version
+
+      - name: Install Node dependencies
+        working-directory: scripts/scripts/host2play
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Download Buster extension
+        working-directory: scripts/scripts/host2play
+        run: |
+          mkdir -p extensions/buster
+          wget -qO extensions/buster/buster.zip \
+            https://github.com/dessant/buster/releases/download/v3.1.0/buster_captcha_solver_for_humans-3.1.0-chrome.zip
+      
+      - name: Unpack Buster extension
+        working-directory: scripts/scripts/host2play
+        run: |
+          mkdir -p extensions/buster/unpacked
+          7z x -y extensions/buster/buster.zip -oextensions/buster/unpacked
+
+      - name: Run renew script
+        working-directory: scripts/scripts/host2play
+        env:
+          H2PLAY_RENEW_URLS: ${{ secrets.H2PLAY_RENEW_URLS }}
+          H2PLAY_PROXY_NODE: ${{ secrets.H2PLAY_PROXY_NODE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          mkdir -p screenshots
+          xvfb-run -a node renew.js
+
+      # =========================
+      # 🚀 发送 Telegram 截图通知
+      # =========================
+      - name: Send Telegram Notification
+        if: always()
+        working-directory: scripts/scripts/host2play
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+            echo "[TG通知] 未配置 Telegram 变量，跳过通知。"
+            exit 0
+          fi
+
+          shopt -s nullglob # 防止匹配不到文件时报错
+
+          # 遍历所有成功的截图
+          for img in screenshots/4_final_result_*.png; do
+            task_num=$(echo "$img" | grep -o '[0-9]\+\.png$' | grep -o '[0-9]\+')
+            curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendPhoto" \
+              -F "chat_id=${TG_CHAT_ID}" \
+              -F "photo=@$img" \
+              -F "caption=✅ 机器 [${task_num}] 续期流程执行完毕！请看图确认是否成功。"
+            echo "[TG通知] 发送成功截图: $img"
+            sleep 1 # 稍微停顿一下，防止被 TG 限制发送频率
+          done
+          
+          # 遍历所有崩溃的截图
+          for img in screenshots/error_crash_*.png; do
+            task_num=$(echo "$img" | grep -o '[0-9]\+\.png$' | grep -o '[0-9]\+')
+            curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendPhoto" \
+              -F "chat_id=${TG_CHAT_ID}" \
+              -F "photo=@$img" \
+              -F "caption=❌ 机器 [${task_num}] 续期发生崩溃！请检查截图报错。"
+            echo "[TG通知] 发送崩溃截图: $img"
+            sleep 1
+          done
+          
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: scripts/scripts/host2play/screenshots/**
+          if-no-files-found: warn
+          compression-level: 6
