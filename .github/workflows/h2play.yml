@@ -17,11 +17,12 @@ jobs:
 
       - name: Download Buster Extension
         run: |
-          mkdir -p extensions
-          cd extensions
-          wget https://github.com/dessant/buster/releases/download/v2.0.1/buster-2.0.1-chromium.zip
-          unzip buster-2.0.1-chromium.zip -d buster
-          rm buster-2.0.1-chromium.zip
+          mkdir -p extensions/buster
+          wget -qO extensions/buster/buster.zip \
+            https://github.com/dessant/buster/releases/download/v3.1.0/buster_captcha_solver_for_humans-3.1.0-chrome.zip
+          mkdir -p extensions/buster/unpacked
+          unzip -q extensions/buster/buster.zip -d extensions/buster/unpacked
+          rm extensions/buster/buster.zip
 
       - name: Download Scripts from Private Repository
         run: |
