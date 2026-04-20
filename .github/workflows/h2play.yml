@@ -23,13 +23,13 @@ jobs:
           node-version: 20
 
       - name: Install system dependencies
-        working-directory: scripts
+        working-directory: host2paly-renew-main/scripts
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb wget unzip curl jq p7zip-full
 
       - name: Install sing-box
-        working-directory: scripts
+        working-directory: host2paly-renew-main/scripts
         run: |
           SING_BOX_DEB_URL=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r 'first(.assets[] | select(.name | test("linux-amd64\\.deb$")) | .browser_download_url)')
           if [ -z "$SING_BOX_DEB_URL" ] || [ "$SING_BOX_DEB_URL" = "null" ]; then
@@ -41,25 +41,37 @@ jobs:
           sing-box version
 
       - name: Install Node dependencies
-        working-directory: scripts
+        working-directory: host2paly-renew-main/scripts
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
+          if [ -z "$REPO_TOKEN" ]; then
+            echo "[错误] 未配置 REPO_TOKEN，无法拉取私库 package.json。"
+            exit 1
+          fi
+
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw+json" \
+            https://api.github.com/repos/akina005/scripts/contents/scripts/host2play/package.json \
+            -o package.json
           npm install
           npx playwright install --with-deps chromium
 
       - name: Download NopeCHA extension
-        working-directory: scripts
+        working-directory: host2paly-renew-main/scripts
         run: |
           mkdir -p extensions/nopecha
           wget -O extensions/nopecha/chromium.zip https://github.com/NopeCHALLC/nopecha-extension/releases/latest/download/chromium.zip
       
       - name: Unpack NopeCHA extension
-        working-directory: scripts
+        working-directory: host2paly-renew-main/scripts
         run: |
           mkdir -p extensions/nopecha/unpacked
           7z x -y extensions/nopecha/chromium.zip -oextensions/nopecha/unpacked
 
       - name: Run renew script
-        working-directory: scripts
+        working-directory: host2paly-renew-main/scripts
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           h2play_PROXY_NODE: ${{ secrets.h2play_PROXY_NODE }}
@@ -84,7 +96,7 @@ jobs:
       # =========================
       - name: Send Telegram Notification
         if: always()
-        working-directory: scripts
+        working-directory: host2paly-renew-main/scripts
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
@@ -123,6 +135,6 @@ jobs:
         if: always()
         with:
           name: screenshots
-          path: scripts/screenshots/**
+          path: host2paly-renew-main/scripts/screenshots/**
           if-no-files-found: warn
           compression-level: 6
