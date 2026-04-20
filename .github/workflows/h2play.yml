@@ -1,0 +1,125 @@
+name: Host2Play Auto Renew
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 每天 0:30 / 8:30 UTC 运行
+    - cron: "30 0,8 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  renew:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install system dependencies
+        working-directory: scripts
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb wget unzip curl jq p7zip-full
+
+      - name: Install Hysteria2
+        working-directory: scripts
+        run: |
+          curl -L -o hysteria https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
+          chmod +x hysteria
+          sudo mv hysteria /usr/local/bin/
+          hysteria version
+
+      - name: Install Node dependencies
+        working-directory: scripts
+        run: |
+          npm install
+          npx playwright install --with-deps chromium
+
+      - name: Download NopeCHA extension
+        working-directory: scripts
+        run: |
+          mkdir -p extensions/nopecha
+          wget -O extensions/nopecha/chromium.zip https://github.com/NopeCHALLC/nopecha-extension/releases/latest/download/chromium.zip
+      
+      - name: Unpack NopeCHA extension
+        working-directory: scripts
+        run: |
+          mkdir -p extensions/nopecha/unpacked
+          7z x -y extensions/nopecha/chromium.zip -oextensions/nopecha/unpacked
+
+      - name: Run renew script
+        working-directory: scripts
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          H2P_EMAIL: ${{ secrets.H2P_EMAIL }}
+          H2P_PASSWORD: ${{ secrets.H2P_PASSWORD }}
+          RENEW_URLS: ${{ secrets.RENEW_URLS }} # 👈 注意这里改为了 RENEW_URLS
+          PROXY_JSON: ${{ secrets.PROXY_JSON }}
+        run: |
+          if [ -z "$REPO_TOKEN" ]; then
+            echo "[错误] 未配置 REPO_TOKEN，无法拉取私库脚本。"
+            exit 1
+          fi
+
+          mkdir -p screenshots
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw+json" \
+            https://api.github.com/repos/akina005/scripts/contents/scripts/host2play/renew.js \
+            -o renew.remote.js
+          xvfb-run -a node renew.remote.js
+
+      # =========================
+      # 🚀 发送 Telegram 截图通知
+      # =========================
+      - name: Send Telegram Notification
+        if: always()
+        working-directory: scripts
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+            echo "[TG通知] 未配置 Telegram 变量，跳过通知。"
+            exit 0
+          fi
+
+          shopt -s nullglob # 防止匹配不到文件时报错
+
+          # 遍历所有成功的截图
+          for img in screenshots/4_final_result_*.png; do
+            task_num=$(echo "$img" | grep -o '[0-9]\+\.png$' | grep -o '[0-9]\+')
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto" \
+              -F "chat_id=${TELEGRAM_CHAT_ID}" \
+              -F "photo=@$img" \
+              -F "caption=✅ 机器 [${task_num}] 续期流程执行完毕！请看图确认是否成功。"
+            echo "[TG通知] 发送成功截图: $img"
+            sleep 1 # 稍微停顿一下，防止被 TG 限制发送频率
+          done
+          
+          # 遍历所有崩溃的截图
+          for img in screenshots/error_crash_*.png; do
+            task_num=$(echo "$img" | grep -o '[0-9]\+\.png$' | grep -o '[0-9]\+')
+            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto" \
+              -F "chat_id=${TELEGRAM_CHAT_ID}" \
+              -F "photo=@$img" \
+              -F "caption=❌ 机器 [${task_num}] 续期发生崩溃！请检查截图报错。"
+            echo "[TG通知] 发送崩溃截图: $img"
+            sleep 1
+          done
+          
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots
+          path: scripts/screenshots/**
+          if-no-files-found: warn
+          compression-level: 6
