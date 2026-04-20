@@ -37,26 +37,141 @@ jobs:
             https://api.github.com/repos/akina005/scripts/contents/scripts/freegame/renew.py?ref=main \
             -o renew.py
 
-      - name: 🚀 部署并启动 Xray 代理
+      - name: 🚀 安装并启动代理
         env:
-          XRAY_CONFIG: ${{ secrets.XRAY_CONFIG }}
+          FGH_PROXY_NODE: ${{ secrets.FGH_PROXY_NODE }}
         run: |
-          # 1. 下载并解压 Xray-core
-          wget -qO xray.zip https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip xray.zip xray -d ./xray-bin
-          chmod +x ./xray-bin/xray
-          
-          # 2. 将 GitHub Secret 中的 JSON 写入配置文件
-          echo "$XRAY_CONFIG" > ./xray-bin/config.json
-          
-          # 3. 后台静默启动 Xray
-          nohup ./xray-bin/xray run -c ./xray-bin/config.json > xray.log 2>&1 &
-          
-          # 4. 等待 3 秒确保代理启动，并测试连通性获取出口 IP
-          sleep 3
-          echo "测试代理出口 IP:"
-          curl -x socks5h://127.0.0.1:10808 https://api.ipify.org
-          echo ""
+          if [ -z "$FGH_PROXY_NODE" ]; then
+            echo "[INFO] 未配置代理，直连模式"
+            exit 0
+          fi
+
+          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray
+          chmod +x xray/xray
+
+          python3 << 'PYEOF'
+          import os, sys, json
+          from urllib.parse import parse_qs, unquote
+
+          def mask(s):
+              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
+
+          url = os.environ.get("FGH_PROXY_NODE", "").strip()
+          if not url:
+              print("[ERROR] FGH_PROXY_NODE 为空")
+              sys.exit(1)
+
+          if not url.startswith("vless://"):
+              print("[ERROR] 当前工作流仅支持 vless:// 节点")
+              sys.exit(1)
+
+          content = url[8:]
+          if "#" in content:
+              content = content.rsplit("#", 1)[0]
+
+          uuid, rest = content.split("@", 1)
+          if "?" in rest:
+              host_port, params_str = rest.split("?", 1)
+          else:
+              host_port, params_str = rest, ""
+
+          if ":" in host_port:
+              address, port = host_port.rsplit(":", 1)
+          else:
+              address, port = host_port, "443"
+
+          params = parse_qs(params_str)
+          security = params.get("security", ["none"])[0]
+          network = params.get("type", ["tcp"])[0]
+          sni = params.get("sni", [address])[0]
+          fp = params.get("fp", ["chrome"])[0]
+          flow = params.get("flow", [""])[0]
+          pbk = params.get("pbk", [""])[0]
+          sid = params.get("sid", [""])[0]
+          spx = unquote(params.get("spx", ["/"])[0])
+          host = params.get("host", [sni])[0]
+          path = unquote(params.get("path", ["/"])[0])
+
+          print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [
+                  {"port": 1080, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                  {"port": 1081, "listen": "127.0.0.1", "protocol": "http"}
+              ],
+              "outbounds": [
+                  {
+                      "protocol": "vless",
+                      "settings": {
+                          "vnext": [{
+                              "address": address,
+                              "port": int(port),
+                              "users": [{"id": uuid, "encryption": "none"}]
+                          }]
+                      },
+                      "streamSettings": {
+                          "network": network,
+                          "security": security
+                      }
+                  }
+              ]
+          }
+
+          outbound = config["outbounds"][0]
+          if flow:
+              outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
+
+          if security == "reality":
+              outbound["streamSettings"]["realitySettings"] = {
+                  "serverName": sni,
+                  "fingerprint": fp,
+                  "publicKey": pbk,
+                  "shortId": sid,
+                  "spiderX": spx
+              }
+          elif security == "tls":
+              outbound["streamSettings"]["tlsSettings"] = {
+                  "serverName": sni,
+                  "fingerprint": fp,
+                  "allowInsecure": False
+              }
+
+          if network == "ws":
+              outbound["streamSettings"]["wsSettings"] = {
+                  "path": path,
+                  "headers": {"Host": host}
+              }
+          elif network == "grpc":
+              service_name = params.get("serviceName", [""])[0]
+              outbound["streamSettings"]["grpcSettings"] = {
+                  "serviceName": service_name
+              }
+
+          with open("xray_config.json", "w") as f:
+              json.dump(config, f, indent=2)
+
+          print("[INFO] ✅ VLESS 代理配置已生成")
+          PYEOF
+
+          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          sleep 5
+
+          echo "[INFO] 测试代理连接..."
+          for i in 1 2 3 4 5; do
+            if curl -x socks5h://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "[INFO] ✅ 代理连接成功"
+              echo "FGH_PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+              exit 0
+            fi
+            echo "[WARN] 尝试 $i/5..."
+            sleep 3
+          done
+
+          echo "[ERROR] ❌ 代理连接失败"
+          cat xray.log
+          exit 1
 
       - name: 🚀 运行自动化续期脚本
         env:
@@ -64,6 +179,7 @@ jobs:
           FGH_ACCOUNT: ${{ secrets.FGH_ACCOUNT }}
           FGH_COOKIES: ${{ secrets.FGH_COOKIES }}  
           TG_BOT: ${{ secrets.TG_BOT }}
+          FGH_PROXY_SERVER: ${{ env.FGH_PROXY_SERVER }}
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python renew.py
           
