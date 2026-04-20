@@ -28,13 +28,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb wget unzip curl jq p7zip-full
 
-      - name: Install Hysteria2
+      - name: Install sing-box
         working-directory: scripts
         run: |
-          curl -L -o hysteria https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
-          chmod +x hysteria
-          sudo mv hysteria /usr/local/bin/
-          hysteria version
+          SING_BOX_DEB_URL=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r 'first(.assets[] | select(.name | test("linux-amd64\\.deb$")) | .browser_download_url)')
+          if [ -z "$SING_BOX_DEB_URL" ] || [ "$SING_BOX_DEB_URL" = "null" ]; then
+            echo "[错误] 无法获取 sing-box 安装包下载地址。"
+            exit 1
+          fi
+          curl -fsSL -o sing-box.deb "$SING_BOX_DEB_URL"
+          sudo dpkg -i sing-box.deb
+          sing-box version
 
       - name: Install Node dependencies
         working-directory: scripts
@@ -58,10 +62,9 @@ jobs:
         working-directory: scripts
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          H2P_EMAIL: ${{ secrets.H2P_EMAIL }}
-          H2P_PASSWORD: ${{ secrets.H2P_PASSWORD }}
-          RENEW_URLS: ${{ secrets.RENEW_URLS }} # 👈 注意这里改为了 RENEW_URLS
-          PROXY_JSON: ${{ secrets.PROXY_JSON }}
+          h2play_PROXY_NODE: ${{ secrets.h2play_PROXY_NODE }}
+          h2play_ACCOUNTS: ${{ secrets.h2play_ACCOUNTS }}
+          h2play_RENEW_URLS: ${{ secrets.h2play_RENEW_URLS }}
         run: |
           if [ -z "$REPO_TOKEN" ]; then
             echo "[错误] 未配置 REPO_TOKEN，无法拉取私库脚本。"
@@ -83,10 +86,10 @@ jobs:
         if: always()
         working-directory: scripts
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
-          if [ -z "$TELEGRAM_BOT_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
             echo "[TG通知] 未配置 Telegram 变量，跳过通知。"
             exit 0
           fi
@@ -96,8 +99,8 @@ jobs:
           # 遍历所有成功的截图
           for img in screenshots/4_final_result_*.png; do
             task_num=$(echo "$img" | grep -o '[0-9]\+\.png$' | grep -o '[0-9]\+')
-            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto" \
-              -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendPhoto" \
+              -F "chat_id=${TG_CHAT_ID}" \
               -F "photo=@$img" \
               -F "caption=✅ 机器 [${task_num}] 续期流程执行完毕！请看图确认是否成功。"
             echo "[TG通知] 发送成功截图: $img"
@@ -107,8 +110,8 @@ jobs:
           # 遍历所有崩溃的截图
           for img in screenshots/error_crash_*.png; do
             task_num=$(echo "$img" | grep -o '[0-9]\+\.png$' | grep -o '[0-9]\+')
-            curl -s -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendPhoto" \
-              -F "chat_id=${TELEGRAM_CHAT_ID}" \
+            curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendPhoto" \
+              -F "chat_id=${TG_CHAT_ID}" \
               -F "photo=@$img" \
               -F "caption=❌ 机器 [${task_num}] 续期发生崩溃！请检查截图报错。"
             echo "[TG通知] 发送崩溃截图: $img"
