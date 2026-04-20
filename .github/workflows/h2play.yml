@@ -1,4 +1,4 @@
-name: Host2Play Auto Renew (Node.js)
+name: Host2Play Auto Renew 
 
 on:
   workflow_dispatch:
