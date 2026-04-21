@@ -17,7 +17,7 @@ jobs:
       - name: 拉取私有仓库
         uses: actions/checkout@v4
         with:
-          repository: ${{ github.repository_owner }}/scripts
+          repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
@@ -32,9 +32,9 @@ jobs:
 
       - name: 安装并启动代理
         env:
-          PROXY_NODE: ${{ secrets.PROXY_NODE_US }}
+          HIDEN_PROXY_NODE: ${{ secrets.HIDEN_PROXY_NODE }}
         run: |
-          if [ -z "$PROXY_NODE" ]; then
+          if [ -z "$HIDEN_PROXY_NODE" ]; then
             echo "[INFO] 未配置代理，直连模式"
             exit 0
           fi
@@ -49,9 +49,9 @@ jobs:
           def mask(s):
               return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
 
-          url = os.environ.get("PROXY_NODE", "").strip()
+          url = os.environ.get("HIDEN_PROXY_NODE", "").strip()
           if not url:
-              print("[ERROR] PROXY_NODE 为空")
+              print("[ERROR] HIDEN_PROXY_NODE 为空")
               sys.exit(1)
 
           if url.startswith("vless://"):
@@ -358,7 +358,7 @@ jobs:
           HIDENCLOUD: ${{ secrets.HIDENCLOUD }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+          HIDEN_PROXY_NODE: ${{ env.PROXY_SERVER }}
         run: |
           python3 scripts/hiden/main.py 2>&1 | tee renew.log
 
