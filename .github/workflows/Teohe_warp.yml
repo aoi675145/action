@@ -20,6 +20,27 @@ jobs:
         with:
           node-version: 20
 
+      - name: Setup environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
+        run: |
+          set -euo pipefail
+          APP_DIR="teohe-warp"
+          mkdir -p "$APP_DIR"
+
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb p7zip-full ffmpeg python3 python3-pip 2>&1 | tail -5
+          cd "$APP_DIR"
+          npm init -y --silent
+          npm install --silent playwright
+          python3 -m pip install --quiet SpeechRecognition pydub
+           npx playwright install --with-deps chromium 2>&1 | tail -5
+           # Turnstile bypasser extension
+           mkdir -p extensions/turnstile-bypasser/unpacked
+           curl -fsSL "https://github.com/oyz6/action/releases/download/Verification/turnstile.crx" -o extensions/turnstile-bypasser/turnstile.crx
+           7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
+
       - name: 启用 WARP
         uses: fscarmen/warp-on-actions@v1.3
         with:
@@ -37,32 +58,14 @@ jobs:
 
           for i in {1..30}; do
             status=$(curl -s --max-time 5 https://www.cloudflare.com/cdn-cgi/trace | grep -oP 'warp=\K\w+' || echo unknown)
-            [[ "$status" =~ ^(on|plus)$ ]] && echo "WARP 已连接" && break
+            if [[ "$status" =~ ^(on|plus)$ ]]; then
+              echo "WARP 已连接"
+              break
+            fi
             echo "WARP 连接中... ($i/30)"
             sleep 2
           done
-          echo -n "出口 IP: " && curl -s https://api.ipify.org && echo
-
-      - name: Setup environment
-        env:
-          DEBIAN_FRONTEND: noninteractive
-          NEEDRESTART_MODE: a
-        run: |
-          set -euo pipefail
-          APP_DIR="teohe-warp"
-          mkdir -p "$APP_DIR"
-
-          sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb p7zip-full ffmpeg python3 python3-pip 2>&1 | tail -5
-          cd "$APP_DIR"
-          npm init -y --silent
-          npm install --silent playwright
-          python3 -m pip install --quiet SpeechRecognition pydub
-          npx playwright install --with-deps chromium 2>&1 | tail -5
-          # Turnstile bypasser extension
-          mkdir -p extensions/turnstile-bypasser/unpacked
-          curl -fsSL "https://github.com/oyz6/action/releases/download/Verification/turnstile.crx" -o extensions/turnstile-bypasser/turnstile.crx
-          7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
+          echo -n "出口 IP: " && curl -s --max-time 15 https://api.ipify.org && echo
 
       - name: Check IP
         run: |
