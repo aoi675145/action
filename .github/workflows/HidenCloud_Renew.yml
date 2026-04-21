@@ -3,7 +3,7 @@ name: HidenCloud 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 3 26 4 *'   # 自动更新下次运行时间
+    - cron: '33 3 27 4 *'   # 自动更新下次运行时间
 
 permissions:
   contents: write
@@ -361,17 +361,6 @@ jobs:
           HIDEN_PROXY_NODE: ${{ env.PROXY_SERVER }}
         run: |
           python3 scripts/hiden/main.py 2>&1 | tee renew.log
-
-     # 如需上传日志截图，可取消注释以下步骤
-      - name: 上传日志和截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: hidencloud-logs
-          path: |
-            screenshots/*.png
-            renew.log
-          retention-days: 3
 
       - name: 删除旧浏览器状态缓存
         if: always()
