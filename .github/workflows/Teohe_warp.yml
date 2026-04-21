@@ -49,16 +49,8 @@ jobs:
           NEEDRESTART_MODE: a
         run: |
           set -euo pipefail
-          if [ -f "teohe-warp/warp.js" ]; then
-            APP_DIR="teohe-warp"
-          elif [ -f "warp.js" ]; then
-            APP_DIR="."
-          else
-            echo "warp.js not found"
-            pwd
-            ls -la
-            exit 1
-          fi
+          APP_DIR="teohe-warp"
+          mkdir -p "$APP_DIR"
 
           sudo -E apt-get update -qq
           sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb p7zip-full ffmpeg python3 python3-pip 2>&1 | tail -5
@@ -82,17 +74,8 @@ jobs:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           set -euo pipefail
-          if [ -f "teohe-warp/warp.js" ]; then
-            APP_DIR="teohe-warp"
-          elif [ -f "warp.js" ]; then
-            APP_DIR="."
-          else
-            echo "warp.js not found"
-            pwd
-            ls -la
-            exit 1
-          fi
-
+          APP_DIR="teohe-warp"
+          mkdir -p "$APP_DIR"
           cd "$APP_DIR"
           curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
@@ -107,17 +90,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           set -euo pipefail
-          if [ -f "teohe-warp/warp.js" ]; then
-            APP_DIR="teohe-warp"
-          elif [ -f "warp.js" ]; then
-            APP_DIR="."
-          else
-            echo "warp.js not found"
-            pwd
-            ls -la
-            exit 1
-          fi
-
+          APP_DIR="teohe-warp"
           cd "$APP_DIR"
           mkdir -p screenshots
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node warp.js
