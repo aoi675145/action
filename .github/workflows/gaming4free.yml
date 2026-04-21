@@ -2,8 +2,10 @@ name: gaming4free renew (WARP)
 
 on:
   workflow_dispatch:
+
   schedule:
-    - cron: "5 * * * *"   
+    - cron: "0 * * * *"   # 每小时第 0 分钟执行一次（UTC）
+
 jobs:
   run:
     runs-on: ubuntu-22.04
