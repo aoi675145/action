@@ -73,24 +73,7 @@ jobs:
           npx playwright install chromium
 
       # =========================
-      # 🟡 4️⃣ 下载 Buster
-      # =========================
-      - name: Download Buster
-        run: |
-          mkdir -p private-repo/scripts/gm4/extensions/buster
-          wget -O private-repo/scripts/gm4/extensions/buster/buster.zip \
-            https://github.com/dessant/buster/releases/download/v3.1.0/buster_captcha_solver_for_humans-3.1.0-chrome.zip
-
-      - name: Unzip Buster
-        run: |
-          mkdir -p private-repo/scripts/gm4/extensions/buster/unpacked
-          7z x -y private-repo/scripts/gm4/extensions/buster/buster.zip -oprivate-repo/scripts/gm4/extensions/buster/unpacked
-
-          echo "📦 Buster 解压完成"
-          ls -R private-repo/scripts/gm4/extensions/buster/unpacked | head -50
-
-      # =========================
-      # 🟡 5️⃣ 调试 IP
+      # 🟡 4️⃣ 调试 IP
       # =========================
       - name: Check IP
         run: |
@@ -100,7 +83,7 @@ jobs:
           curl -s https://ipinfo.io
 
       # =========================
-      # 🟡 6️⃣ 运行脚本
+      # 🟡 5️⃣ 运行脚本
       # =========================
       - name: Run script
         env:
@@ -111,7 +94,7 @@ jobs:
           xvfb-run -a node private-repo/scripts/gm4/renew.js
 
       # =========================
-      # 🟡 7️⃣ 上传截图
+      # 🟡 6️⃣ 上传截图
       # =========================
       - name: Upload screenshots
         uses: actions/upload-artifact@v4
