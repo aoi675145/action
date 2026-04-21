@@ -53,7 +53,7 @@ jobs:
 
       - name: 🚀 运行续期脚本
         env:
-          FREEZEHOST_DISCORD_TOKEN: ${{ secrets.FREEZEHOST_DISCORD_TOKEN }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python scripts_repo/scripts/freezehost/renew.py
@@ -61,8 +61,7 @@ jobs:
       - name: ⚙️ 自动修改下一次运行时间
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          # ✅ 已经根据你的截图修正了文件名
-          WORKFLOW_FILE: .github/workflows/FreezeHost_Renew.yml 
+          WORKFLOW_FILE: .github/workflows/FreezeHost_Renew.yml
         run: |
           python3 << 'EOF'
           import re
@@ -101,19 +100,31 @@ jobs:
           new_cron = f"{cron_minute} {cron_hour} {cron_day} {cron_month} *"
           next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC ({reason})"
 
-          if os.path.exists(workflow_file):
-              with open(workflow_file, 'r', encoding='utf-8') as f:
-                  content = f.read()
-              
-              # 替换 cron 行
-              new_content = re.sub(r"- cron: '18 15 21 4 *' # 下一个: 2026-04-21 15:18 UTC (到期前2天自动执行)
-              
-              with open(workflow_file, 'w', encoding='utf-8') as f:
-                  f.write(new_content)
-              print(f"✅ 成功计算并更新计划: {new_cron}")
-          else:
-              print(f"❌ 找不到文件: {workflow_file}")
-              exit(1)
+           if os.path.exists(workflow_file):
+               with open(workflow_file, 'r', encoding='utf-8') as f:
+                   content = f.read()
+
+               # 替换 schedule 里的 cron 行，并同步更新注释里的下次执行时间。
+               cron_pattern = r"(^\s*-\s+cron:\s*)'[^']+'(\s*#.*)?$"
+               cron_replacement = rf"\1'{new_cron}' # 下一个: {next_date_str}"
+               new_content, count = re.subn(
+                   cron_pattern,
+                   cron_replacement,
+                   content,
+                   count=1,
+                   flags=re.MULTILINE,
+               )
+
+               if count == 0:
+                   print("❌ 未找到可替换的 cron 行")
+                   exit(1)
+
+               with open(workflow_file, 'w', encoding='utf-8') as f:
+                   f.write(new_content)
+               print(f"✅ 成功计算并更新计划: {new_cron}")
+           else:
+               print(f"❌ 找不到文件: {workflow_file}")
+               exit(1)
           EOF
 
           git config --global user.name "github-actions[bot]"
