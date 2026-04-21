@@ -57,6 +57,15 @@ jobs:
           echo "[setup] rebuild font cache"
           fc-cache -fv
 
+      - name: Fetch vps8 script
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o checkin.py \
+            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.py"
+
       - name: Check IP
         run: |
           curl -s https://api.ipify.org && echo
