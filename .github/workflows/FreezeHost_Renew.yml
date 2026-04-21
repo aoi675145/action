@@ -64,8 +64,9 @@ jobs:
           WORKFLOW_FILE: .github/workflows/FreezeHost_Renew.yml
         run: |
           python3 << 'EOF'
-          import re
           import os
+          import re
+          import sys
           from datetime import datetime, timedelta, timezone
 
           workflow_file = os.environ.get("WORKFLOW_FILE")
@@ -100,40 +101,41 @@ jobs:
           new_cron = f"{cron_minute} {cron_hour} {cron_day} {cron_month} *"
           next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC ({reason})"
 
-           if os.path.exists(workflow_file):
-               with open(workflow_file, 'r', encoding='utf-8') as f:
-                   content = f.read()
+          if os.path.exists(workflow_file):
+              with open(workflow_file, 'r', encoding='utf-8') as f:
+                  content = f.read()
 
-               # 替换 schedule 里的 cron 行，并同步更新注释里的下次执行时间。
-               cron_pattern = r"(^\s*-\s+cron:\s*)'[^']+'(\s*#.*)?$"
-               cron_replacement = rf"\1'{new_cron}' # 下一个: {next_date_str}"
-               new_content, count = re.subn(
-                   cron_pattern,
-                   cron_replacement,
-                   content,
-                   count=1,
-                   flags=re.MULTILINE,
-               )
+              # 替换 schedule 里的 cron 行，并同步更新注释里的下次执行时间。
+              cron_pattern = r"(^\s*-\s+cron:\s*)'[^']+'(\s*#.*)?$"
+              cron_replacement = rf"\1'{new_cron}' # 下一个: {next_date_str}"
+              new_content, count = re.subn(
+                  cron_pattern,
+                  cron_replacement,
+                  content,
+                  count=1,
+                  flags=re.MULTILINE,
+              )
 
-               if count == 0:
-                   print("❌ 未找到可替换的 cron 行")
-                   exit(1)
+              if count == 0:
+                  print("❌ 未找到可替换的 cron 行")
+                  sys.exit(1)
 
-               with open(workflow_file, 'w', encoding='utf-8') as f:
-                   f.write(new_content)
-               print(f"✅ 成功计算并更新计划: {new_cron}")
-           else:
-               print(f"❌ 找不到文件: {workflow_file}")
-               exit(1)
+              with open(workflow_file, 'w', encoding='utf-8') as f:
+                  f.write(new_content)
+              print(f"✅ 成功计算并更新计划: {new_cron}")
+          else:
+              print(f"❌ 找不到文件: {workflow_file}")
+              sys.exit(1)
           EOF
 
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
           git add $WORKFLOW_FILE
-          git commit -m "🚀 auto: 智能调整下一次续期时间" || echo "无变更"
-          
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
-          git push
+          git diff --cached --quiet -- "$WORKFLOW_FILE"
+          if [ $? -eq 0 ]; then
+            echo "无变更"
+          else
+            git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" commit -m "auto: 调整下一次续期时间"
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
+          fi
 
       - name: 🧹 清理运行记录
         uses: Mattraks/delete-workflow-runs@v2
