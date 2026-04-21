@@ -71,6 +71,16 @@ jobs:
           done
           echo -n "出口 IP: " && curl -s https://api.ipify.org && echo
 
+      - name: 拉取私库 warp.js
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            -o warp.js \
+            "https://api.github.com/repos/akina005/scripts/contents/scripts/teohe/warp.js?ref=main"
+
       - name: 执行续期
         env:
           teohe_ACCOUNTS: ${{ secrets.teohe_ACCOUNTS }}
@@ -80,17 +90,17 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
         run: |
-          mkdir -p teohe-warp/screenshots
+          mkdir -p screenshots
           xvfb-run --auto-servernum \
             --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
-            node teohe-warp/warp.js
+            node warp.js
 
       - name: 上传截图
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-${{ github.run_number }}
-          path: teohe-warp/screenshots/*.png
+          path: screenshots/*.png
           retention-days: 7
           if-no-files-found: ignore
 
