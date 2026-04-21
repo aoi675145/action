@@ -1,4 +1,4 @@
-name: Teohe Auto Renew
+name: Teohe Auto Renew (warp)
 
 on:
   workflow_dispatch:
