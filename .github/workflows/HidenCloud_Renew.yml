@@ -3,7 +3,7 @@ name: HidenCloud 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '38 3 19 4 *'   # 自动更新下次运行时间
+    - cron: '33 3 27 4 *'   # 自动更新下次运行时间
 
 permissions:
   contents: write
@@ -17,7 +17,7 @@ jobs:
       - name: 拉取私有仓库
         uses: actions/checkout@v4
         with:
-          repository: akina005/scripts
+          repository: ${{ github.repository_owner }}/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
@@ -32,9 +32,9 @@ jobs:
 
       - name: 安装并启动代理
         env:
-          Hiden_PROXY_NODE: ${{ secrets.Hiden_PROXY_NODE }}
+          PROXY_NODE: ${{ secrets.PROXY_NODE_US }}
         run: |
-          if [ -z "$Hiden_PROXY_NODE" ]; then
+          if [ -z "$PROXY_NODE" ]; then
             echo "[INFO] 未配置代理，直连模式"
             exit 0
           fi
@@ -49,9 +49,9 @@ jobs:
           def mask(s):
               return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
 
-          url = os.environ.get("Hiden_PROXY_NODE", "").strip()
+          url = os.environ.get("PROXY_NODE", "").strip()
           if not url:
-              print("[ERROR] Hiden_PROXY_NODE 为空")
+              print("[ERROR] PROXY_NODE 为空")
               sys.exit(1)
 
           if url.startswith("vless://"):
@@ -307,7 +307,7 @@ jobs:
           
           if [ -f "use_external_socks.txt" ]; then
             EXTERNAL_SOCKS=$(cat use_external_socks.txt)
-            echo "Hiden_PROXY_SERVER=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "PROXY_SERVER=$EXTERNAL_SOCKS" >> $GITHUB_ENV
             echo "[INFO] ✅ 使用外部 SOCKS5 代理"
             exit 0
           fi
@@ -319,7 +319,7 @@ jobs:
           for i in 1 2 3 4 5; do
             if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] ✅ 代理连接成功"
-              echo "Hiden_PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+              echo "PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
               exit 0
             fi
             echo "[WARN] 尝试 $i/5..."
@@ -339,26 +339,39 @@ jobs:
           restore-keys: |
             hidencloud-state-
 
+      - name: 清理 Chrome 锁文件
+        run: |
+          PROFILE_DIR="browser_state/selenium_profile"
+          if [ -d "$PROFILE_DIR" ]; then
+            echo "🧹 清理浏览器锁文件..."
+            find "$PROFILE_DIR" -name "SingletonLock" -delete 2>/dev/null || true
+            find "$PROFILE_DIR" -name "SingletonSocket" -delete 2>/dev/null || true
+            find "$PROFILE_DIR" -name "SingletonCookie" -delete 2>/dev/null || true
+            echo "✅ 清理完成"
+          else
+            echo "📂 用户数据目录不存在，无需清理"
+          fi
+
       - name: 运行续期脚本
         id: run_renew
         env:
           HIDENCLOUD: ${{ secrets.HIDENCLOUD }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          Hiden_PROXY_SERVER: ${{ env.Hiden_PROXY_SERVER }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
         run: |
-          PROXY_SERVER="$Hiden_PROXY_SERVER" python3 scripts/hiden/main.py 2>&1 | tee renew.log
+          python3 scripts/HidenCloud/main.py 2>&1 | tee renew.log
 
      # 如需上传日志截图，可取消注释以下步骤
-     # - name: 上传日志和截图
-     #   if: always()
-     #   uses: actions/upload-artifact@v4
-     #   with:
-     #     name: hidencloud-logs
-     #     path: |
-     #       screenshots/*.png
-     #       renew.log
-     #     retention-days: 3
+      - name: 上传日志和截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hidencloud-logs
+          path: |
+            screenshots/*.png
+            renew.log
+          retention-days: 3
 
       - name: 删除旧浏览器状态缓存
         if: always()
