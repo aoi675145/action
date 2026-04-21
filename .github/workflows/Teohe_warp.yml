@@ -1,4 +1,4 @@
-name: Teohe Auto Renew (warp)
+name: Teohe Auto Renew
 
 on:
   workflow_dispatch:
@@ -80,17 +80,17 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: '1'
           GALLIUM_DRIVER: llvmpipe
         run: |
-          mkdir -p screenshots
+          mkdir -p teohe-warp/screenshots
           xvfb-run --auto-servernum \
             --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
-            node warp.js
+            node teohe-warp/warp.js
 
       - name: 上传截图
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-${{ github.run_number }}
-          path: screenshots/*.png
+          path: teohe-warp/screenshots/*.png
           retention-days: 7
           if-no-files-found: ignore
 
