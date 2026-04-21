@@ -19,167 +19,28 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Xray
+      - name: Enable WARP
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: client
+
+      - name: Configure DNS and verify WARP
         run: |
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          mkdir -p xray-bin
-          unzip -oq Xray-linux-64.zip -d xray-bin
-          chmod +x xray-bin/xray
-          sudo mv xray-bin/xray /usr/local/bin/xray
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+          sudo chattr +i /etc/resolv.conf 2>/dev/null || true
+          sleep 3
 
-      - name: Build Xray config
-        env:
-          vps8_PROXY: ${{ secrets.vps8_PROXY }}
-        run: |
-          python - <<'PY'
-          import base64
-          import json
-          import os
-          from urllib.parse import parse_qs, unquote, urlparse
-
-          proxy_url = os.environ["vps8_PROXY"]
-          parsed = urlparse(proxy_url)
-          scheme = parsed.scheme
-
-          if scheme not in {"vless", "vmess"}:
-              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
-
-          def build_stream_settings(query, host):
-              transport_type = query.get("type", "tcp")
-              if transport_type == "h2":
-                  transport_type = "http"
-
-              stream_settings = {
-                  "network": transport_type,
-                  "security": query.get("security", "none"),
-              }
-
-              if stream_settings["security"] == "reality":
-                  reality = {
-                      "serverName": query.get("sni", host),
-                      "fingerprint": query.get("fp", "chrome"),
-                      "publicKey": query.get("pbk", ""),
-                  }
-                  if query.get("sid"):
-                      reality["shortId"] = query["sid"]
-                  if query.get("spx"):
-                      reality["spiderX"] = query["spx"]
-                  stream_settings["realitySettings"] = reality
-              elif stream_settings["security"] == "tls":
-                  stream_settings["tlsSettings"] = {
-                      "serverName": query.get("sni", host),
-                      "fingerprint": query.get("fp", "chrome"),
-                  }
-
-              if transport_type == "tcp":
-                  header_type = query.get("headerType", "none")
-                  stream_settings["tcpSettings"] = {
-                      "header": {"type": header_type}
-                  }
-              elif transport_type == "ws":
-                  headers = {}
-                  if query.get("host"):
-                      headers["Host"] = query["host"]
-                  stream_settings["wsSettings"] = {
-                      "path": query.get("path", "/"),
-                      "headers": headers,
-                  }
-              elif transport_type == "http":
-                  host_list = [h for h in query.get("host", "").split(",") if h]
-                  stream_settings["httpSettings"] = {
-                      "host": host_list,
-                      "path": query.get("path", "/"),
-                  }
-              elif transport_type == "grpc":
-                  stream_settings["grpcSettings"] = {
-                      "serviceName": query.get("serviceName", ""),
-                      "authority": query.get("authority", ""),
-                  }
-
-              return stream_settings
-
-          if scheme == "vless":
-              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
-              host = parsed.hostname
-              port = parsed.port
-              user_id = unquote(parsed.username or "")
-
-              if not host or not port or not user_id:
-                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
-
-              outbound = {
-                  "protocol": "vless",
-                  "settings": {
-                      "vnext": [{
-                          "address": host,
-                          "port": port,
-                          "users": [{
-                              "id": user_id,
-                              "encryption": qs.get("encryption", "none"),
-                              "flow": qs.get("flow", ""),
-                          }],
-                      }]
-                  },
-                  "streamSettings": build_stream_settings(qs, host),
-              }
-          else:
-              payload = parsed.netloc + parsed.path
-              padded = payload + "=" * (-len(payload) % 4)
-              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-              host = vmess.get("add")
-              port = int(vmess.get("port", 0))
-              user_id = vmess.get("id", "")
-              if not host or not port or not user_id:
-                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
-
-              query = {
-                  "type": vmess.get("net", "tcp"),
-                  "security": vmess.get("tls", "none"),
-                  "path": vmess.get("path", "/") or "/",
-                  "host": vmess.get("host", ""),
-                  "sni": vmess.get("sni", "") or host,
-                  "fp": vmess.get("fp", "chrome"),
-                  "serviceName": vmess.get("path", ""),
-                  "authority": vmess.get("host", ""),
-                  "headerType": vmess.get("type", "none") or "none",
-              }
-
-              outbound = {
-                  "protocol": "vmess",
-                  "settings": {
-                      "vnext": [{
-                          "address": host,
-                          "port": port,
-                          "users": [{
-                              "id": user_id,
-                              "alterId": int(vmess.get("aid", 0) or 0),
-                              "security": vmess.get("scy", "auto"),
-                          }],
-                      }]
-                  },
-                  "streamSettings": build_stream_settings(query, host),
-              }
-
-          config = {
-              "log": {"loglevel": "warning"},
-              "inbounds": [{
-                  "listen": "127.0.0.1",
-                  "port": 8080,
-                  "protocol": "http",
-              }],
-              "outbounds": [outbound],
-          }
-
-          with open("xray-config.json", "w", encoding="ascii") as f:
-              json.dump(config, f, indent=2)
-          PY
-
-      - name: Start Xray proxy
-        run: |
-          nohup xray run -c xray-config.json > xray.log 2>&1 &
-          sleep 2
-          xray version
-          sed -n '1,20p' xray.log || true
+          for i in {1..30}; do
+            status=$(curl -s --max-time 5 https://www.cloudflare.com/cdn-cgi/trace | grep -oP 'warp=\K\w+' || echo unknown)
+            [[ "$status" =~ ^(on|plus)$ ]] && echo "WARP 已连接" && break
+            echo "WARP 连接中... ($i/30)"
+            sleep 2
+          done
+          echo -n "出口 IP: " && curl -s https://api.ipify.org && echo
+          curl -s https://ipinfo.io
 
       - name: Setup environment
         env:
@@ -196,28 +57,16 @@ jobs:
           echo "[setup] rebuild font cache"
           fc-cache -fv
 
-      - name: Fetch vps8 script
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          curl -sL \
-            -H "Authorization: Bearer ${REPO_TOKEN}" \
-            -o checkin.py \
-            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.py"
-
       - name: Check IP
-        env:
-          vps8_PROXY: http://127.0.0.1:8080
         run: |
-          curl -s --proxy "$vps8_PROXY" https://api.ipify.org && echo
-          curl -s --proxy "$vps8_PROXY" https://ipinfo.io
+          curl -s https://api.ipify.org && echo
+          curl -s https://ipinfo.io
 
       - name: Run python checkin flow
         env:
           vps8_ACCOUNTS: ${{ secrets.vps8_ACCOUNTS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          vps8_PROXY: http://127.0.0.1:8080
         run: |
           python3 checkin.py
 
