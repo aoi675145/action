@@ -63,6 +63,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
           WORKFLOW_FILE: .github/workflows/FreezeHost_Renew.yml
         run: |
+          set -e
+
           python3 << 'EOF'
           import os
           import re
@@ -73,17 +75,17 @@ jobs:
           date_file = 'next_time.txt'
           now_utc = datetime.now(timezone.utc)
           target_date = None
-          
+
           if os.path.exists(date_file):
               with open(date_file, 'r', encoding='utf-8') as f:
                   content = f.read().upper()
-              
+
               d_match = re.search(r'(\d+)\s*DAY', content)
               h_match = re.search(r'(\d+\.?\d*)\s*HOUR', content)
-              
+
               days = int(d_match.group(1)) if d_match else 0
               hours = float(h_match.group(1)) if h_match else 0
-              
+
               expire_time = now_utc + timedelta(days=days, hours=hours)
               target_date = expire_time - timedelta(days=2)
 
@@ -93,48 +95,46 @@ jobs:
           else:
               reason = "到期前2天自动执行"
 
-          cron_month = target_date.month
-          cron_day = target_date.day
-          cron_hour = target_date.hour
-          cron_minute = target_date.minute
-          
-          new_cron = f"{cron_minute} {cron_hour} {cron_day} {cron_month} *"
+          new_cron = f"{target_date.minute} {target_date.hour} {target_date.day} {target_date.month} *"
           next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC ({reason})"
 
-          if os.path.exists(workflow_file):
-              with open(workflow_file, 'r', encoding='utf-8') as f:
-                  content = f.read()
-
-              # 替换 schedule 里的 cron 行，并同步更新注释里的下次执行时间。
-              cron_pattern = r"(^\s*-\s+cron:\s*)'[^']+'(\s*#.*)?$"
-              cron_replacement = rf"\1'{new_cron}' # 下一个: {next_date_str}"
-              new_content, count = re.subn(
-                  cron_pattern,
-                  cron_replacement,
-                  content,
-                  count=1,
-                  flags=re.MULTILINE,
-              )
-
-              if count == 0:
-                  print("❌ 未找到可替换的 cron 行")
-                  sys.exit(1)
-
-              with open(workflow_file, 'w', encoding='utf-8') as f:
-                  f.write(new_content)
-              print(f"✅ 成功计算并更新计划: {new_cron}")
-          else:
+          if not os.path.exists(workflow_file):
               print(f"❌ 找不到文件: {workflow_file}")
               sys.exit(1)
+
+          with open(workflow_file, 'r', encoding='utf-8') as f:
+              workflow_content = f.read()
+
+          # 替换 schedule 里的 cron 行，并同步更新注释里的下次执行时间。
+          cron_pattern = r"(^\s*-\s+cron:\s*)'[^']+'(\s*#.*)?$"
+          cron_replacement = rf"\1'{new_cron}' # 下一个: {next_date_str}"
+          new_content, count = re.subn(
+              cron_pattern,
+              cron_replacement,
+              workflow_content,
+              count=1,
+              flags=re.MULTILINE,
+          )
+
+          if count == 0:
+              print("❌ 未找到可替换的 cron 行")
+              sys.exit(1)
+
+          with open(workflow_file, 'w', encoding='utf-8') as f:
+              f.write(new_content)
+
+          print(f"✅ 成功计算并更新计划: {new_cron}")
           EOF
 
-          git add $WORKFLOW_FILE
-          git diff --cached --quiet -- "$WORKFLOW_FILE"
-          if [ $? -eq 0 ]; then
-            echo "无变更"
+          echo "[INFO] 检查 workflow 文件是否有变化..."
+          if git diff --quiet -- "$WORKFLOW_FILE"; then
+            echo "[INFO] 无变更"
           else
+            echo "[INFO] 检测到变更，开始提交"
+            git add "$WORKFLOW_FILE"
             git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" commit -m "auto: 调整下一次续期时间"
             git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
+            echo "[INFO] workflow 时间已自动更新"
           fi
 
       - name: 🧹 清理运行记录
