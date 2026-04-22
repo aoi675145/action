@@ -3,6 +3,9 @@ name: Teohe Auto Renew (warp)
 on:
   workflow_dispatch:
 
+  schedule:
+    - cron: '23 0 * * *'
+
   push:
     paths:
       - "teohe-warp/warp.js"
