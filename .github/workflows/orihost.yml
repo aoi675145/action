@@ -1,0 +1,78 @@
+# 优先读取环境变量 Ori，格式: 账号-----密码。
+# 如果不想用环境变量，也可以直接把账号密码写在这里。
+
+login_url: "https://panel.orihost.com/auth/login"
+headless: true
+storage_state: "storage_state.json"
+
+username: ""
+password: ""
+proxy: ""
+
+# 代理优先读取环境变量 Ori_PROXY_NODE。
+# 推荐和你现有样本保持一致：工作流先把节点转成可用的本地代理，
+# 再把例如 socks5://127.0.0.1:1080 传给脚本。
+
+logged_in_url_patterns:
+  - "panel\\.orihost\\.com/(?!auth/login)"
+
+post_login_selectors: []
+logout_selectors: []
+
+error_selectors:
+  - ".text-red-500"
+  - "[role='alert']"
+  - ".alert-danger"
+  - ".invalid-feedback"
+
+selectors:
+  username:
+    - 'input[name="username"]'
+    - 'input[placeholder="Username or Email"]'
+  password:
+    - 'input[name="password"]'
+    - 'input[placeholder="Password"]'
+  submit:
+    - 'button[type="submit"]'
+    - 'button:has-text("Sign In")'
+
+renew:
+  # 登录后首页。
+  url: "https://panel.orihost.com/"
+
+  # 如果没有固定 URL，也可以配置从面板里点进去的入口。
+  navigate_selectors:
+    - 'div:has-text("Manage Server")'
+    - 'text=Manage Server'
+    - 'xpath=//div[contains(normalize-space(.), "Manage Server")]'
+
+  # 点击 Manage Server 后，确认已进入服务器详情页。
+  server_url_patterns:
+    - 'https://panel\.orihost\.com/server/.+'
+
+  # 必填：续期按钮选择器。你把续期页面按钮元素发我后，我再帮你补精准版。
+  button_selectors:
+    - 'xpath=//*[name()="path" and @d="M436 160H12c-6.6 0-12-5.4-12-12v-36c0-26.5 21.5-48 48-48h48V12c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v52h128V12c0-6.6 5.4-12 12-12h40c6.6 0 12 5.4 12 12v52h48c26.5 0 48 21.5 48 48v36c0 6.6-5.4 12-12 12zM12 192h424c6.6 0 12 5.4 12 12v260c0 26.5-21.5 48-48 48H48c-26.5 0-48-21.5-48-48V204c0-6.6 5.4-12 12-12zm316 140c0-6.6-5.4-12-12-12h-60v-60c0-6.6-5.4-12-12-12h-40c-6.6 0-12 5.4-12 12v60h-60c-6.6 0-12 5.4-12 12v40c0 6.6 5.4 12 12 12h60v60c0 6.6 5.4 12 12 12h40c6.6 0 12-5.4 12-12v-60h60c6.6 0 12-5.4 12-12v-40z"]/ancestor::*[self::button or @role="button" or self::div][1]'
+
+  # 点击后用于判定成功的页面文本正则。
+  success_patterns: []
+
+  # 用于判定“还不能续期/按钮冷却中”的页面文本正则。
+  not_ready_patterns: []
+
+  # 点击续期后等待页面反馈的时间。
+  post_click_wait_ms: 8000
+
+due_date:
+  # 到期时间元素选择器，建议把具体显示日期的元素发我后补到这里。
+  selectors: []
+
+  # 兜底正则。建议至少捕获一个日期文本分组。
+  # 例如: 'Due date\s*[:：]\s*(\d{1,2}\s+[A-Za-z]{3}\s+\d{4})'
+  regexes: []
+
+renewal_info:
+  # 续期前页面显示的时间，例如 "14 Days"。
+  before_selectors:
+    - 'xpath=//span[normalize-space(.)="Renewal In"]/following::div[contains(@class,"Value")][1]'
+    - 'xpath=//span[normalize-space(.)="Renewal In"]/following::div[1]'
