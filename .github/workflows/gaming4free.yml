@@ -9,7 +9,7 @@ on:
 jobs:
   run:
     runs-on: ubuntu-22.04
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     steps:
       # =========================
@@ -48,25 +48,19 @@ jobs:
       # 🟡 2️⃣ 系统依赖（音频）
       # =========================
       - name: Install deps
+        timeout-minutes: 8
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb wget unzip curl jq p7zip-full \
-            pulseaudio alsa-utils ffmpeg python3 python3-pip
+            ffmpeg python3 python3-pip
 
           python3 -m pip install --quiet SpeechRecognition pydub
-
-          pulseaudio --start --exit-idle-time=-1 || true
-
-          pactl load-module module-null-sink sink_name=virtual_speaker || true
-          pactl set-default-sink virtual_speaker || true
-
-          pactl load-module module-virtual-source source_name=virtual_mic || true
-          pactl set-default-source virtual_mic || true
 
       # =========================
       # 🟡 3️⃣ 安装 Playwright（修复点）
       # =========================
       - name: Install playwright
+        timeout-minutes: 10
         run: |
           cd private-repo/scripts/gm4
           npm install
