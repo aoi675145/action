@@ -1,4 +1,4 @@
-name: Host2Play Auto Renew Logic
+name: Host2Play Auto Renew 
 
 on:
   schedule:
