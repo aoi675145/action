@@ -28,8 +28,8 @@ jobs:
 
       - name: 安装依赖
         run: |
-          pip install --quiet pyyaml playwright
-          python -m playwright install --with-deps chromium
+          pip install --quiet playwright
+          python -m playwright install chromium
 
       - name: 安装并启动代理
         env:
