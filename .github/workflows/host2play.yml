@@ -1,0 +1,83 @@
+name: Auto Renew Server Script
+
+on:
+  workflow_dispatch:
+  #schedule:
+  # - cron: '0 */3 * * *'
+
+jobs:
+  run-renew:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install System Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb ffmpeg unzip
+          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
+          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
+          sudo apt-get install -y google-chrome-stable
+
+      - name: 启用 WARP
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: client
+
+      - name: 配置 DNS 并验证 WARP
+        run: |
+          set -euo pipefail
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+          sudo chattr +i /etc/resolv.conf 2>/dev/null || true
+          sleep 3
+
+          for i in {1..30}; do
+            status=$(curl -s --max-time 5 https://www.cloudflare.com/cdn-cgi/trace | grep -oP 'warp=\K\w+' || echo unknown)
+            [[ "$status" =~ ^(on|plus)$ ]] && echo "WARP 已连接" && break
+            echo "WARP 连接中... ($i/30)"
+            sleep 2
+          done
+          echo -n "出口 IP: " && curl -s https://api.ipify.org && echo
+
+      - name: Install Python Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install DrissionPage xvfbwrapper requests SpeechRecognition pydub
+
+      - name: 拉取私库脚本
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw+json" \
+            "https://api.github.com/repos/akina005/scripts/contents/scripts/host2play/main.py" \
+            -o remote_main.py
+
+          test -s remote_main.py
+
+      - name: Run Renew Script
+        env:
+          H2PLAY_RENEW_URL: ${{ secrets.H2PLAY_RENEW_URL }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python remote_main.py
+
+      - name: Upload Error Screenshots
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: debug-screenshots
+          path: ./*.html
+          retention-days: 5
