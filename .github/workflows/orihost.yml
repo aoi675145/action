@@ -235,6 +235,21 @@ jobs:
           restore-keys: |
             orihost-state-
 
+      - name: 检查出口 IP
+        run: |
+          echo "[IP检查] 直连出口 IP:"
+          curl -s --max-time 20 https://api.ipify.org && echo
+          echo ""
+          if [ -n "$PROXY_SERVER" ]; then
+            echo "[IP检查] 当前代理: $PROXY_SERVER"
+            echo "[IP检查] 代理出口 IP:"
+            curl -s --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org && echo
+            echo "[IP检查] 代理出口详情:"
+            curl -s --max-time 20 --proxy "$PROXY_SERVER" https://ipinfo.io && echo
+          else
+            echo "[IP检查] 当前未启用代理，脚本将直连访问目标站。"
+          fi
+
       - name: 运行续期脚本
         id: run_renew
         env:
