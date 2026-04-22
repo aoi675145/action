@@ -92,14 +92,3 @@ jobs:
         run: |
           mkdir -p private-repo/scripts/gm4/screenshots
           xvfb-run -a node private-repo/scripts/gm4/renew.js
-
-      # =========================
-      # 🟡 6️⃣ 上传截图
-      # =========================
-      - name: Upload screenshots
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: screenshots
-          path: private-repo/scripts/gm4/screenshots/**
-          if-no-files-found: warn
