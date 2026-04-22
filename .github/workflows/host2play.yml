@@ -69,7 +69,7 @@ jobs:
 
       - name: Run Renew Script
         env:
-          H2PLAY_RENEW_URL: ${{ secrets.H2PLAY_RENEW_URL }}
+          H2PLAY_RENEW_URLS: ${{ secrets.H2PLAY_RENEW_URLS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python remote_main.py
