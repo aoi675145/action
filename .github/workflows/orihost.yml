@@ -258,7 +258,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           Ori_PROXY_NODE: ${{ env.PROXY_SERVER }}
         run: |
-          python3 scripts/orihost/main.py 2>&1 | tee renew.log
+          xvfb-run -a python3 scripts/orihost/main.py 2>&1 | tee renew.log
 
       - name: 删除旧浏览器状态缓存
         if: always()
