@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "0 * * * *"   # 每小时第 0 分钟执行一次（UTC）
+    - cron: "5 * * * *"   
 
 jobs:
   run:
