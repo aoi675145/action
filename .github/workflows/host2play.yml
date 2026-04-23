@@ -26,10 +26,7 @@ jobs:
       - name: Install System Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg unzip
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-          sudo apt-get install -y google-chrome-stable
+          sudo apt-get install -y ffmpeg unzip
 
       - name: 启用 WARP
         uses: fscarmen/warp-on-actions@v1.3
@@ -57,7 +54,8 @@ jobs:
       - name: Install Python Dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install DrissionPage xvfbwrapper requests SpeechRecognition pydub
+          pip install playwright requests SpeechRecognition pydub
+          python -m playwright install --with-deps chromium
 
       - name: 拉取私库脚本
         env:
