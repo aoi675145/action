@@ -15,38 +15,38 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout private repository
+      - name: 拉取私有仓库代码
         uses: actions/checkout@v4
         with:
           repository: 'akina005/scripts'          
           token: ${{ secrets.REPO_TOKEN }}
 
-      - name: Setup Python
+      - name: 配置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install system dependencies
+      - name: 安装系统依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb ffmpeg unzip curl
           wget -q -O /tmp/google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
 
-      - name: Install Python dependencies
+      - name: 安装 Python 依赖
         run: |
           python -m pip install --upgrade pip
           pip install DrissionPage xvfbwrapper requests SpeechRecognition pydub
 
-      - name: Enable WARP
+      - name: 启用 WARP 网络
         uses: fscarmen/warp-on-actions@v1.3
         with:
           stack: dual
           mode: client
 
-      - name: Fix DNS
+      - name: 修复 DNS
         run: |
-          echo "[INFO] Stopping systemd-resolved, setting public DNS..."
+          echo "[INFO] 停用 systemd-resolved，设置公共 DNS..."
           sudo systemctl stop systemd-resolved 2>/dev/null || true
           sudo systemctl disable systemd-resolved 2>/dev/null || true
 
@@ -55,16 +55,16 @@ jobs:
 
           sleep 2
 
-          echo "[INFO] DNS Test:"
-          nslookup host2play.gratis 1.1.1.1 || echo "[WARN] Resolution failed"
+          echo "[INFO] DNS 测试:"
+          nslookup host2play.gratis 1.1.1.1 || echo "[WARN] 解析失败"
 
           echo ""
-          echo "[INFO] Current exit IP:"
+          echo "[INFO] 当前出口 IP:"
           curl -s --max-time 10 https://api.ipify.org && echo
           echo "[INFO] WARP Trace:"
           curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace | grep -E 'ip=|warp=|loc=' || true
 
-      - name: Execute renewal
+      - name: 执行续订脚本
         env:
           H2PLAY_RENEW_URLS: ${{ secrets.H2PLAY_RENEW_URLS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -73,7 +73,7 @@ jobs:
           cd scripts/host2play
           python main.py
 
-      - name: Cleanup workflow runs
+      - name: 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
