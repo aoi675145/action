@@ -15,8 +15,11 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout private repository
         uses: actions/checkout@v4
+        with:
+          repository: 'akina005/scripts'          
+          token: ${{ secrets.REPO_TOKEN }}        # 已更新为 REPO_TOKEN
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -66,14 +69,16 @@ jobs:
           H2PLAY_RENEW_URLS: ${{ secrets.H2PLAY_RENEW_URLS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python main.py
+        run: |
+          cd host2play
+          python main.py
 
       - name: 上传截图
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-${{ github.run_number }}
-          path: output/screenshots/*.png
+          path: host2play/output/screenshots/*.png
           retention-days: 7
           if-no-files-found: ignore
 
