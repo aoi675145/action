@@ -1,10 +1,14 @@
-name: Host2Play Auto Renew 
+name: Host2Play Auto Renew
 
 on:
   schedule:
     - cron: '0 0,11,22 * * *'    # 触发点: 00:00, 11:00, 22:00
     - cron: '30 5,16 * * *'      # 触发点: 05:30, 16:30
   workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
 
 jobs:
   run-renew:
@@ -75,10 +79,29 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python remote_main.py
 
-      - name: Upload Error Screenshots
-        uses: actions/upload-artifact@v4
+      - name: 清理旧工作流记录
         if: always()
+        uses: actions/github-script@v7
         with:
-          name: debug-screenshots
-          path: ./*.html
-          retention-days: 5
+          script: |
+            const owner = context.repo.owner;
+            const repo = context.repo.repo;
+            const workflow_id = 'host2play.yml';
+            const keep = 5;
+
+            const runs = await github.paginate(
+              github.rest.actions.listWorkflowRuns,
+              { owner, repo, workflow_id, per_page: 100 }
+            );
+
+            const oldRuns = runs.slice(keep);
+            core.info(`Found ${runs.length} runs, deleting ${oldRuns.length} old runs.`);
+
+            for (const run of oldRuns) {
+              await github.rest.actions.deleteWorkflowRun({
+                owner,
+                repo,
+                run_id: run.id,
+              });
+              core.info(`Deleted workflow run ${run.id}`);
+            }
