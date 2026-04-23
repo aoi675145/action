@@ -1,4 +1,4 @@
-name: VPS8 Login
+name: VPS8 Auto Checkin
 
 on:
   workflow_dispatch:
@@ -91,7 +91,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          WORKFLOW_NAME: VPS8 Login
+          WORKFLOW_NAME: VPS8 Auto Checkin
         run: |
           python - <<'PY'
           import json, os, subprocess
