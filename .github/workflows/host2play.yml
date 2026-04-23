@@ -23,85 +23,66 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install System Dependencies
+      - name: 安装系统依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg unzip
-          wget -q -O - https://dl-ssl.google.com/linux/linux_signing_key.pub | sudo apt-key add -
-          sudo sh -c 'echo "deb [arch=amd64] http://dl.google.com/linux/chrome/deb/ stable main" >> /etc/apt/sources.list.d/google-chrome.list'
-          sudo apt-get install -y google-chrome-stable
+          sudo apt-get install -y xvfb ffmpeg unzip curl
+          wget -q -O /tmp/google-chrome-stable_current_amd64.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
 
-      - name: 启用 WARP
+      - name: 安装 Python 依赖
+        run: |
+          python -m pip install --upgrade pip
+          pip install DrissionPage xvfbwrapper requests SpeechRecognition pydub
+
+      - name: 启用 WARP 网络
         uses: fscarmen/warp-on-actions@v1.3
         with:
           stack: dual
           mode: client
 
-      - name: 配置 DNS 并验证 WARP
+      - name: 修复 DNS
         run: |
-          set -euo pipefail
+          echo "[INFO] 停用 systemd-resolved，设置公共 DNS..."
           sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
+
           sudo rm -f /etc/resolv.conf
-          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" | sudo tee /etc/resolv.conf
-          sudo chattr +i /etc/resolv.conf 2>/dev/null || true
-          sleep 3
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
 
-          for i in {1..30}; do
-            status=$(curl -s --max-time 5 https://www.cloudflare.com/cdn-cgi/trace | grep -oP 'warp=\K\w+' || echo unknown)
-            [[ "$status" =~ ^(on|plus)$ ]] && echo "WARP 已连接" && break
-            echo "WARP 连接中... ($i/30)"
-            sleep 2
-          done
-          echo -n "出口 IP: " && curl -s https://api.ipify.org && echo
+          sleep 2
 
-      - name: Install Python Dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install DrissionPage xvfbwrapper requests SpeechRecognition pydub
+          echo "[INFO] DNS 测试:"
+          nslookup host2play.gratis 1.1.1.1 || echo "[WARN] 解析失败"
 
-      - name: 拉取私库脚本
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          set -euo pipefail
-          curl -fsSL \
-            -H "Authorization: Bearer ${REPO_TOKEN}" \
-            -H "Accept: application/vnd.github.raw+json" \
-            "https://api.github.com/repos/akina005/scripts/contents/scripts/host2play/main.py" \
-            -o remote_main.py
+          echo ""
+          echo "[INFO] 当前出口 IP:"
+          curl -s --max-time 10 https://api.ipify.org && echo
+          echo "[INFO] WARP Trace:"
+          curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace | grep -E 'ip=|warp=|loc=' || true
 
-          test -s remote_main.py
-
-      - name: Run Renew Script
+      - name: 执行续订
         env:
           H2PLAY_RENEW_URLS: ${{ secrets.H2PLAY_RENEW_URLS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python remote_main.py
+        run: python main.py
 
-      - name: 清理旧工作流记录
+      - name: 上传截图
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/upload-artifact@v4
         with:
-          script: |
-            const owner = context.repo.owner;
-            const repo = context.repo.repo;
-            const workflow_id = 'host2play.yml';
-            const keep = 5;
+          name: screenshots-${{ github.run_number }}
+          path: output/screenshots/*.png
+          retention-days: 7
+          if-no-files-found: ignore
 
-            const runs = await github.paginate(
-              github.rest.actions.listWorkflowRuns,
-              { owner, repo, workflow_id, per_page: 100 }
-            );
-
-            const oldRuns = runs.slice(keep);
-            core.info(`Found ${runs.length} runs, deleting ${oldRuns.length} old runs.`);
-
-            for (const run of oldRuns) {
-              await github.rest.actions.deleteWorkflowRun({
-                owner,
-                repo,
-                run_id: run.id,
-              });
-              core.info(`Deleted workflow run ${run.id}`);
-            }
+      - name: 清理历史运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
