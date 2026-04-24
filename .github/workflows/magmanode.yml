@@ -29,29 +29,320 @@ jobs:
         run: |
           # 【核心】安装 xdotool(用于物理点击) 和 xvfb(虚拟屏幕)
           sudo apt-get update
-          sudo apt-get install -y xvfb xdotool
+          sudo apt-get install -y xvfb xdotool wget unzip curl
           
           # 安装 SeleniumBase 并初始化 Chrome
           python -m pip install --upgrade pip
           pip install seleniumbase requests
           seleniumbase install chromedriver
 
-      - name: 🛡️ 启动 GOST 代理隧道
+      - name: 🛡️ 安装并启动代理
         env:
-          GOST_PROXY: ${{ secrets.GOST_PROXY }}
+          MAGMA_PROXY: ${{ secrets.MAGMA_PROXY }}
         run: |
-          if [ -z "$GOST_PROXY" ]; then exit 0; fi
-          wget -q https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
-          gunzip gost-linux-amd64-2.11.5.gz
-          chmod +x gost-linux-amd64-2.11.5
-          nohup ./gost-linux-amd64-2.11.5 -L :8080 -F "$GOST_PROXY" > gost.log 2>&1 &
+          if [ -z "$MAGMA_PROXY" ]; then
+            echo "[INFO] 未配置代理，直连模式"
+            exit 0
+          fi
+
+          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray
+          chmod +x xray/xray
+
+          python3 << 'PYEOF'
+          import os
+          import sys
+          import json
+          import base64
+          from urllib.parse import parse_qs, unquote
+
+          def mask(value):
+              return f"{value[:2]}***{value[-2:]}" if len(value) > 4 else "****"
+
+          url = os.environ.get("MAGMA_PROXY", "").strip()
+          if not url:
+              print("[ERROR] MAGMA_PROXY 为空")
+              sys.exit(1)
+
+          if url.startswith("vless://"):
+              protocol = "vless"
+              content = url[8:]
+          elif url.startswith("vmess://"):
+              protocol = "vmess"
+              content = url[8:]
+          elif url.startswith("trojan://"):
+              protocol = "trojan"
+              content = url[9:]
+          elif url.startswith("ss://"):
+              protocol = "ss"
+              content = url[5:]
+          elif url.startswith("socks5://") or url.startswith("socks://"):
+              content = url.split("://", 1)[1].split("#", 1)[0]
+              if "@" in content:
+                  server = content.split("@", 1)[1].split(":", 1)[0]
+              else:
+                  server = content.split(":", 1)[0]
+              print(f"[INFO] SOCKS5 -> {mask(server)}")
+              with open("use_external_socks.txt", "w", encoding="utf-8") as handle:
+                  handle.write(url.split("#", 1)[0])
+              sys.exit(0)
+          else:
+              print(f"[ERROR] 不支持的协议: {url.split('://', 1)[0]}")
+              sys.exit(1)
+
+          if "#" in content:
+              content = content.rsplit("#", 1)[0]
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [
+                  {"port": 1080, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                  {"port": 1081, "listen": "127.0.0.1", "protocol": "http"}
+              ],
+              "outbounds": []
+          }
+
+          if protocol == "vless":
+              uuid, rest = content.split("@", 1)
+              if "?" in rest:
+                  host_port, params_str = rest.split("?", 1)
+              else:
+                  host_port, params_str = rest, ""
+
+              if ":" in host_port:
+                  address, port = host_port.rsplit(":", 1)
+              else:
+                  address, port = host_port, "443"
+
+              params = parse_qs(params_str)
+              security = params.get("security", ["none"])[0]
+              network = params.get("type", ["tcp"])[0]
+              sni = params.get("sni", [address])[0]
+              fp = params.get("fp", ["chrome"])[0]
+              flow = params.get("flow", [""])[0]
+              pbk = params.get("pbk", [""])[0]
+              host = params.get("host", [sni])[0]
+              path = unquote(params.get("path", ["/"])[0])
+
+              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
+
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": address,
+                          "port": int(port),
+                          "users": [{"id": uuid, "encryption": "none"}]
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": security
+                  }
+              }
+
+              if flow:
+                  outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
+
+              if security == "reality":
+                  outbound["streamSettings"]["realitySettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "publicKey": pbk
+                  }
+              elif security == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "allowInsecure": False
+                  }
+
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+              elif network == "grpc":
+                  service_name = params.get("serviceName", [""])[0]
+                  outbound["streamSettings"]["grpcSettings"] = {
+                      "serviceName": service_name
+                  }
+
+              config["outbounds"].append(outbound)
+
+          elif protocol == "vmess":
+              try:
+                  padding = 4 - len(content) % 4
+                  if padding != 4:
+                      content += "=" * padding
+                  decoded = base64.b64decode(content).decode("utf-8")
+                  vmess = json.loads(decoded)
+              except Exception as exc:
+                  print(f"[ERROR] VMess 解析失败: {exc}")
+                  sys.exit(1)
+
+              address = vmess.get("add", "")
+              port = int(vmess.get("port", 443))
+              uuid = vmess.get("id", "")
+              aid = int(vmess.get("aid", 0))
+              network = vmess.get("net", "tcp")
+              tls = vmess.get("tls", "")
+              sni = vmess.get("sni", "") or vmess.get("host", address)
+              host = vmess.get("host", address)
+              path = vmess.get("path", "/")
+              fp = vmess.get("fp", "chrome")
+
+              print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
+
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": address,
+                          "port": port,
+                          "users": [{"id": uuid, "alterId": aid, "security": "auto"}]
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": "tls" if tls == "tls" else "none"
+                  }
+              }
+
+              if tls == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "allowInsecure": False
+                  }
+
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+
+              config["outbounds"].append(outbound)
+
+          elif protocol == "trojan":
+              password, rest = content.split("@", 1)
+              if "?" in rest:
+                  host_port, params_str = rest.split("?", 1)
+              else:
+                  host_port, params_str = rest, ""
+
+              if ":" in host_port:
+                  address, port = host_port.rsplit(":", 1)
+              else:
+                  address, port = host_port, "443"
+
+              params = parse_qs(params_str)
+              sni = params.get("sni", [address])[0]
+              network = params.get("type", ["tcp"])[0]
+              host = params.get("host", [sni])[0]
+              path = unquote(params.get("path", ["/"])[0])
+              fp = params.get("fp", ["chrome"])[0]
+
+              print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
+
+              outbound = {
+                  "protocol": "trojan",
+                  "settings": {
+                      "servers": [{
+                          "address": address,
+                          "port": int(port),
+                          "password": password
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": "tls",
+                      "tlsSettings": {
+                          "serverName": sni,
+                          "fingerprint": fp,
+                          "allowInsecure": False
+                      }
+                  }
+              }
+
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+
+              config["outbounds"].append(outbound)
+
+          elif protocol == "ss":
+              try:
+                  if "@" in content:
+                      encoded, server_part = content.split("@", 1)
+                      decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                      method, password = decoded.split(":", 1)
+                      address, port = server_part.split(":", 1)
+                  else:
+                      decoded = base64.b64decode(content + "==").decode("utf-8")
+                      if "@" in decoded:
+                          user_part, server_part = decoded.split("@", 1)
+                          method, password = user_part.split(":", 1)
+                          address, port = server_part.split(":", 1)
+                      else:
+                          raise ValueError("无法解析")
+              except Exception as exc:
+                  print(f"[ERROR] Shadowsocks 解析失败: {exc}")
+                  sys.exit(1)
+
+              print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
+
+              outbound = {
+                  "protocol": "shadowsocks",
+                  "settings": {
+                      "servers": [{
+                          "address": address,
+                          "port": int(port),
+                          "method": method,
+                          "password": password
+                      }]
+                  }
+              }
+
+              config["outbounds"].append(outbound)
+
+          with open("xray_config.json", "w", encoding="utf-8") as handle:
+              json.dump(config, handle, indent=2)
+
+          print("[INFO] ✅ 代理配置已生成")
+          PYEOF
+
+          if [ -f "use_external_socks.txt" ]; then
+            EXTERNAL_SOCKS=$(cat use_external_socks.txt)
+            echo "PROXY_SERVER=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "[INFO] ✅ 使用外部 SOCKS5 代理"
+            exit 0
+          fi
+
+          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
           sleep 5
-          echo "PROXY_URL=socks5://127.0.0.1:8080" >> $GITHUB_ENV
+
+          echo "[INFO] 测试代理连接..."
+          for i in 1 2 3 4 5; do
+            if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "[INFO] ✅ 代理连接成功"
+              echo "PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+              exit 0
+            fi
+            echo "[WARN] 尝试 $i/5..."
+            sleep 3
+          done
+
+          echo "[ERROR] ❌ 代理连接失败"
+          cat xray.log
+          exit 1
 
       - name: 🚀 运行 Magma Python 脚本
         env:
           MAGMANODE: ${{ secrets.MAGMANODE }}
-          MAGMA_PROXY: ${{ secrets.MAGMA_PROXY }}
+          MAGMA_PROXY: ${{ env.PROXY_SERVER }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
