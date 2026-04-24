@@ -50,8 +50,7 @@ jobs:
 
       - name: 🚀 运行 Magma Python 脚本
         env:
-          MAGMA_ACCOUNT: ${{ secrets.MAGMA_ACCOUNT }}
-          MAGMA_PASSWORD: ${{ secrets.MAGMA_PASSWORD }}
+          MAGMANODE: ${{ secrets.MAGMANODE }}
           MAGMA_PROXY: ${{ secrets.MAGMA_PROXY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
