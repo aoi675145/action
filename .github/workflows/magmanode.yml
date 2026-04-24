@@ -382,6 +382,6 @@ jobs:
         with:
           token: ${{ secrets.REPO_TOKEN }}
           repository: ${{ github.repository }}
-          workflow: 🤖 Magma Restart
+          delete_workflow_pattern: "^🤖 Magma Restart$"
           retain_days: 0
           keep_minimum_runs: 5
