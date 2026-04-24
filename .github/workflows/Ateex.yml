@@ -3,7 +3,7 @@ name: Ateex Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 0 * * *' # 北京时间每天早上 08:33 运行
+    - cron: '12 0 * * *' 
 
 jobs:
   run:
