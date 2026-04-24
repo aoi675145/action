@@ -13,9 +13,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-python@v5
         with:
-          node-version: 20
+          python-version: '3.11'
 
       - name: Install Xray
         run: |
@@ -185,16 +185,9 @@ jobs:
           NEEDRESTART_MODE: a
         run: |
           sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb p7zip-full 2>&1 | tail -5
-          npm install --silent --no-save playwright
-          npx playwright install --with-deps chromium 2>&1 | tail -5
-          # Buster extension
-          mkdir -p extensions/buster
-          wget -qO extensions/buster/buster.zip \
-            https://github.com/dessant/buster/releases/download/v3.1.0/buster_captcha_solver_for_humans-3.1.0-chrome.zip
-          mkdir -p extensions/buster/unpacked
-          7z x -y extensions/buster/buster.zip -oextensions/buster/unpacked > /dev/null
-          # Turnstile bypasser extension
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb p7zip-full ffmpeg 2>&1 | tail -5
+          pip install --quiet playwright requests
+          python -m playwright install --with-deps chromium
           mkdir -p extensions/turnstile-bypasser/unpacked
           curl -sL "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" -o extensions/turnstile-bypasser/turnstile.crx
           7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
@@ -206,8 +199,8 @@ jobs:
           curl -sL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -H "Accept: application/vnd.github.raw" \
-            -o main.js \
-            "https://api.github.com/repos/akina005/scripts/contents/scripts/Ateex/main.js?ref=main"
+            -o main.py \
+            "https://api.github.com/repos/akina005/scripts/contents/scripts/Ateex/main.py?ref=main"
 
       - name: Check IP
         run: |
@@ -222,7 +215,7 @@ jobs:
           BYPASS_PROXY: http://127.0.0.1:8080
         run: |
           mkdir -p screenshots
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node main.js
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python main.py
 
       - name: Cleanup old runs
         if: always()
