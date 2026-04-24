@@ -213,36 +213,12 @@ jobs:
           mkdir -p screenshots
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python main.py
 
-      - name: Cleanup old runs
+      - name: 清理运行记录
         if: always()
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          WORKFLOW_NAME: Ateex Daily Credits
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import subprocess
-
-          repo = os.environ["REPO"]
-          workflow_name = os.environ["WORKFLOW_NAME"]
-
-          result = subprocess.run(
-              ["gh", "api", f"repos/{repo}/actions/runs", "--paginate"],
-              capture_output=True,
-              text=True,
-              check=True,
-          )
-          runs = json.loads(result.stdout).get("workflow_runs", [])
-          target_runs = [run for run in runs if run.get("name") == workflow_name]
-          target_runs.sort(key=lambda run: run.get("created_at", ""), reverse=True)
-
-          for run in target_runs[3:]:
-              run_id = str(run["id"])
-              print(f"Deleting old run: {run_id}")
-              subprocess.run(
-                  ["gh", "api", "-X", "DELETE", f"repos/{repo}/actions/runs/{run_id}"],
-                  check=True,
-              )
-          PY
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
