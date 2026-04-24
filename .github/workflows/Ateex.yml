@@ -3,7 +3,8 @@ name: Ateex Daily Credits
 on:
   workflow_dispatch:
   schedule:
-    - cron: '12 0 * * *' 
+    - cron: '0 0,11,22 * * *'
+    - cron: '30 5,16 * * *'
 
 jobs:
   run:
