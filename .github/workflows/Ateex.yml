@@ -237,7 +237,7 @@ jobs:
           target_runs = [run for run in runs if run.get("name") == workflow_name]
           target_runs.sort(key=lambda run: run.get("created_at", ""), reverse=True)
 
-          for run in target_runs[5:]:
+          for run in target_runs[3:]:
               run_id = str(run["id"])
               print(f"Deleting old run: {run_id}")
               subprocess.run(
