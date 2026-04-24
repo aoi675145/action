@@ -1,4 +1,4 @@
-name: 🤖 Magma Login Test
+name: 🤖 Magma Restart
 on:
   workflow_dispatch:
   schedule:
@@ -35,6 +35,27 @@ jobs:
           python -m pip install --upgrade pip
           pip install seleniumbase requests
           seleniumbase install chromedriver
+
+      - name: 🙈 隐藏敏感信息
+        env:
+          MAGMANODE: ${{ secrets.MAGMANODE }}
+          MAGMA_PROXY: ${{ secrets.MAGMA_PROXY }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          if [ -n "$MAGMANODE" ]; then echo "::add-mask::$MAGMANODE"; fi
+          if [ -n "$MAGMA_PROXY" ]; then echo "::add-mask::$MAGMA_PROXY"; fi
+          if [ -n "$TG_BOT_TOKEN" ]; then echo "::add-mask::$TG_BOT_TOKEN"; fi
+          if [ -n "$TG_CHAT_ID" ]; then echo "::add-mask::$TG_CHAT_ID"; fi
+          if [ -n "$REPO_TOKEN" ]; then echo "::add-mask::$REPO_TOKEN"; fi
+
+          if [ -n "$MAGMANODE" ]; then
+            ACCOUNT_PART=${MAGMANODE%%-----*}
+            PASSWORD_PART=${MAGMANODE#*-----}
+            echo "::add-mask::$ACCOUNT_PART"
+            echo "::add-mask::$PASSWORD_PART"
+          fi
 
       - name: 🛡️ 安装并启动代理
         env:
@@ -361,6 +382,6 @@ jobs:
         with:
           token: ${{ secrets.REPO_TOKEN }}
           repository: ${{ github.repository }}
-          workflow: Magma Login Test
+          workflow: 🤖 Magma Restart
           retain_days: 0
           keep_minimum_runs: 5
