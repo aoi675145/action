@@ -189,7 +189,7 @@ jobs:
           pip install --quiet playwright requests
           python -m playwright install --with-deps chromium
           mkdir -p extensions/turnstile-bypasser/unpacked
-          curl -sL "https://clients2.google.com/service/update2/crx?response=redirect&prodversion=131.0.0.0&acceptformat=crx2,crx3&x=id%3Ddockglonapofdibnccbnendkgdmhdplk%26installsource%3Dondemand%26uc" -o extensions/turnstile-bypasser/turnstile.crx
+          curl -fsSL "https://github.com/oyz6/action/releases/download/Verification/turnstile.crx" -o extensions/turnstile-bypasser/turnstile.crx
           7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
 
       - name: Fetch private Ateex script
