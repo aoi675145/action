@@ -41,6 +41,7 @@ jobs:
         env:
           Ice_PROXY_NODE: ${{ secrets.Ice_PROXY_NODE }}
         run: |
+          echo "::add-mask::$Ice_PROXY_NODE"
           if [ -z "$Ice_PROXY_NODE" ]; then
             echo "[INFO] 未配置代理，直连模式"
             exit 0
@@ -339,8 +340,7 @@ jobs:
             sleep 3
           done
 
-          echo "[ERROR] ❌ 代理连接失败"
-          cat xray.log
+          echo "[ERROR] ❌ 代理连接失败，请检查节点是否可用"
           exit 1
 
       - name: 🚀 运行 Icehost Python 脚本
@@ -351,6 +351,10 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
+          echo "::add-mask::$ICEHOST_SESSION"
+          echo "::add-mask::$Ice_PROXY_NODE"
+          echo "::add-mask::$TG_BOT_TOKEN"
+          echo "::add-mask::$TG_CHAT_ID"
           # 使用 xvfb-run 分配虚拟屏幕，让 xdotool 能够正常点击
           xvfb-run -a python private-scripts/scripts/Icehost/main.py 2>&1 | tee renew.log
 
@@ -405,10 +409,12 @@ jobs:
           git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git
           git push
 
-      # - name: 🧹 清理旧的运行记录 (仅保留最近 5 个)
-      #   uses: Mattraks/delete-workflow-runs@v2
-      #   with:
-      #     token: ${{ secrets.REPO_TOKEN }}
-      #     repository: ${{ github.repository }}
-      #     retain_days: 0
-      #     keep_minimum_runs: 5
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 4
