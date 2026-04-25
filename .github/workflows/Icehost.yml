@@ -13,6 +13,9 @@ jobs:
       contents: write
 
     steps:
+      - name: 📥 拉取当前仓库
+        uses: actions/checkout@v4
+
       - name: 📥 拉取私有脚本仓库
         uses: actions/checkout@v4
         with:
@@ -360,8 +363,8 @@ jobs:
 
       - name: 自动修改下一次运行时间
         env:
-          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          WORKFLOW_FILE: icehost/Icehost.yml
+          GITHUB_TOKEN: ${{ github.token }}
+          WORKFLOW_FILE: .github/workflows/Icehost.yml
         run: |
           python3 << 'EOF'
           import os
