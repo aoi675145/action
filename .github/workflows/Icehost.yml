@@ -346,6 +346,7 @@ jobs:
       - name: 🚀 运行 Icehost Python 脚本
         env:
           Icehost: ${{ secrets.Icehost }}
+          ICEHOST_SESSION: ${{ secrets.ICEHOST_SESSION }}
           Ice_PROXY_NODE: ${{ env.PROXY_SERVER }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
