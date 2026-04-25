@@ -63,6 +63,8 @@ jobs:
         run: |
           if [ -z "$MAGMA_PROXY" ]; then
             echo "[INFO] 未配置代理，直连模式"
+            echo "PROXY_SERVER=" >> $GITHUB_ENV
+            echo "NETWORK_MODE=直连" >> $GITHUB_ENV
             exit 0
           fi
 
@@ -338,6 +340,7 @@ jobs:
           if [ -f "use_external_socks.txt" ]; then
             EXTERNAL_SOCKS=$(cat use_external_socks.txt)
             echo "PROXY_SERVER=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "NETWORK_MODE=代理" >> $GITHUB_ENV
             echo "[INFO] ✅ 使用外部 SOCKS5 代理"
             exit 0
           fi
@@ -350,20 +353,24 @@ jobs:
             if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] ✅ 代理连接成功"
               echo "PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+              echo "NETWORK_MODE=代理" >> $GITHUB_ENV
               exit 0
             fi
             echo "[WARN] 尝试 $i/5..."
             sleep 3
           done
 
-          echo "[ERROR] ❌ 代理连接失败"
+          echo "[WARN] ❌ 代理连接失败，自动切换为直连模式"
           cat xray.log
-          exit 1
+          echo "PROXY_SERVER=" >> $GITHUB_ENV
+          echo "NETWORK_MODE=直连" >> $GITHUB_ENV
+          exit 0
 
       - name: 🚀 运行 Magma Python 脚本
         env:
           MAGMANODE: ${{ secrets.MAGMANODE }}
           MAGMA_PROXY: ${{ env.PROXY_SERVER }}
+          NETWORK_MODE: ${{ env.NETWORK_MODE }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
