@@ -37,9 +37,9 @@ jobs:
 
       - name: 配置代理 (VLESS)
         env:
-          Falix_VLS_URL: ${{ secrets.Falix_VLS_URL }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
-          if [ -z "$Falix_VLS_URL" ]; then
+          if [ -z "$PROXY_URL" ]; then
             echo "[INFO] 无代理配置，使用直连模式"
             exit 0
           fi
@@ -53,7 +53,7 @@ jobs:
           python -c '
           import os, urllib.parse, json
           
-          link = os.environ.get("Falix_VLS_URL", "").strip()
+          link = os.environ.get("PROXY_URL", "").strip()
           if not link.startswith("vless://"):
               print("ERROR: 不是有效的 VLESS 链接，请检查变量内容")
               exit(1)
@@ -127,10 +127,10 @@ jobs:
           FALIX: ${{ secrets.FALIX }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          Falix_VLS_URL: ${{ secrets.Falix_VLS_URL }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
-          # 根据是否有 Falix_VLS_URL 设置代理
-          if [ -n "$Falix_VLS_URL" ]; then
+          # 根据是否有 PROXY_URL 设置代理
+          if [ -n "$PROXY_URL" ]; then
             export PROXY_SERVER="http://127.0.0.1:1080"
             echo "[INFO] 使用代理: $PROXY_SERVER"
           else
