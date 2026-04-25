@@ -17,7 +17,7 @@ jobs:
 
       - name: 🛡️ 启动万能代理转换网关
         env:
-          MY_PROXY_NODE: ${{ secrets.mephia_PROXY_NODE }}
+          MY_PROXY_NODE: ${{ secrets.PROXY_URL }}
         run: |
           if [ -z "$MY_PROXY_NODE" ]; then
             echo "[INFO] 未配置节点，跳过代理"
