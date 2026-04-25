@@ -361,7 +361,7 @@ jobs:
       - name: 自动修改下一次运行时间
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          WORKFLOW_FILE: .github/workflows/Icehost.yml
+          WORKFLOW_FILE: icehost/Icehost.yml
         run: |
           python3 << 'EOF'
           import os
