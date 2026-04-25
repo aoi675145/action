@@ -40,9 +40,9 @@ jobs:
 
       - name: 安装并启动代理
         env:
-          FREEZE_PROXY_NODE: ${{ secrets.FREEZE_PROXY_NODE }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
-          if [ -z "$FREEZE_PROXY_NODE" ]; then
+          if [ -z "$PROXY_URL" ]; then
             echo "[INFO] 未配置代理，直连模式"
             exit 0
           fi
@@ -57,9 +57,9 @@ jobs:
           def mask(s):
               return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
 
-          url = os.environ.get("FREEZE_PROXY_NODE", "").strip()
+          url = os.environ.get("PROXY_URL", "").strip()
           if not url:
-              print("[ERROR] FREEZE_PROXY_NODE 为空")
+              print("[ERROR] PROXY_URL 为空")
               sys.exit(1)
 
           if url.startswith("vless://"):
@@ -350,7 +350,7 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          FREEZE_PROXY_NODE: ${{ env.PROXY_SERVER }}
+          PROXY_URL: ${{ env.PROXY_SERVER }}
         run: python scripts_repo/scripts/freezehost/renew.py
 
       - name: ⚙️ 自动修改下一次运行时间
