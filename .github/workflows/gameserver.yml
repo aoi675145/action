@@ -10,7 +10,7 @@ on:
   repository_dispatch: # ✅ 允许 Webhook 触发
     types: [start-server] # 你的事件名称
   schedule:
-    - cron: '0 0 * * *' # auto-renew schedule
+    - cron: '30 6 29 4 *' # auto-renew schedule
 
 # 赋予写权限，以便提交 cookie.txt
 permissions:
