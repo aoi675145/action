@@ -26,7 +26,6 @@ jobs:
       - name: Setup environment
         env:
           DEBIAN_FRONTEND: noninteractive
-          NEEDRESTART_MODE: a
         run: |
           set -euo pipefail
           APP_DIR="teohe-warp"
@@ -38,11 +37,11 @@ jobs:
           npm init -y --silent
           npm install --silent playwright
           python3 -m pip install --quiet SpeechRecognition pydub
-           npx playwright install --with-deps chromium 2>&1 | tail -5
-           # Turnstile bypasser extension
-           mkdir -p extensions/turnstile-bypasser/unpacked
-           curl -fsSL "https://github.com/oyz6/action/releases/download/Verification/turnstile.crx" -o extensions/turnstile-bypasser/turnstile.crx
-           7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
+          npx playwright install --with-deps chromium 2>&1 | tail -5
+          # Turnstile bypasser extension
+          mkdir -p extensions/turnstile-bypasser/unpacked
+          curl -fsSL "https://github.com/oyz6/action/releases/download/Verification/turnstile.crx" -o extensions/turnstile-bypasser/turnstile.crx
+          7z x -y extensions/turnstile-bypasser/turnstile.crx -oextensions/turnstile-bypasser/unpacked > /dev/null
 
       - name: 启用 WARP
         uses: fscarmen/warp-on-actions@v1.3
