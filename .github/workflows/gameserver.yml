@@ -2,8 +2,15 @@ name: gameserver (Git Save)
 
 on:
   workflow_dispatch: # 允许网页手动点击触发
+    inputs:
+      run_renew:
+        description: Run renew.py instead of main.py
+        required: false
+        default: 'false'
   repository_dispatch: # ✅ 允许 Webhook 触发
     types: [start-server] # 你的事件名称
+  schedule:
+    - cron: '0 0 * * *' # auto-renew schedule
 
 # 赋予写权限，以便提交 cookie.txt
 permissions:
@@ -14,25 +21,43 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
+      - name: Checkout workflow repo
+        uses: actions/checkout@v4
+        with:
+          path: workflow-repo
+
+      - name: Checkout private repo
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: .
+          path: private-repo
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
       - name: Install Dependencies
-        working-directory: scripts/gameserver
+        working-directory: private-repo/scripts/gameserver
         run: |
-          pip install requests websocket-client selenium selenium-wire blinker==1.7.0
+          pip install -r requirements.txt
+
+      - name: Run Renewal Script
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_renew == 'true')
+        working-directory: private-repo/scripts/gameserver
+        env:
+          gameserver_ACCOUNTS: ${{ secrets.gameserver_ACCOUNTS }}
+          gameserver_PROXY_URL: ${{ secrets.gameserver_PROXY_URL }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          WORKFLOW_FILE: ${{ github.workspace }}/workflow-repo/gameserver/gameserver.yml
+        run: |
+          python renew.py
 
       - name: Run Selenium Script
-        working-directory: scripts/gameserver
+        if: github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && github.event.inputs.run_renew == 'true')
+        working-directory: private-repo/scripts/gameserver
         env:
           gameserver_ACCOUNTS: ${{ secrets.gameserver_ACCOUNTS }}
           # 👇 这里的变量名和 Secret 名都改成了带前缀的
@@ -41,9 +66,10 @@ jobs:
           python main.py
 
       - name: Commit and Push Cookie
+        working-directory: private-repo
         run: |
-          git config --global user.name "Auto Bot"
-          git config --global user.email "bot@github.com"
+          git config user.name "Auto Bot"
+          git config user.email "bot@github.com"
           
           git add scripts/gameserver/cookie.txt
           
@@ -52,5 +78,20 @@ jobs:
           else
             echo "🍪 检测到 Cookie 更新，正在推送到仓库..."
             git commit -m "Update cookie.txt [skip ci]"
+            git push
+          fi
+
+      - name: Commit and Push Workflow Schedule
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_renew == 'true')
+        working-directory: workflow-repo
+        run: |
+          git config user.name "Auto Bot"
+          git config user.email "bot@github.com"
+          git add gameserver/gameserver.yml
+          if git diff --staged --quiet; then
+            echo "✅ Workflow 时间没有变化，跳过提交。"
+          else
+            echo "🕒 检测到 workflow cron 更新，正在推送..."
+            git commit -m "Update gameserver renew schedule [skip ci]"
             git push
           fi
