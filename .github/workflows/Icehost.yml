@@ -2,7 +2,7 @@ name: Icehost Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '54 10 26 4 *' # 下一个: 2026-04-26 10:54 UTC (到期前2小时执行)
+    - cron: '59 3 17 4 *' # 下一个: 2026-04-17 03:59 UTC (到期前2天执行)
 
 jobs:
   run_renewal:
@@ -389,7 +389,7 @@ jobs:
               target_date = now_utc + timedelta(hours=1)
 
           new_cron = f"{target_date.minute} {target_date.hour} {target_date.day} {target_date.month} *"
-          next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC (到期前2小时执行)"
+          next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC"
 
           with open(workflow_file, "r", encoding="utf-8") as f:
               content = f.read()
