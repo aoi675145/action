@@ -5,7 +5,7 @@ on:
     inputs:
       run_renew:
         description: Run renew.py instead of main.py
-        required: false
+        required: true
         default: 'false'
   repository_dispatch: # ✅ 允许 Webhook 触发
     types: [start-server] # 你的事件名称
