@@ -51,11 +51,12 @@ jobs:
       run: |
         python greathost.py
 
-    - name: 📸 Upload Screenshots
+    - name: 🧹 Clean Workflow Runs
       if: always()
-      uses: actions/upload-artifact@v4
+      uses: Mattraks/delete-workflow-runs@v2
       with:
-        name: logs-${{ github.run_number }}
-        path: /tmp/*.png
-        if-no-files-found: ignore
-        retention-days: 3
+        token: ${{ github.token }}
+        repository: ${{ github.repository }}
+        delete_workflow_pattern: ${{ github.workflow }}
+        retain_days: 0
+        keep_minimum_runs: 4
