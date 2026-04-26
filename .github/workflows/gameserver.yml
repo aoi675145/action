@@ -24,6 +24,7 @@ jobs:
       - name: Checkout workflow repo
         uses: actions/checkout@v4
         with:
+          token: ${{ secrets.REPO_TOKEN }}
           path: workflow-repo
 
       - name: Checkout private repo
