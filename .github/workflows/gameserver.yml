@@ -51,7 +51,7 @@ jobs:
           gameserver_PROXY_URL: ${{ secrets.gameserver_PROXY_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          WORKFLOW_FILE: ${{ github.workspace }}/workflow-repo/gameserver/gameserver.yml
+          WORKFLOW_FILE: ${{ github.workspace }}/workflow-repo/.github/workflows/gameserver.yml
         run: |
           python renew.py
 
@@ -87,7 +87,7 @@ jobs:
         run: |
           git config user.name "Auto Bot"
           git config user.email "bot@github.com"
-          git add gameserver/gameserver.yml
+          git add .github/workflows/gameserver.yml
           if git diff --staged --quiet; then
             echo "✅ Workflow 时间没有变化，跳过提交。"
           else
