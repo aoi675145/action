@@ -1,0 +1,204 @@
+name: B4A Auto Redeploy
+
+permissions:
+  actions: write
+  contents: read
+
+on:
+  # schedule:
+  #   - cron: '55 23 * * *'
+  #   - cron: '55 0-14 * * *'  # 每60分钟
+  workflow_dispatch:
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Checkout private scripts repo
+        uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-scripts
+          sparse-checkout: |
+            scripts/Back4App/b4a_redeploy.py
+          sparse-checkout-cone-mode: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install seleniumbase requests pynacl
+
+      - name: Install Xray
+        run: |
+          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+
+      - name: Build Xray config
+        env:
+          PROXY_URL: ${{ secrets.b4a_PROXY_URL }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from urllib.parse import urlparse, parse_qs, unquote
+
+          proxy_url = os.environ["PROXY_URL"]
+          parsed = urlparse(proxy_url)
+          if parsed.scheme != "vless":
+              raise SystemExit(f"Unsupported proxy scheme: {parsed.scheme}")
+
+          qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+          transport_type = qs.get("type", "tcp")
+          if transport_type == "h2":
+              transport_type = "http"
+
+          host = parsed.hostname
+          port = parsed.port
+          user_id = unquote(parsed.username or "")
+          if not host or not port or not user_id:
+              raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+          stream_settings = {
+              "network": transport_type,
+              "security": qs.get("security", "none"),
+          }
+
+          if stream_settings["security"] == "reality":
+              reality = {
+                  "serverName": qs.get("sni", host),
+                  "fingerprint": qs.get("fp", "chrome"),
+                  "publicKey": qs.get("pbk", ""),
+              }
+              if qs.get("sid"):
+                  reality["shortId"] = qs["sid"]
+              if qs.get("spx"):
+                  reality["spiderX"] = qs["spx"]
+              stream_settings["realitySettings"] = reality
+          elif stream_settings["security"] == "tls":
+              stream_settings["tlsSettings"] = {
+                  "serverName": qs.get("sni", host),
+                  "fingerprint": qs.get("fp", "chrome"),
+              }
+
+          if transport_type == "tcp":
+              header_type = qs.get("headerType", "none")
+              stream_settings["tcpSettings"] = {"header": {"type": header_type}}
+          elif transport_type == "ws":
+              headers = {}
+              if qs.get("host"):
+                  headers["Host"] = qs["host"]
+              stream_settings["wsSettings"] = {
+                  "path": qs.get("path", "/"),
+                  "headers": headers,
+              }
+          elif transport_type == "http":
+              host_list = [h for h in qs.get("host", "").split(",") if h]
+              stream_settings["httpSettings"] = {
+                  "host": host_list,
+                  "path": qs.get("path", "/"),
+              }
+          elif transport_type == "grpc":
+              stream_settings["grpcSettings"] = {
+                  "serviceName": qs.get("serviceName", ""),
+                  "authority": qs.get("authority", ""),
+              }
+
+          config = {
+              "log": {"loglevel": "debug"},
+              "inbounds": [
+                  {
+                      "listen": "127.0.0.1",
+                      "port": 8080,
+                      "protocol": "http",
+                  }
+              ],
+              "outbounds": [
+                  {
+                      "protocol": "vless",
+                      "settings": {
+                          "vnext": [
+                              {
+                                  "address": host,
+                                  "port": port,
+                                  "users": [
+                                      {
+                                          "id": user_id,
+                                          "encryption": qs.get("encryption", "none"),
+                                          "flow": qs.get("flow", ""),
+                                      }
+                                  ],
+                              }
+                          ]
+                      },
+                      "streamSettings": stream_settings,
+                  }
+              ],
+          }
+
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PY
+
+      - name: Start Xray proxy
+        run: |
+          nohup xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 2
+          xray version
+          sed -n '1,160p' xray.log || true
+          echo "xray started"
+
+      - name: Test proxy connectivity
+        run: |
+          curl -I --max-time 20 --proxy http://127.0.0.1:8080 https://www.back4app.com
+
+      - name: Run redeploy script
+        env:
+          B4A_APP_ID: ${{ secrets.b4a_app_id }}
+          CONNECT_SID: ${{ secrets.CONNECT_SID }}
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+          TG_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python private-scripts/scripts/Back4App/b4a_redeploy.py
+
+      - name: Cleanup old workflow runs
+        if: always()
+        uses: actions/github-script@v7
+        with:
+          github-token: ${{ secrets.REPO_TOKEN }}
+          script: |
+            const { owner, repo } = context.repo;
+            const keep = 5;
+            const workflowPath = '.github/workflows/b4a_redeploy.yml';
+
+            const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+              owner,
+              repo,
+              per_page: 100,
+            });
+
+            const matchedRuns = runs.filter((run) => run.path === workflowPath);
+
+            const oldRuns = matchedRuns
+              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))
+              .slice(keep);
+
+            core.info(`Found ${matchedRuns.length} runs for ${workflowPath}, deleting ${oldRuns.length} old runs.`);
+
+            for (const run of oldRuns) {
+              await github.rest.actions.deleteWorkflowRun({
+                owner,
+                repo,
+                run_id: run.id,
+              });
+              core.info(`Deleted run ${run.id}`);
+            }
