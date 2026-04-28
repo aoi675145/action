@@ -40,13 +40,13 @@ jobs:
         env:
           MAGMANODE: ${{ secrets.MAGMANODE }}
           MAGMA_PROXY: ${{ secrets.MAGMA_PROXY }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           if [ -n "$MAGMANODE" ]; then echo "::add-mask::$MAGMANODE"; fi
           if [ -n "$MAGMA_PROXY" ]; then echo "::add-mask::$MAGMA_PROXY"; fi
-          if [ -n "$TG_BOT_TOKEN" ]; then echo "::add-mask::$TG_BOT_TOKEN"; fi
+          if [ -n "$BOT_TOKEN" ]; then echo "::add-mask::$BOT_TOKEN"; fi
           if [ -n "$TG_CHAT_ID" ]; then echo "::add-mask::$TG_CHAT_ID"; fi
           if [ -n "$REPO_TOKEN" ]; then echo "::add-mask::$REPO_TOKEN"; fi
 
@@ -371,7 +371,7 @@ jobs:
           MAGMANODE: ${{ secrets.MAGMANODE }}
           MAGMA_PROXY: ${{ env.PROXY_SERVER }}
           NETWORK_MODE: ${{ env.NETWORK_MODE }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
