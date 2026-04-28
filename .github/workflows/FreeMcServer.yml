@@ -125,7 +125,7 @@ jobs:
       - name: 执行续订脚本
         env:
           FREEMCSERVER: ${{ secrets.FREEMCSERVER }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           python scripts/FreeMcServer/main.py
