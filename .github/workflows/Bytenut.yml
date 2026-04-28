@@ -3,7 +3,7 @@ name: Bytenut Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '16 16 * * *'
+    - cron: '0 16 * * *'
 
 # ⚠️ 必须添加权限配置，允许 Action 修改仓库文件
 permissions:
@@ -229,6 +229,10 @@ jobs:
 
     - name: Run Script
       env:
+        GITHUB_TOKEN: ${{ github.token }}
+        GITHUB_REPOSITORY: ${{ github.repository }}
+        GITHUB_REF_NAME: ${{ github.ref_name }}
+        GITHUB_WORKFLOW_PATH: Bytenut/Bytenut.yml
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         bytenut_ACCOUNTS: ${{ secrets.bytenut_ACCOUNTS }}
