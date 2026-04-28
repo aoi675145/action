@@ -3,7 +3,7 @@ name: Bytenut Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '34 14 28 4 *'
+    - cron: '0 16 * * *'
 
 # ⚠️ 必须添加权限配置，允许 Action 修改仓库文件
 permissions:
@@ -229,7 +229,7 @@ jobs:
 
     - name: Run Script
       env:
-        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         bytenut_ACCOUNTS: ${{ secrets.bytenut_ACCOUNTS }}
         BYTENUT_NETWORK_MODE: ${{ steps.start_xray.outputs.use_proxy == 'true' && '代理' || '直连' }}
