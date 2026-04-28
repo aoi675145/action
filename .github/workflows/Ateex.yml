@@ -206,7 +206,7 @@ jobs:
       - name: Run full flow
         env:
           Ateex_ACCOUNTS: ${{ secrets.Ateex_ACCOUNTS }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           mkdir -p screenshots
