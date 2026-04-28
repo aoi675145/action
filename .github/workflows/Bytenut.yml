@@ -229,10 +229,6 @@ jobs:
 
     - name: Run Script
       env:
-        GITHUB_TOKEN: ${{ github.token }}
-        GITHUB_REPOSITORY: ${{ github.repository }}
-        GITHUB_REF_NAME: ${{ github.ref_name }}
-        GITHUB_WORKFLOW_PATH: Bytenut/Bytenut.yml
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         bytenut_ACCOUNTS: ${{ secrets.bytenut_ACCOUNTS }}
@@ -269,14 +265,97 @@ jobs:
             (re.compile(r"([A-Za-z0-9._%+-]{2})[A-Za-z0-9._%+-]{3,}"), r"\1***"),
         ]
 
-        for raw_line in proc.stdout:
-            line = raw_line.rstrip("\n")
-            for pattern, repl in patterns:
-                line = pattern.sub(repl, line)
-            print(line, flush=True)
+        with open("renew.log", "w", encoding="utf-8") as log_file:
+            for raw_line in proc.stdout:
+                line = raw_line.rstrip("\n")
+                for pattern, repl in patterns:
+                    line = pattern.sub(repl, line)
+                print(line, flush=True)
+                log_file.write(line + "\n")
+                log_file.flush()
 
         raise SystemExit(proc.wait())
         PY
+
+    - name: 提取冷却时间
+      id: extract_cooldown
+      if: success()
+      run: |
+        COOLDOWN_MINUTES=$(python - <<'PY'
+        import re
+
+        latest = ""
+        with open("renew.log", "r", encoding="utf-8") as f:
+            for line in f:
+                match = re.search(r"冷却剩余=(\d+)分钟", line)
+                if match:
+                    latest = match.group(1)
+
+        print(latest)
+        PY
+        )
+
+        if [ -z "$COOLDOWN_MINUTES" ]; then
+          echo "skip_update=true" >> "$GITHUB_OUTPUT"
+          echo "::warning::未从日志中提取到冷却分钟数，跳过 Cron 更新"
+          exit 0
+        fi
+
+        echo "cooldown_minutes=$COOLDOWN_MINUTES" >> "$GITHUB_OUTPUT"
+        echo "skip_update=false" >> "$GITHUB_OUTPUT"
+        echo "::notice::⏳ 冷却剩余: $COOLDOWN_MINUTES 分钟"
+
+    - name: 修改下次 Cron 时间
+      if: success() && steps.extract_cooldown.outputs.skip_update != 'true'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        set -e
+
+        COOLDOWN_MINUTES=${{ steps.extract_cooldown.outputs.cooldown_minutes }}
+        if [ "$COOLDOWN_MINUTES" -le 0 ]; then
+          echo "::warning::冷却时间无效，跳过 Cron 更新"
+          exit 0
+        fi
+
+        NEXT_DATE=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%Y-%m-%d %H:%M")
+        NEXT_MINUTE=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%-M")
+        NEXT_HOUR=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%-H")
+        NEXT_DAY=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%-d")
+        NEXT_MONTH=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%-m")
+        NEW_CRON="$NEXT_MINUTE $NEXT_HOUR $NEXT_DAY $NEXT_MONTH *"
+
+        echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
+        echo "::notice::📟 新 Cron: $NEW_CRON"
+
+        git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" workflow_repo
+        cd workflow_repo
+
+        WORKFLOW_FILE=".github/workflows/Bytenut.yml"
+        LINE_NUM=$(grep -n "cron: '" "$WORKFLOW_FILE" | head -n1 | cut -d: -f1)
+
+        if [ -z "$LINE_NUM" ]; then
+          echo "::error::找不到 cron 行"
+          exit 1
+        fi
+
+        sed -i "${LINE_NUM}c\    - cron: '$NEW_CRON'" "$WORKFLOW_FILE"
+
+        if git diff --quiet "$WORKFLOW_FILE"; then
+          echo "::notice::没有变化需要提交"
+          exit 0
+        fi
+
+        git config user.name "github-actions[bot]"
+        git config user.email "github-actions[bot]@users.noreply.github.com"
+        git add "$WORKFLOW_FILE"
+        git commit -m "chore: update Bytenut workflow cron" \
+                   -m "Next run: $NEXT_DATE UTC" \
+                   -m "Cooldown: $COOLDOWN_MINUTES minutes" \
+                   -m "Cron: $NEW_CRON"
+        git push
+
+        echo "::notice::✅ Cron 更新成功"
 
     - name: 清理旧的工作流运行记录
       if: always()
