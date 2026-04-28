@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "17 * * * *"   
+    - cron: "0 * * * *"   # 每小时第 0 分钟执行一次（UTC）
 
 jobs:
   run:
@@ -81,7 +81,7 @@ jobs:
       # =========================
       - name: Run script
         env:
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           mkdir -p private-repo/scripts/gm4/screenshots
