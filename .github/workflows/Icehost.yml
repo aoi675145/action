@@ -2,7 +2,7 @@ name: Icehost Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '42 10 28 4 *' # 下一个: 2026-04-28 10:42 UTC
+    - cron: '59 3 17 4 *' # 下一个: 2026-04-17 03:59 UTC (到期前2天执行)
 
 jobs:
   run_renewal:
@@ -353,12 +353,12 @@ jobs:
           Icehost: ${{ secrets.Icehost }}
           ICEHOST_SESSION: ${{ secrets.ICEHOST_SESSION }}
           Ice_PROXY_NODE: ${{ env.PROXY_SERVER }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           echo "::add-mask::$ICEHOST_SESSION"
           echo "::add-mask::$Ice_PROXY_NODE"
-          echo "::add-mask::$TG_BOT_TOKEN"
+          echo "::add-mask::$BOT_TOKEN"
           echo "::add-mask::$TG_CHAT_ID"
           # 使用 xvfb-run 分配虚拟屏幕，让 xdotool 能够正常点击
           xvfb-run -a python private-scripts/scripts/Icehost/main.py 2>&1 | tee renew.log
