@@ -125,7 +125,7 @@ jobs:
       - name: 执行重启脚本
         env:
           FALIX: ${{ secrets.FALIX }}
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           Falix_PROXY_NODE: ${{ secrets.Falix_PROXY_NODE }}
         run: |
