@@ -308,7 +308,7 @@ jobs:
     - name: 修改下次 Cron 时间
       if: success() && steps.extract_cooldown.outputs.skip_update != 'true'
       env:
-        GH_TOKEN: ${{ github.token }}
+        GH_TOKEN: ${{ secrets.REPO_TOKEN }}
       run: |
         set -e
 
