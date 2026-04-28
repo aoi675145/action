@@ -235,11 +235,11 @@ jobs:
         env:
           RUNOX_ACCOUNTS: ${{ secrets.RUNOX_ACCOUNTS }}
           PROXY: ${{ env.PROXY }}
-          TG_BOT_TOKEN:    ${{ secrets.TG_BOT_TOKEN }}
+          BOT_TOKEN:       ${{ secrets.BOT_TOKEN }}
           TG_CHAT_ID:      ${{ secrets.TG_CHAT_ID }}
         run: |
           echo "::add-mask::${RUNOX_ACCOUNTS}"
-          echo "::add-mask::${TG_BOT_TOKEN}"
+          echo "::add-mask::${BOT_TOKEN}"
           echo "::add-mask::${TG_CHAT_ID}"
           IFS=',' read -ra accounts <<< "${RUNOX_ACCOUNTS}"
           for acc in "${accounts[@]}"; do
