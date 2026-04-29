@@ -30,7 +30,7 @@ jobs:
       - name: 安装依赖
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y ffmpeg dnsmasq
+          sudo apt-get install -y ffmpeg dnsmasq xdotool
           pip install -q seleniumbase requests pyvirtualdisplay
 
       - name: 启用 WARP 网络
