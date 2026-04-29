@@ -3,7 +3,7 @@ name: Bytenut Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '59 6 29 4 *'
+    - cron: '0 * * * *'
 
 # ⚠️ 必须添加权限配置，允许 Action 修改仓库文件
 permissions:
@@ -18,17 +18,61 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    - name: Check next run time
+      id: schedule_check
+      env:
+        REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      run: |
+        if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+          echo "[INFO] 手动运行，跳过下次运行时间检查"
+          exit 0
+        fi
+
+        NEXT=$(curl -fsSL \
+          -H "Authorization: Bearer ${REPO_TOKEN}" \
+          -H "Accept: application/vnd.github.raw" \
+          "https://api.github.com/repos/akina005/scripts/contents/scripts/bytenut/next_run_epoch.txt?ref=main" \
+          | tr -d '[:space:]' || true)
+
+        if [ -z "$NEXT" ]; then
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+          echo "[INFO] 未从私库读取到下次运行时间，允许执行"
+          exit 0
+        fi
+
+        NOW=$(date -u +%s)
+        if ! echo "$NEXT" | grep -Eq '^[0-9]+$'; then
+          echo "should_run=true" >> "$GITHUB_OUTPUT"
+          echo "[WARN] 下次运行时间格式无效，允许执行"
+          exit 0
+        fi
+
+        if [ "$NOW" -lt "$NEXT" ]; then
+          NEXT_UTC=$(date -u -d "@$NEXT" +"%Y-%m-%d %H:%M UTC")
+          NEXT_BJ=$(TZ=Asia/Shanghai date -d "@$NEXT" +"%Y-%m-%d %H:%M GMT+8")
+          echo "should_run=false" >> "$GITHUB_OUTPUT"
+          echo "[INFO] 未到运行时间，跳过。本次目标: $NEXT_UTC / $NEXT_BJ"
+          exit 0
+        fi
+
+        echo "should_run=true" >> "$GITHUB_OUTPUT"
+        echo "[INFO] 已到运行时间，开始执行"
+
     - name: Set up Python
+      if: steps.schedule_check.outputs.should_run == 'true'
       uses: actions/setup-python@v5
       with:
         python-version: '3.10'
 
     - name: Install dependencies
+      if: steps.schedule_check.outputs.should_run == 'true'
       run: |
         python -m pip install --upgrade pip
         pip install seleniumbase requests
 
     - name: Install Xray
+      if: steps.schedule_check.outputs.should_run == 'true'
       run: |
         wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
         mkdir -p xray-bin
@@ -37,10 +81,12 @@ jobs:
         sudo mv xray-bin/xray /usr/local/bin/xray
 
     - name: Setup Chrome
+      if: steps.schedule_check.outputs.should_run == 'true'
       run: |
         seleniumbase install chromedriver
 
     - name: Fetch private bytenut script
+      if: steps.schedule_check.outputs.should_run == 'true'
       env:
         REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
       run: |
@@ -51,6 +97,7 @@ jobs:
           "https://api.github.com/repos/akina005/scripts/contents/scripts/bytenut/bytenut.py?ref=main"
 
     - name: Build Xray config
+      if: steps.schedule_check.outputs.should_run == 'true'
       id: build_xray
       env:
         PROXY_URL: ${{ secrets.bytenut_PROXY_NODE }}
@@ -213,7 +260,7 @@ jobs:
 
     - name: Start Xray proxy
       id: start_xray
-      if: steps.build_xray.outputs.use_proxy == 'true'
+      if: steps.schedule_check.outputs.should_run == 'true' && steps.build_xray.outputs.use_proxy == 'true'
       continue-on-error: true
       run: |
         nohup xray run -c xray-config.json > xray.log 2>&1 &
@@ -228,6 +275,7 @@ jobs:
         fi
 
     - name: Run Script
+      if: steps.schedule_check.outputs.should_run == 'true'
       env:
         BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
@@ -279,7 +327,7 @@ jobs:
 
     - name: 提取冷却时间
       id: extract_cooldown
-      if: success()
+      if: success() && steps.schedule_check.outputs.should_run == 'true'
       run: |
         COOLDOWN_MINUTES=$(python - <<'PY'
         import re
@@ -305,7 +353,7 @@ jobs:
         echo "skip_update=false" >> "$GITHUB_OUTPUT"
         echo "::notice::⏳ 冷却剩余: $COOLDOWN_MINUTES 分钟"
 
-    - name: 修改下次 Cron 时间
+    - name: 更新下次运行时间
       if: success() && steps.extract_cooldown.outputs.skip_update != 'true'
       env:
         GH_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -319,46 +367,37 @@ jobs:
         fi
 
         NEXT_DATE=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%Y-%m-%d %H:%M")
-        NEXT_MINUTE=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%-M")
-        NEXT_HOUR=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%-H")
-        NEXT_DAY=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%-d")
-        NEXT_MONTH=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +"%-m")
-        NEW_CRON="$NEXT_MINUTE $NEXT_HOUR $NEXT_DAY $NEXT_MONTH *"
+        NEXT_EPOCH=$(date -u -d "+${COOLDOWN_MINUTES} minutes" +%s)
+        NEXT_BJ=$(TZ=Asia/Shanghai date -d "@$NEXT_EPOCH" +"%Y-%m-%d %H:%M GMT+8")
 
         echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
-        echo "::notice::📟 新 Cron: $NEW_CRON"
+        echo "::notice::⏰ 下次运行(北京时间): $NEXT_BJ"
 
-        git clone "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}.git" workflow_repo
+        git clone "https://x-access-token:${GH_TOKEN}@github.com/akina005/scripts.git" workflow_repo
         cd workflow_repo
 
-        WORKFLOW_FILE=".github/workflows/Bytenut.yml"
-        LINE_NUM=$(grep -n "cron: '" "$WORKFLOW_FILE" | head -n1 | cut -d: -f1)
+        mkdir -p scripts/bytenut
+        printf "%s\n" "$NEXT_EPOCH" > scripts/bytenut/next_run_epoch.txt
+        printf "%s / %s\n" "$NEXT_DATE UTC" "$NEXT_BJ" > scripts/bytenut/next_run_time.txt
 
-        if [ -z "$LINE_NUM" ]; then
-          echo "::error::找不到 cron 行"
-          exit 1
-        fi
-
-        sed -i "${LINE_NUM}c\    - cron: '$NEW_CRON'" "$WORKFLOW_FILE"
-
-        if git diff --quiet "$WORKFLOW_FILE"; then
+        if git diff --quiet scripts/bytenut/next_run_epoch.txt scripts/bytenut/next_run_time.txt; then
           echo "::notice::没有变化需要提交"
           exit 0
         fi
 
         git config user.name "github-actions[bot]"
         git config user.email "github-actions[bot]@users.noreply.github.com"
-        git add "$WORKFLOW_FILE"
-        git commit -m "chore: update Bytenut workflow cron" \
+        git add scripts/bytenut/next_run_epoch.txt scripts/bytenut/next_run_time.txt
+        git commit -m "chore: update Bytenut next run time" \
                    -m "Next run: $NEXT_DATE UTC" \
-                   -m "Cooldown: $COOLDOWN_MINUTES minutes" \
-                   -m "Cron: $NEW_CRON"
+                   -m "Next run BJ: $NEXT_BJ" \
+                   -m "Cooldown: $COOLDOWN_MINUTES minutes"
         git push
 
-        echo "::notice::✅ Cron 更新成功"
+        echo "::notice::✅ 下次运行时间更新成功"
 
     - name: 清理旧的工作流运行记录
-      if: always()
+      if: always() && steps.schedule_check.outputs.should_run == 'true'
       uses: Mattraks/delete-workflow-runs@v2
       with:
         token: ${{ github.token }}
