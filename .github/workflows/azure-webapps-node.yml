@@ -1,0 +1,39 @@
+name: Nuke All Workflow Runs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  nuke:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write 
+    steps:
+      - name: Delete all runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          echo "开始无差别清理历史运行记录..."
+          
+          # 获取所有记录的 ID
+          run_ids=$(gh api repos/$REPO/actions/runs --paginate -q '.workflow_runs[].id')
+          
+          if [ -z "$run_ids" ]; then
+            echo "没有记录需要删除！"
+            exit 0
+          fi
+          
+          for id in $run_ids; do
+            # 核心修复：跳过当前正在运行的这个清理任务本身
+            if [ "$id" == "${{ github.run_id }}" ]; then
+              echo "⏭️ 跳过当前正在运行的任务本身 (ID: $id)"
+              continue
+            fi
+            
+            echo "💥 正在超度记录 ID: $id"
+            # 增加 || true，防止个别顽固记录导致整个脚本崩溃退出
+            gh api repos/$REPO/actions/runs/$id -X DELETE >/dev/null || echo "⚠️ 删除 $id 失败，跳过并继续..."
+          done
+          
+          echo "🎉 历史记录清理完毕！"
