@@ -363,7 +363,7 @@ jobs:
 
           if [ -f "use_external_socks.txt" ]; then
             EXTERNAL_SOCKS=$(cat use_external_socks.txt)
-            echo "HTTP_PROXY=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "Katabump_BROWSER_PROXY=$EXTERNAL_SOCKS" >> $GITHUB_ENV
             echo "Katabump_PROXY_STATUS=代理状态：已启用" >> $GITHUB_ENV
             echo "[INFO] ✅ 使用外部 SOCKS5 代理"
             exit 0
@@ -376,7 +376,7 @@ jobs:
           for i in 1 2 3 4 5; do
             if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] ✅ 代理连接成功"
-              echo "HTTP_PROXY=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+              echo "Katabump_BROWSER_PROXY=socks5://127.0.0.1:1080" >> $GITHUB_ENV
               echo "Katabump_PROXY_STATUS=代理状态：已启用" >> $GITHUB_ENV
               exit 0
             fi
@@ -395,6 +395,7 @@ jobs:
           Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          Katabump_BROWSER_PROXY: ${{ env.Katabump_BROWSER_PROXY }}
           Katabump_PROXY_STATUS: ${{ env.Katabump_PROXY_STATUS }}
           DISPLAY: ':99'
           HEADLESS: 'false'
