@@ -44,8 +44,7 @@ jobs:
     - name: 🚀 Run Auto Renew
       working-directory: scripts/greathost
       env:
-        GREATHOST_EMAIL: ${{ secrets.GREATHOST_EMAIL }}
-        GREATHOST_PASSWORD: ${{ secrets.GREATHOST_PASSWORD }}
+        GREATHOST: ${{ secrets.GREATHOST }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
