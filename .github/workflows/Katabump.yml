@@ -44,6 +44,8 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: scripts/Katabump/requirements.txt
 
       - name: Install dependencies
         if: steps.check.outputs.run == 'true'
@@ -51,7 +53,14 @@ jobs:
           # 进入私库中对应的目录安装依赖
           cd scripts/Katabump
           pip install -r requirements.txt
-          sudo apt-get update && sudo apt-get install -y xvfb
+          if command -v Xvfb >/dev/null 2>&1; then
+            echo "Xvfb already installed, skipping apt install."
+          else
+            sudo apt-get install -y --no-install-recommends xvfb || {
+              sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
+              sudo apt-get install -y --no-install-recommends xvfb
+            }
+          fi
           
       - name: Get Chromium Version
         if: steps.check.outputs.run == 'true'
