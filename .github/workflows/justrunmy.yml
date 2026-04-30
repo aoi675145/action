@@ -37,23 +37,232 @@ jobs:
       run: |
         seleniumbase install chromedriver
 
-    - name: Setup Proxy Tunnel (Gost)
+    - name: Setup Proxy Tunnel (Xray)
       env:
-        PROXY_URL: ${{ secrets.PROXY }} 
+        Justrunmy_ROXY_NODE: ${{ secrets.Justrunmy_ROXY_NODE }}
+        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+        TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
-        wget -q https://github.com/ginuerzh/gost/releases/download/v2.11.5/gost-linux-amd64-2.11.5.gz
-        gunzip gost-linux-amd64-2.11.5.gz
-        chmod +x gost-linux-amd64-2.11.5
-        nohup ./gost-linux-amd64-2.11.5 -L :1080 -F "${PROXY_URL}" > gost.log 2>&1 &
+        notify_fail() {
+          local msg="$1"
+          echo "[ERROR] $msg"
+          if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TG_CHAT_ID}" \
+              --data-urlencode "text=❌ JustRunMy 续期失败：${msg}" > /dev/null || true
+          else
+            echo "[WARN] 未配置 TG_BOT_TOKEN 或 TG_CHAT_ID，无法发送失败通知"
+          fi
+        }
+
+        if [ -z "$Justrunmy_ROXY_NODE" ]; then
+          notify_fail "未配置代理节点 Justrunmy_ROXY_NODE，已禁止直连"
+          exit 1
+        fi
+
+        wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
+        unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
+
+        if ! python3 << 'PYEOF'
+        import os, sys, json, base64
+        from urllib.parse import parse_qs, unquote
+
+        def mask(s):
+            return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
+
+        url = os.environ.get("Justrunmy_ROXY_NODE", "").strip()
+        if not url:
+            print("[ERROR] Justrunmy_ROXY_NODE 为空")
+            sys.exit(1)
+
+        if url.startswith("vless://"):
+            protocol = "vless"
+            content = url[8:]
+        elif url.startswith("vmess://"):
+            protocol = "vmess"
+            content = url[8:]
+        else:
+            print(f"[ERROR] 不支持的协议: {url.split('://')[0] if '://' in url else 'unknown'}")
+            sys.exit(1)
+
+        if "#" in content:
+            content = content.rsplit("#", 1)[0]
+
+        config = {
+            "log": {"loglevel": "warning"},
+            "inbounds": [
+                {"port": 1080, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                {"port": 1081, "listen": "127.0.0.1", "protocol": "http"}
+            ],
+            "outbounds": []
+        }
+
+        if protocol == "vless":
+            uuid, rest = content.split("@", 1)
+            if "?" in rest:
+                host_port, params_str = rest.split("?", 1)
+            else:
+                host_port, params_str = rest, ""
+
+            if ":" in host_port:
+                address, port = host_port.rsplit(":", 1)
+            else:
+                address, port = host_port, "443"
+
+            params = parse_qs(params_str)
+            security = params.get("security", ["none"])[0]
+            network = params.get("type", ["tcp"])[0]
+            sni = params.get("sni", [address])[0]
+            fp = params.get("fp", ["chrome"])[0]
+            flow = params.get("flow", [""])[0]
+            host = params.get("host", [sni])[0]
+            path = unquote(params.get("path", ["/"])[0])
+
+            print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
+
+            outbound = {
+                "protocol": "vless",
+                "settings": {
+                    "vnext": [{
+                        "address": address,
+                        "port": int(port),
+                        "users": [{"id": uuid, "encryption": "none"}]
+                    }]
+                },
+                "streamSettings": {
+                    "network": network,
+                    "security": security
+                }
+            }
+
+            if flow:
+                outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
+
+            if security == "tls":
+                outbound["streamSettings"]["tlsSettings"] = {
+                    "serverName": sni,
+                    "fingerprint": fp,
+                    "allowInsecure": False
+                }
+            elif security == "reality":
+                outbound["streamSettings"]["realitySettings"] = {
+                    "serverName": sni,
+                    "fingerprint": fp,
+                    "publicKey": params.get("pbk", [""])[0]
+                }
+
+            if network == "ws":
+                outbound["streamSettings"]["wsSettings"] = {
+                    "path": path,
+                    "headers": {"Host": host}
+                }
+
+            config["outbounds"].append(outbound)
+
+        elif protocol == "vmess":
+            try:
+                padding = 4 - len(content) % 4
+                if padding != 4:
+                    content += "=" * padding
+                decoded = base64.b64decode(content).decode("utf-8")
+                vm = json.loads(decoded)
+            except Exception as e:
+                print(f"[ERROR] VMess 解析失败: {e}")
+                sys.exit(1)
+
+            address = vm.get("add", "")
+            port = int(vm.get("port", 443))
+            uuid = vm.get("id", "")
+            aid = int(vm.get("aid", 0))
+            network = vm.get("net", "tcp")
+            tls = vm.get("tls", "")
+            sni = vm.get("sni", "") or vm.get("host", address)
+            host = vm.get("host", address)
+            path = vm.get("path", "/")
+            fp = vm.get("fp", "chrome")
+            security = vm.get("scy", "auto") or "auto"
+
+            if not address or not uuid:
+                print("[ERROR] VMess 缺少 address 或 uuid")
+                sys.exit(1)
+
+            print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
+
+            outbound = {
+                "protocol": "vmess",
+                "settings": {
+                    "vnext": [{
+                        "address": address,
+                        "port": port,
+                        "users": [{"id": uuid, "alterId": aid, "security": security}]
+                    }]
+                },
+                "streamSettings": {
+                    "network": network,
+                    "security": "tls" if tls == "tls" else "none"
+                }
+            }
+
+            if tls == "tls":
+                outbound["streamSettings"]["tlsSettings"] = {
+                    "serverName": sni,
+                    "fingerprint": fp,
+                    "allowInsecure": False
+                }
+
+            if network == "ws":
+                outbound["streamSettings"]["wsSettings"] = {
+                    "path": path,
+                    "headers": {"Host": host}
+                }
+
+            config["outbounds"].append(outbound)
+
+        with open("xray_config.json", "w") as f:
+            json.dump(config, f, indent=2)
+
+        print("[INFO] ✅ 代理配置已生成")
+        PYEOF
+        then
+          notify_fail "代理节点解析失败，已禁止直连"
+          exit 1
+        fi
+
+        ./xray/xray run -c xray_config.json > xray.log 2>&1 &
         sleep 5
-        curl -il -x socks5://127.0.0.1:1080 https://api.ipify.org
+
+        echo "[INFO] 测试代理连接..."
+        for i in 1 2 3 4 5; do
+          if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+            echo "[INFO] ✅ 代理连接成功"
+            echo "PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+            exit 0
+          fi
+          echo "[WARN] 尝试 $i/5..."
+          sleep 3
+        done
+
+        notify_fail "代理连接失败，已禁止直连"
+        cat xray.log
+        exit 1
 
     - name: Run Script
       env:
-        PROXY: socks5://127.0.0.1:1080
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}      # 已经改好的新变量名
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
+        if [ -z "$PROXY_SERVER" ]; then
+          echo "[ERROR] PROXY_SERVER 为空，禁止直连"
+          if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TG_CHAT_ID}" \
+              --data-urlencode "text=❌ JustRunMy 续期失败：PROXY_SERVER 为空，已禁止直连" > /dev/null || true
+          fi
+          exit 1
+        fi
+
+        export PROXY="$PROXY_SERVER"
+
         # 👇 先进入对应的文件夹，让脚本能在同级目录找到 cookie.txt
         cd scripts/justrunmy
         
