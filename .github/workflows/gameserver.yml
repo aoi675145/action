@@ -328,3 +328,12 @@ jobs:
             git commit -m "Update gameserver renew schedule [skip ci]"
             git push
           fi
+
+      - name: 🧹 清理旧的运行记录 (仅保留最近 5 个)
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          retain_days: 0
+          keep_minimum_runs: 5
