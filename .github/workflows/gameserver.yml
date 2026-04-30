@@ -259,6 +259,8 @@ jobs:
           gameserver_ACCOUNTS: ${{ secrets.gameserver_ACCOUNTS }}
           # 👇 这里的变量名和 Secret 名都改成了带前缀的
           gameserver_PROXY_URL: ${{ env.PROXY_SERVER }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           python main.py
 
