@@ -15,6 +15,7 @@ on:
 # 赋予写权限，以便提交 cookie.txt
 permissions:
   contents: write
+  actions: write
 
 jobs:
   run-selenium:
@@ -53,13 +54,7 @@ jobs:
           notify_proxy_failed() {
             REASON="$1"
             BJ_TIME=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
-            MESSAGE="❌ 代理失效
-
-代理模式：代理
-失败原因：${REASON}
-北京时间：${BJ_TIME}
-
-Runox Proxy"
+            MESSAGE=$(printf '❌ 代理失效\n\n代理模式：代理\n失败原因：%s\n北京时间：%s\n\nRunox Proxy' "$REASON" "$BJ_TIME")
 
             if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
               echo "[WARN] 未配置 TG_BOT_TOKEN 或 TG_CHAT_ID，跳过代理失效通知"
@@ -93,9 +88,6 @@ Runox Proxy"
             echo "[ERROR] HTTP/HTTPS 代理连接失败"
             notify_proxy_failed "HTTP/HTTPS 代理连接失败"
             exit 1
-
-            echo "PROXY_SERVER=$gameserver_PROXY_URL" >> $GITHUB_ENV
-            exit 0
           fi
 
           if [[ "$gameserver_PROXY_URL" != vless://* && "$gameserver_PROXY_URL" != vmess://* ]]; then
