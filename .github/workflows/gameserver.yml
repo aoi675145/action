@@ -1,18 +1,17 @@
 name: gameserver (Git Save)
 
 on:
-  workflow_dispatch: # 允许网页手动点击触发
+  workflow_dispatch:
     inputs:
       run_renew:
         description: Run renew.py instead of main.py
         required: false
         default: 'false'
-  repository_dispatch: # ✅ 允许 Webhook 触发
-    types: [start-server] # 你的事件名称
+  repository_dispatch:
+    types: [start-server]
   schedule:
     - cron: '0 0 * * *' # auto-renew schedule
 
-# 赋予写权限，以便提交 cookie.txt
 permissions:
   contents: write
   actions: write
@@ -290,7 +289,6 @@ jobs:
         working-directory: private-repo/scripts/gameserver
         env:
           gameserver_ACCOUNTS: ${{ secrets.gameserver_ACCOUNTS }}
-          # 👇 这里的变量名和 Secret 名都改成了带前缀的
           gameserver_PROXY_URL: ${{ env.PROXY_SERVER }}
           REQUIRE_PROXY: '1'
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -329,7 +327,7 @@ jobs:
             git push
           fi
 
-      - name: 🧹 清理旧的运行记录 (仅保留最近 5 个)
+      - name: Clean old workflow runs
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
