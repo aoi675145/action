@@ -47,21 +47,60 @@ jobs:
       - name: Setup Proxy
         env:
           gameserver_PROXY_URL: ${{ secrets.gameserver_PROXY_URL }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
+          notify_proxy_failed() {
+            REASON="$1"
+            BJ_TIME=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
+            MESSAGE="❌ 代理失效
+
+代理模式：代理
+失败原因：${REASON}
+北京时间：${BJ_TIME}
+
+Runox Proxy"
+
+            if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+              echo "[WARN] 未配置 TG_BOT_TOKEN 或 TG_CHAT_ID，跳过代理失效通知"
+              return 0
+            fi
+
+            curl -sS -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+              -d "chat_id=${TG_CHAT_ID}" \
+              --data-urlencode "text=${MESSAGE}" > /dev/null || true
+          }
+
           if [ -z "$gameserver_PROXY_URL" ]; then
-            echo "[INFO] 未配置代理，使用直连模式"
-            echo "PROXY_SERVER=" >> $GITHUB_ENV
-            exit 0
+            echo "[ERROR] 未配置代理，已禁止直连"
+            notify_proxy_failed "未配置代理，已禁止直连"
+            exit 1
           fi
 
           if [[ "$gameserver_PROXY_URL" == http://* || "$gameserver_PROXY_URL" == https://* ]]; then
             echo "[INFO] 使用 HTTP/HTTPS 代理"
+            echo "[INFO] 测试 HTTP/HTTPS 代理连接..."
+            for i in 1 2 3; do
+              if curl -x "$gameserver_PROXY_URL" -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+                echo "[INFO] 代理连接成功"
+                echo "PROXY_SERVER=$gameserver_PROXY_URL" >> $GITHUB_ENV
+                exit 0
+              fi
+              echo "[WARN] HTTP/HTTPS 代理测试失败，重试 $i/3"
+              sleep 3
+            done
+
+            echo "[ERROR] HTTP/HTTPS 代理连接失败"
+            notify_proxy_failed "HTTP/HTTPS 代理连接失败"
+            exit 1
+
             echo "PROXY_SERVER=$gameserver_PROXY_URL" >> $GITHUB_ENV
             exit 0
           fi
 
           if [[ "$gameserver_PROXY_URL" != vless://* && "$gameserver_PROXY_URL" != vmess://* ]]; then
             echo "[ERROR] 不支持的代理格式。支持 http://、https://、vless://、vmess://"
+            notify_proxy_failed "不支持的代理格式"
             exit 1
           fi
 
@@ -238,6 +277,7 @@ jobs:
 
           echo "[ERROR] 代理连接失败"
           cat xray.log
+          notify_proxy_failed "VLESS/VMess 代理连接失败"
           exit 1
 
       - name: Run Renewal Script
@@ -246,6 +286,7 @@ jobs:
         env:
           gameserver_ACCOUNTS: ${{ secrets.gameserver_ACCOUNTS }}
           gameserver_PROXY_URL: ${{ env.PROXY_SERVER }}
+          REQUIRE_PROXY: '1'
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           WORKFLOW_FILE: ${{ github.workspace }}/workflow-repo/.github/workflows/gameserver.yml
@@ -259,6 +300,7 @@ jobs:
           gameserver_ACCOUNTS: ${{ secrets.gameserver_ACCOUNTS }}
           # 👇 这里的变量名和 Secret 名都改成了带前缀的
           gameserver_PROXY_URL: ${{ env.PROXY_SERVER }}
+          REQUIRE_PROXY: '1'
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
