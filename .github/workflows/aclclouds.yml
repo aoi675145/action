@@ -340,7 +340,6 @@ jobs:
       - name: 🚀 运行 ACLClouds Python 脚本
         working-directory: scripts/Acl
         env:
-          Aclclouds_COOKIES: ${{ secrets.Aclclouds_COOKIES }}
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
