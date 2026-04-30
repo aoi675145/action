@@ -17,7 +17,14 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
-          path: .
+          path: scripts_repo
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - name: 📥 拉取工作流仓库
+        uses: actions/checkout@v4
+        with:
+          repository: akina005/action
+          path: action_repo
           token: ${{ secrets.REPO_TOKEN }}
 
       - name: 🐍 设置 Python
@@ -338,7 +345,7 @@ jobs:
           exit 1
 
       - name: 🚀 运行 ACLClouds Python 脚本
-        working-directory: scripts/Acl
+        working-directory: scripts_repo/scripts/Acl
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -351,7 +358,7 @@ jobs:
         env:
           # 推送时也调用你的 REPO_TOKEN
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          WORKFLOW_FILE: .github/workflows/aclclouds.yml # ⚠️ 注意：如果你实际的 yml 文件名不是 aclclouds.yml，请在这里修改为你真实的文件路径！
+          WORKFLOW_FILE: action_repo/.github/workflows/aclclouds.yml
         run: |
           python3 << 'EOF'
           import re
@@ -359,7 +366,7 @@ jobs:
           from datetime import datetime, timedelta
 
           workflow_file = os.environ.get("WORKFLOW_FILE")
-          date_file = 'scripts/Acl/next_time.txt'
+          date_file = 'scripts_repo/scripts/Acl/next_time.txt'
           
           # 使用 UTC 时间作为基准计算 cron
           now_utc = datetime.utcnow()
@@ -417,14 +424,18 @@ jobs:
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add $WORKFLOW_FILE
-          if [ -f "scripts/Acl/aclclouds_cookie.txt" ]; then
-            git add scripts/Acl/aclclouds_cookie.txt
+
+          if [ -f "scripts_repo/scripts/Acl/aclclouds_cookie.txt" ]; then
+            git -C scripts_repo add scripts/Acl/aclclouds_cookie.txt
+            git -C scripts_repo commit -m "🔐 auto: 更新 ACLClouds Cookie" || echo "scripts 仓库没有 Cookie 变更需要提交"
+            git -C scripts_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/akina005/scripts.git
+            git -C scripts_repo push
           fi
-          git commit -m "🚀 auto: 精准锁定到期前两天执行续期" || echo "没有变更需要提交"
-          
-          git remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/akina005/scripts.git
-          git push
+
+          git -C action_repo add .github/workflows/aclclouds.yml
+          git -C action_repo commit -m "🚀 auto: 精准锁定到期前两天执行续期" || echo "action 仓库没有 Cron 变更需要提交"
+          git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/akina005/action.git
+          git -C action_repo push
 
       - name: 🧹 清理旧的运行记录 (仅保留最近 5 个)
         uses: Mattraks/delete-workflow-runs@v2
