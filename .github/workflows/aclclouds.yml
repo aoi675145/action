@@ -394,13 +394,15 @@ jobs:
               cron_hour = target_date.hour
               cron_minute = target_date.minute
               
-              next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC (到期前2天执行)"
+              bj_date = target_date + timedelta(hours=8)
+              next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC / {bj_date.strftime('%Y-%m-%d %H:%M')} 北京时间 (到期前2天执行)"
               new_cron = f"{cron_minute} {cron_hour} {cron_day} {cron_month} *"
           else:
               # 如果解析失败或时间已过，使用兜底方案：明天同一时间重试
               tomorrow_utc = now_utc + timedelta(days=1)
+              tomorrow_bj = tomorrow_utc + timedelta(hours=8)
               new_cron = f"{tomorrow_utc.minute} {tomorrow_utc.hour} * * *"
-              next_date_str = f"{tomorrow_utc.strftime('%Y-%m-%d %H:%M')} UTC (兜底方案)"
+              next_date_str = f"{tomorrow_utc.strftime('%Y-%m-%d %H:%M')} UTC / {tomorrow_bj.strftime('%Y-%m-%d %H:%M')} 北京时间 (兜底方案)"
 
           try:
               with open(workflow_file, 'r', encoding='utf-8') as f:
@@ -422,16 +424,17 @@ jobs:
               exit(1)
           EOF
 
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
           if [ -f "scripts_repo/scripts/Acl/aclclouds_cookie.txt" ]; then
+            git -C scripts_repo config user.name "github-actions[bot]"
+            git -C scripts_repo config user.email "github-actions[bot]@users.noreply.github.com"
             git -C scripts_repo add scripts/Acl/aclclouds_cookie.txt
             git -C scripts_repo commit -m "🔐 auto: 更新 ACLClouds Cookie" || echo "scripts 仓库没有 Cookie 变更需要提交"
             git -C scripts_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/akina005/scripts.git
             git -C scripts_repo push
           fi
 
+          git -C action_repo config user.name "github-actions[bot]"
+          git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
           git -C action_repo add .github/workflows/aclclouds.yml
           git -C action_repo commit -m "🚀 auto: 精准锁定到期前两天执行续期" || echo "action 仓库没有 Cron 变更需要提交"
           git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/akina005/action.git
