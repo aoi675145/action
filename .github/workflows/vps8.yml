@@ -19,6 +19,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
       - name: Enable WARP
         uses: fscarmen/warp-on-actions@v1.3
         with:
@@ -46,16 +51,21 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
+          PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: |
-          echo "[setup] apt update"
-          sudo -E apt-get update
-          echo "[setup] apt install"
-          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb python3 python3-pip python3-tk python3-dev google-chrome-stable fontconfig fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei
+          missing=""
+          for pkg in xvfb python3-tk python3-dev google-chrome-stable fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei; do
+            dpkg -s "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
+          done
+          if [ -n "$missing" ]; then
+            echo "[setup] apt install:$missing"
+            sudo -E apt-get update -qq
+            sudo -E apt-get install -y -qq --no-install-recommends -o Dpkg::Use-Pty=0 $missing
+          else
+            echo "[setup] apt deps already installed"
+          fi
           echo "[setup] pip install python deps"
-          python3 -m pip install --upgrade pip
-          python3 -m pip install seleniumbase pyvirtualdisplay requests
-          echo "[setup] rebuild font cache"
-          fc-cache -fv
+          python3 -m pip install -q seleniumbase pyvirtualdisplay requests
 
       - name: Fetch vps8 script
         env:
