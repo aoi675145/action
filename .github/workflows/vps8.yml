@@ -50,10 +50,10 @@ jobs:
           echo "[setup] apt update"
           sudo -E apt-get update
           echo "[setup] apt install"
-          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb ffmpeg python3 python3-pip google-chrome-stable fontconfig fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei
+          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb python3 python3-pip google-chrome-stable fontconfig fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei
           echo "[setup] pip install python deps"
           python3 -m pip install --upgrade pip
-          python3 -m pip install DrissionPage xvfbwrapper SpeechRecognition pydub requests
+          python3 -m pip install seleniumbase pyvirtualdisplay requests
           echo "[setup] rebuild font cache"
           fc-cache -fv
 
