@@ -1,0 +1,107 @@
+name: VPS8 Auto Checkin
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: "19 0 * * *"
+
+  push:
+    paths:
+      - "checkin.py"
+      - "vps8.yml"
+
+jobs:
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Enable WARP
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: client
+
+      - name: Configure DNS and verify WARP
+        run: |
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" | sudo tee /etc/resolv.conf
+          sudo chattr +i /etc/resolv.conf 2>/dev/null || true
+          sleep 3
+
+          for i in {1..30}; do
+            status=$(curl -s --max-time 5 https://www.cloudflare.com/cdn-cgi/trace | grep -oP 'warp=\K\w+' || echo unknown)
+            [[ "$status" =~ ^(on|plus)$ ]] && echo "WARP 已连接" && break
+            echo "WARP 连接中... ($i/30)"
+            sleep 2
+          done
+          echo -n "出口 IP: " && curl -s https://api.ipify.org && echo
+          curl -s https://ipinfo.io
+
+      - name: Setup environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
+        run: |
+          echo "[setup] apt update"
+          sudo -E apt-get update
+          echo "[setup] apt install"
+          sudo -E apt-get install -y -o Dpkg::Use-Pty=0 xvfb ffmpeg python3 python3-pip google-chrome-stable fontconfig fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei
+          echo "[setup] pip install python deps"
+          python3 -m pip install --upgrade pip
+          python3 -m pip install DrissionPage xvfbwrapper SpeechRecognition pydub requests
+          echo "[setup] rebuild font cache"
+          fc-cache -fv
+
+      - name: Fetch vps8 script
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o checkin.py \
+            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.py"
+
+      - name: Check IP
+        run: |
+          curl -s https://api.ipify.org && echo
+          curl -s https://ipinfo.io
+
+      - name: Run python checkin flow
+        env:
+          vps8_ACCOUNTS: ${{ secrets.vps8_ACCOUNTS }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          python3 checkin.py
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: screenshots
+          path: screenshots/*
+          retention-days: 1
+
+      - name: Cleanup old runs
+        if: always()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          WORKFLOW_NAME: VPS8 Auto Checkin
+        run: |
+          python - <<'PY'
+          import json, os, subprocess
+          repo = os.environ["REPO"]
+          name = os.environ["WORKFLOW_NAME"]
+          r = subprocess.run(["gh","api",f"repos/{repo}/actions/runs","--paginate"], capture_output=True, text=True, check=True)
+          runs = json.loads(r.stdout).get("workflow_runs", [])
+          target = sorted([x for x in runs if x.get("name") == name], key=lambda x: x.get("created_at",""), reverse=True)
+          for run in target[5:]:
+              rid = str(run["id"])
+              print(f"Deleting {rid}")
+              subprocess.run(["gh","api","-X","DELETE",f"repos/{repo}/actions/runs/{rid}"], check=True)
+          PY
