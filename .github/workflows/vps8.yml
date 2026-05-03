@@ -35,6 +35,10 @@ jobs:
         env:
           vps8_PROXY: ${{ secrets.vps8_PROXY }}
         run: |
+          if [ -z "${vps8_PROXY}" ]; then
+            echo "[proxy] vps8_PROXY 未配置，使用直连"
+            exit 0
+          fi
           python - <<'PY'
           import base64
           import json
@@ -177,11 +181,25 @@ jobs:
           PY
 
       - name: Start Xray proxy
+        env:
+          vps8_PROXY: ${{ secrets.vps8_PROXY }}
         run: |
+          if [ -z "${vps8_PROXY}" ] || [ ! -f xray-config.json ]; then
+            echo "[proxy] 未生成 Xray 配置，使用直连"
+            echo "VPS8_RUNTIME_PROXY=" >> "$GITHUB_ENV"
+            exit 0
+          fi
           nohup xray run -c xray-config.json > xray.log 2>&1 &
           sleep 2
           xray version
           sed -n '1,20p' xray.log || true
+          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/vps8_proxy_ip; then
+            echo "[proxy] 代理可用，出口 IP: $(cat /tmp/vps8_proxy_ip)"
+            echo "VPS8_RUNTIME_PROXY=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+          else
+            echo "[proxy] 代理不可用，回退直连"
+            echo "VPS8_RUNTIME_PROXY=" >> "$GITHUB_ENV"
+          fi
 
       - name: Setup environment
         env:
@@ -213,18 +231,21 @@ jobs:
             "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.py"
 
       - name: Check IP
-        env:
-          vps8_PROXY: http://127.0.0.1:8080
         run: |
-          curl -s --proxy "$vps8_PROXY" https://api.ipify.org && echo
-          curl -s --proxy "$vps8_PROXY" https://ipinfo.io
+          if [ -n "${VPS8_RUNTIME_PROXY}" ]; then
+            curl -s --proxy "$VPS8_RUNTIME_PROXY" https://api.ipify.org && echo
+            curl -s --proxy "$VPS8_RUNTIME_PROXY" https://ipinfo.io
+          else
+            curl -s https://api.ipify.org && echo
+            curl -s https://ipinfo.io
+          fi
 
       - name: Run python checkin flow
         env:
           vps8_ACCOUNTS: ${{ secrets.vps8_ACCOUNTS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          vps8_PROXY: http://127.0.0.1:8080
+          vps8_PROXY: ${{ env.VPS8_RUNTIME_PROXY }}
         run: |
           python3 checkin.py
 
