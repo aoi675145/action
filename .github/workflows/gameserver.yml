@@ -10,7 +10,7 @@ on:
   repository_dispatch:
     types: [start-server]
   schedule:
-    - cron: '30 6 29 5 *' # auto-renew schedule
+    - cron: '0 0 * * *' # auto-renew schedule
 
 permissions:
   contents: write
@@ -327,11 +327,12 @@ jobs:
             git push
           fi
 
-      - name: Clean old workflow runs
+      - name: 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
-          token: ${{ secrets.REPO_TOKEN }}
+          token: ${{ github.token }}
           repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
           keep_minimum_runs: 5
