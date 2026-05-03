@@ -309,7 +309,11 @@ jobs:
           else
             echo "🍪 检测到 Cookie 更新，正在推送到仓库..."
             git commit -m "Update cookie.txt [skip ci]"
-            git push
+            git push || {
+              echo "远端有新提交，拉取后重试推送..."
+              git pull --rebase
+              git push
+            }
           fi
 
       - name: Commit and Push Workflow Schedule
@@ -324,7 +328,11 @@ jobs:
           else
             echo "🕒 检测到 workflow cron 更新，正在推送..."
             git commit -m "Update gameserver renew schedule [skip ci]"
-            git push
+            git push || {
+              echo "远端有新提交，拉取后重试推送..."
+              git pull --rebase
+              git push
+            }
           fi
 
       - name: 清理运行记录
