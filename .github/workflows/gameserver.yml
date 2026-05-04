@@ -10,7 +10,7 @@ on:
   repository_dispatch:
     types: [start-server]
   schedule:
-    - cron: '0 0 * * *' # auto-renew schedule
+    - cron: '31 7 31 5 *' # auto-renew schedule
 
 permissions:
   contents: write
