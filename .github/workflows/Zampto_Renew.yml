@@ -42,10 +42,10 @@ jobs:
 
       - name: 安装并启动代理
         env:
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          ZAMPTO_PROXY_NODE: ${{ secrets.ZAMPTO_PROXY_NODE }}
         run: |
-          if [ -z "${PROXY_URL}" ]; then
-            echo "[ERROR] PROXY_URL 未配置，禁止直连"
+          if [ -z "${ZAMPTO_PROXY_NODE}" ]; then
+            echo "[ERROR] ZAMPTO_PROXY_NODE 未配置，禁止直连"
             exit 1
           fi
 
@@ -54,13 +54,13 @@ jobs:
           unzip -oq Xray-linux-64.zip -d xray-bin
           chmod +x xray-bin/xray
 
-          sed 's/^          //' << 'PYEOF' | python3
+          python3 << 'PYEOF'
           import base64
           import json
           import os
           from urllib.parse import parse_qs, unquote, urlparse
 
-          proxy_url = os.environ["PROXY_URL"].strip()
+          proxy_url = os.environ["ZAMPTO_PROXY_NODE"].strip()
           parsed = urlparse(proxy_url)
           scheme = parsed.scheme
 
@@ -232,7 +232,7 @@ jobs:
           ZAMPTO_ACCOUNT: ${{ secrets.ZAMPTO_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_URL: ${{ env.PROXY_SERVER }}
+          ZAMPTO_PROXY_NODE: ${{ env.PROXY_SERVER }}
         run: python scripts/Zampto/Zampto_Renew.py
 #        > /dev/null 2>&1
 
