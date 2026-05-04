@@ -30,10 +30,10 @@ jobs:
 
       - name: 🛡️ 4. 安装并启动 Xray 代理
         env:
-          berry_PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
-          if [ -z "$berry_PROXY_NODE" ]; then
-            echo "[INFO] 未配置 berry_PROXY_NODE，跳过代理"
+          if [ -z "$PROXY_URL" ]; then
+            echo "[INFO] 未配置 PROXY_URL，跳过代理"
             exit 0
           fi
           
@@ -44,7 +44,7 @@ jobs:
           import os, sys, json, base64
           from urllib.parse import parse_qs, unquote, urlparse
 
-          url = os.environ.get("berry_PROXY_NODE", "").strip()
+          url = os.environ.get("PROXY_URL", "").strip()
           if not url: sys.exit(0)
 
           config = {
@@ -145,7 +145,7 @@ jobs:
           SESSION_ID: ${{ secrets.SESSION_ID }}
           TG_BOT: ${{ secrets.TG_BOT }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-          berry_PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
           chmod +x berryhost.sh
           bash berryhost.sh
