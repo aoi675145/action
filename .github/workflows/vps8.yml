@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install Xray
+      - name: 安装 Xray 代理内核
         run: |
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
           mkdir -p xray-bin
@@ -31,12 +31,12 @@ jobs:
           chmod +x xray-bin/xray
           sudo mv xray-bin/xray /usr/local/bin/xray
 
-      - name: Build Xray config
+      - name: 生成 Xray 代理配置
         env:
           vps8_PROXY: ${{ secrets.vps8_PROXY }}
         run: |
           if [ -z "${vps8_PROXY}" ]; then
-            echo "[proxy] vps8_PROXY 未配置，使用直连"
+            echo "[代理] vps8_PROXY 未配置，使用直连"
             exit 0
           fi
           python - <<'PY'
@@ -180,12 +180,12 @@ jobs:
               json.dump(config, f, indent=2)
           PY
 
-      - name: Start Xray proxy
+      - name: 启动并检测 Xray 代理
         env:
           vps8_PROXY: ${{ secrets.vps8_PROXY }}
         run: |
           if [ -z "${vps8_PROXY}" ] || [ ! -f xray-config.json ]; then
-            echo "[proxy] 未生成 Xray 配置，使用直连"
+            echo "[代理] 未生成 Xray 配置，使用直连"
             echo "VPS8_RUNTIME_PROXY=" >> "$GITHUB_ENV"
             exit 0
           fi
@@ -194,14 +194,14 @@ jobs:
           xray version
           sed -n '1,20p' xray.log || true
           if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/vps8_proxy_ip; then
-            echo "[proxy] 代理可用，出口 IP: $(cat /tmp/vps8_proxy_ip)"
+            echo "[代理] 代理可用，出口 IP: $(cat /tmp/vps8_proxy_ip)"
             echo "VPS8_RUNTIME_PROXY=http://127.0.0.1:8080" >> "$GITHUB_ENV"
           else
-            echo "[proxy] 代理不可用，回退直连"
+            echo "[代理] 代理不可用，回退直连"
             echo "VPS8_RUNTIME_PROXY=" >> "$GITHUB_ENV"
           fi
 
-      - name: Setup environment
+      - name: 安装运行环境
         env:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
@@ -212,16 +212,16 @@ jobs:
             dpkg -s "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
           done
           if [ -n "$missing" ]; then
-            echo "[setup] apt install:$missing"
+            echo "[环境] 安装 apt 依赖:$missing"
             sudo -E apt-get update -qq
             sudo -E apt-get install -y -qq --no-install-recommends -o Dpkg::Use-Pty=0 $missing
           else
-            echo "[setup] apt deps already installed"
+            echo "[环境] apt 依赖已存在"
           fi
-          echo "[setup] pip install python deps"
+          echo "[环境] 安装 Python 依赖"
           python3 -m pip install -q seleniumbase pyvirtualdisplay requests
 
-      - name: Fetch vps8 script
+      - name: 从私库拉取 VPS8 脚本
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -230,7 +230,7 @@ jobs:
             -o checkin.py \
             "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.py"
 
-      - name: Fetch service expiry cache
+      - name: 从私库拉取服务到期缓存
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -240,7 +240,7 @@ jobs:
             "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/vps8_service_expiry.txt" \
             || true
 
-      - name: Check IP
+      - name: 检查当前出口 IP
         run: |
           if [ -n "${VPS8_RUNTIME_PROXY}" ]; then
             curl -s --proxy "$VPS8_RUNTIME_PROXY" https://api.ipify.org && echo
@@ -250,7 +250,7 @@ jobs:
             curl -s https://ipinfo.io
           fi
 
-      - name: Run python checkin flow
+      - name: 运行 VPS8 签到兑换续期流程
         env:
           vps8_ACCOUNTS: ${{ secrets.vps8_ACCOUNTS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -260,28 +260,33 @@ jobs:
         run: |
           python3 checkin.py
 
-      - name: Save service expiry cache
+      - name: 保存服务到期缓存到私库
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           if [ ! -s vps8_service_expiry.txt ]; then
-            echo "[cache] 服务到期缓存不存在或为空，跳过保存"
+            echo "[缓存] vps8_service_expiry.txt 不存在或为空，本次不提交私库"
             exit 0
           fi
+          echo "[缓存] 开始克隆私库 akina005/scripts，用于保存 vps8_service_expiry.txt"
           git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/akina005/scripts.git" scripts-cache
+          echo "[缓存] 复制本次读取到的服务到期时间到私库路径 scripts/vps8/vps8_service_expiry.txt"
           mkdir -p scripts-cache/scripts/vps8
           cp vps8_service_expiry.txt scripts-cache/scripts/vps8/vps8_service_expiry.txt
           cd scripts-cache
-          if git diff --quiet -- scripts/vps8/vps8_service_expiry.txt; then
-            echo "[cache] 服务到期缓存无变化"
+          if [ -z "$(git status --porcelain -- scripts/vps8/vps8_service_expiry.txt)" ]; then
+            echo "[缓存] 服务到期缓存无变化，不需要提交"
             exit 0
           fi
+          echo "[缓存] 检测到服务到期缓存有变化或是新文件，开始提交到私库"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add scripts/vps8/vps8_service_expiry.txt
-          git commit -m "Update VPS8 service expiry cache"
+          git commit -m "更新 VPS8 服务到期缓存"
+          echo "[缓存] 提交完成，开始推送到私库"
           git push
+          echo "[缓存] vps8_service_expiry.txt 已成功保存到私库 scripts/vps8/"
 
       - uses: actions/upload-artifact@v4
         if: failure()
