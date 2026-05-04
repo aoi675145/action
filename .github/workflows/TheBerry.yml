@@ -129,9 +129,10 @@ jobs:
             echo "PROXY_SOCKS5=$(cat use_external_socks.txt)" >> $GITHUB_ENV
           else
             ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+            XRAY_PID=$!
             sleep 8
-            if curl -x socks5h://127.0.0.1:10808 -fsSL --retry 2 --max-time 20 https://www.gstatic.com/generate_204 -o /dev/null; then
-              echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+            if kill -0 "$XRAY_PID" 2>/dev/null; then
+              echo "PROXY_SOCKS5=socks5h://127.0.0.1:10808" >> $GITHUB_ENV
             else
               cat xray.log && exit 1
             fi
