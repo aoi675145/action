@@ -191,6 +191,7 @@ jobs:
               host = vm.get("host", address)
               path = vm.get("path", "/")
               fp = vm.get("fp", "chrome")
+              allow_insecure = str(vm.get("allowInsecure", vm.get("insecure", "0"))).lower() in ("1", "true", "yes")
 
               print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
 
@@ -213,7 +214,7 @@ jobs:
                   outbound["streamSettings"]["tlsSettings"] = {
                       "serverName": sni,
                       "fingerprint": fp,
-                      "allowInsecure": False
+                      "allowInsecure": allow_insecure
                   }
 
               if network == "ws":
