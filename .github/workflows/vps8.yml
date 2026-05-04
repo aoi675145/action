@@ -230,6 +230,16 @@ jobs:
             -o checkin.py \
             "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/checkin.py"
 
+      - name: Fetch service expiry cache
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o vps8_service_expiry.txt \
+            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/vps8/vps8_service_expiry.txt" \
+            || true
+
       - name: Check IP
         run: |
           if [ -n "${VPS8_RUNTIME_PROXY}" ]; then
@@ -248,6 +258,29 @@ jobs:
           vps8_PROXY: ${{ env.VPS8_RUNTIME_PROXY }}
         run: |
           python3 checkin.py
+
+      - name: Save service expiry cache
+        if: always()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          if [ ! -s vps8_service_expiry.txt ]; then
+            echo "[cache] 服务到期缓存不存在或为空，跳过保存"
+            exit 0
+          fi
+          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/akina005/scripts.git" scripts-cache
+          mkdir -p scripts-cache/scripts/vps8
+          cp vps8_service_expiry.txt scripts-cache/scripts/vps8/vps8_service_expiry.txt
+          cd scripts-cache
+          if git diff --quiet -- scripts/vps8/vps8_service_expiry.txt; then
+            echo "[cache] 服务到期缓存无变化"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/vps8/vps8_service_expiry.txt
+          git commit -m "Update VPS8 service expiry cache"
+          git push
 
       - uses: actions/upload-artifact@v4
         if: failure()
