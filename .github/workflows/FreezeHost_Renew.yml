@@ -2,7 +2,7 @@ name: FreezeHost 自动续期
 
 on:
   schedule:
-    - cron: '25 16 3 5 *' # 下一个: 2026-05-03 16:25 UTC (到期前2天自动执行)
+    - cron: '18 15 21 4 *' # 下一个: 2026-04-21 15:18 UTC (到期前2天自动执行)
   workflow_dispatch:
 
 jobs:
@@ -122,6 +122,7 @@ jobs:
               pbk = params.get("pbk", [""])[0]
               host = params.get("host", [sni])[0]
               path = unquote(params.get("path", ["/"])[0])
+              allow_insecure = params.get("allowInsecure", params.get("insecure", ["0"]))[0].lower() in ("1", "true", "yes")
 
               print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
 
@@ -153,7 +154,7 @@ jobs:
                   outbound["streamSettings"]["tlsSettings"] = {
                       "serverName": sni,
                       "fingerprint": fp,
-                      "allowInsecure": False
+                      "allowInsecure": allow_insecure
                   }
 
               if network == "ws":
