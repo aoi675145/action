@@ -256,6 +256,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           vps8_PROXY: ${{ env.VPS8_RUNTIME_PROXY }}
+          vps8_FORCE_RENEW: ${{ secrets.vps8_FORCE_RENEW }}
         run: |
           python3 checkin.py
 
