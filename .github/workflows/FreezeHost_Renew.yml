@@ -328,7 +328,7 @@ jobs:
           for i in 1 2 3 4 5; do
             if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] ✅ 代理连接成功"
-              echo "PROXY_SERVER=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+              echo "PROXY_SERVER=http://127.0.0.1:1081" >> $GITHUB_ENV
               exit 0
             fi
             echo "[WARN] 尝试 $i/5..."
