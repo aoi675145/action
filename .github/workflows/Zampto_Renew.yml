@@ -206,7 +206,9 @@ jobs:
           sed -n '1,20p' xray.log || true
 
           if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/zampto_proxy_ip; then
-            echo "[INFO] ✅ 代理可用，出口 IP: $(cat /tmp/zampto_proxy_ip)"
+            PROXY_IP=$(cat /tmp/zampto_proxy_ip)
+            MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); parts=ip.split("."); print(f"{parts[0]}.{parts[1]}.***.{parts[-1]}" if len(parts)==4 else (":").join(ip.split(":")[:2] + ["***", ip.split(":")[-1]]) if ":" in ip and len(ip.split(":"))>3 else ip[:3]+"***")' "$PROXY_IP")
+            echo "[INFO] ✅ 代理可用，出口 IP: ${MASKED_IP}"
             echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
           else
             echo "[ERROR] ❌ 代理不可用，禁止直连"
@@ -222,7 +224,9 @@ jobs:
           fi
 
           echo "[INFO] 检查代理出口 IP..."
-          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org && echo
+          CHECK_IP=$(curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org)
+          MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); parts=ip.split("."); print(f"{parts[0]}.{parts[1]}.***.{parts[-1]}" if len(parts)==4 else (":").join(ip.split(":")[:2] + ["***", ip.split(":")[-1]]) if ":" in ip and len(ip.split(":"))>3 else ip[:3]+"***")' "$CHECK_IP")
+          echo "[INFO] 出口 IP: ${MASKED_IP}"
 
           echo "[INFO] 检查代理访问 Zampto..."
           curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://auth.zampto.net/ | sed -n '1,8p'
