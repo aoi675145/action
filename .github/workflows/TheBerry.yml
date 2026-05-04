@@ -30,10 +30,10 @@ jobs:
 
       - name: 🛡️ 4. 安装并启动 Xray 代理
         env:
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          berry_PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
         run: |
-          if [ -z "$PROXY_URL" ]; then
-            echo "[INFO] 未配置 PROXY_URL，跳过代理"
+          if [ -z "$berry_PROXY_NODE" ]; then
+            echo "[INFO] 未配置 berry_PROXY_NODE，跳过代理"
             exit 0
           fi
           
@@ -44,7 +44,7 @@ jobs:
           import os, sys, json, base64
           from urllib.parse import parse_qs, unquote, urlparse
 
-          url = os.environ.get("PROXY_URL", "").strip()
+          url = os.environ.get("berry_PROXY_NODE", "").strip()
           if not url: sys.exit(0)
 
           config = {
@@ -130,7 +130,7 @@ jobs:
           else
             ./xray/xray run -c xray_config.json > xray.log 2>&1 &
             sleep 8
-            if curl -x socks5://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null; then
+            if curl -x socks5h://127.0.0.1:10808 -fsSL --retry 2 --max-time 20 https://www.gstatic.com/generate_204 -o /dev/null; then
               echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
             else
               cat xray.log && exit 1
@@ -145,7 +145,7 @@ jobs:
           SESSION_ID: ${{ secrets.SESSION_ID }}
           TG_BOT: ${{ secrets.TG_BOT }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          berry_PROXY_NODE: ${{ secrets.berry_PROXY_NODE }}
         run: |
           chmod +x berryhost.sh
           bash berryhost.sh
