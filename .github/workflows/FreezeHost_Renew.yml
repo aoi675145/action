@@ -38,6 +38,13 @@ jobs:
           pip install playwright
           playwright install chromium --with-deps
 
+      - name: 🔧 修复 DNS
+        run: |
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
+
       - name: 安装并启动代理
         env:
           PROXY_URL: ${{ secrets.PROXY_URL }}
@@ -212,12 +219,36 @@ jobs:
             exit 1
           fi
 
-      - name: 🔧 修复 DNS
+      - name: 检查脚本代理出口
         run: |
-          sudo systemctl stop systemd-resolved 2>/dev/null || true
-          sudo systemctl disable systemd-resolved 2>/dev/null || true
-          sudo rm -f /etc/resolv.conf
-          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
+          if [ -z "${PROXY_SERVER}" ]; then
+            echo "[ERROR] PROXY_SERVER 为空，禁止直连"
+            exit 1
+          fi
+
+          echo "[INFO] 检查代理出口 IP..."
+          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org && echo
+
+          echo "[INFO] 检查代理访问 FreezeHost..."
+          curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://free.freezehost.pro/ | sed -n '1,8p'
+
+          echo "[INFO] 检查 Playwright 代理访问..."
+          python3 << 'PYEOF'
+          import os
+          from playwright.sync_api import sync_playwright
+
+          proxy = os.environ["PROXY_SERVER"]
+          with sync_playwright() as pw:
+              browser = pw.chromium.launch(headless=True, proxy={"server": proxy})
+              page = browser.new_page()
+              page.set_default_timeout(30000)
+              resp = page.goto("https://api.ipify.org?format=json", wait_until="domcontentloaded")
+              print(f"[INFO] Playwright IP status: {resp.status if resp else 'none'}")
+              print(page.text_content("body")[:120])
+              resp = page.goto("https://free.freezehost.pro/", wait_until="domcontentloaded")
+              print(f"[INFO] Playwright FreezeHost status: {resp.status if resp else 'none'}")
+              browser.close()
+          PYEOF
 
       - name: 🚀 运行续期脚本
         env:
