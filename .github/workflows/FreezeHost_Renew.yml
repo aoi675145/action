@@ -2,7 +2,7 @@ name: FreezeHost 自动续期
 
 on:
   schedule:
-    - cron: '21 5 16 5 *' # 下一个: 2026-05-16 05:21 UTC (到期前2天自动执行)
+    - cron: '18 15 21 4 *' # 下一个: 2026-04-21 15:18 UTC (到期前2天自动执行)
   workflow_dispatch:
 
 jobs:
@@ -211,7 +211,17 @@ jobs:
           sed -n '1,20p' xray.log || true
 
           if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/freeze_proxy_ip; then
-            echo "[INFO] ✅ 代理可用，出口 IP: $(cat /tmp/freeze_proxy_ip)"
+          python3 - <<'PYEOF'
+          ip = open("/tmp/freeze_proxy_ip", encoding="utf-8").read().strip()
+          parts = ip.split(".")
+          if len(parts) == 4:
+              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
+          elif len(ip) > 8:
+              ip = f"{ip[:4]}***{ip[-4:]}"
+          else:
+              ip = "***"
+          print(f"[INFO] ✅ 代理可用，出口 IP: {ip}")
+          PYEOF
             echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
           else
             echo "[ERROR] ❌ 代理不可用，禁止直连"
@@ -227,7 +237,18 @@ jobs:
           fi
 
           echo "[INFO] 检查代理出口 IP..."
-          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org && echo
+          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org >/tmp/freeze_check_ip
+          python3 - <<'PYEOF'
+          ip = open("/tmp/freeze_check_ip", encoding="utf-8").read().strip()
+          parts = ip.split(".")
+          if len(parts) == 4:
+              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
+          elif len(ip) > 8:
+              ip = f"{ip[:4]}***{ip[-4:]}"
+          else:
+              ip = "***"
+          print(f"[INFO] 代理出口 IP: {ip}")
+          PYEOF
 
           echo "[INFO] 检查代理访问 FreezeHost..."
           curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://free.freezehost.pro/ | sed -n '1,8p'
@@ -244,7 +265,9 @@ jobs:
               page.set_default_timeout(30000)
               resp = page.goto("https://api.ipify.org?format=json", wait_until="domcontentloaded")
               print(f"[INFO] Playwright IP status: {resp.status if resp else 'none'}")
-              print(page.text_content("body")[:120])
+              body = page.text_content("body")[:120]
+              body = __import__("re").sub(r"\b(\d{1,3}\.\d{1,3}\.)\d{1,3}\.(\d{1,3})\b", r"\1***.\2", body)
+              print(body)
               resp = page.goto("https://free.freezehost.pro/", wait_until="domcontentloaded")
               print(f"[INFO] Playwright FreezeHost status: {resp.status if resp else 'none'}")
               browser.close()
