@@ -31,7 +31,7 @@ jobs:
       - name: 安装依赖
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb unzip
-          pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 requests>=2.31.0
+          pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 "requests[socks]>=2.31.0"
 
       - name: 安装并启动代理
         env:
@@ -190,6 +190,7 @@ jobs:
               port = int(vm.get("port", 443))
               uuid = vm.get("id", "")
               aid = int(vm.get("aid", 0))
+              cipher = vm.get("scy", "auto")
               network = vm.get("net", "tcp")
               tls = vm.get("tls", "")
               sni = vm.get("sni", "") or vm.get("host", address)
@@ -205,7 +206,7 @@ jobs:
                       "vnext": [{
                           "address": address,
                           "port": port,
-                          "users": [{"id": uuid, "alterId": aid, "security": "auto"}]
+                          "users": [{"id": uuid, "alterId": aid, "security": cipher}]
                       }]
                   },
                   "streamSettings": {
