@@ -32,110 +32,170 @@ jobs:
         env:
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
-          if [ -z "$PROXY_URL" ]; then
-            echo "[INFO] 未配置 PROXY_URL，跳过代理"
-            exit 0
+          if [ -z "${PROXY_URL}" ]; then
+            echo "[proxy] PROXY_URL 未配置，代理为必填"
+            exit 1
           fi
-          
+
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
-          
-          python3 << 'PYEOF'
-          import os, sys, json, base64
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+
+          python3 <<'PY'
+          import base64
+          import json
+          import os
           from urllib.parse import parse_qs, unquote, urlparse
 
-          url = os.environ.get("PROXY_URL", "").strip()
-          if not url: sys.exit(0)
+          proxy_url = os.environ["PROXY_URL"].strip()
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
+
+              if stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "allowInsecure": query.get("allowInsecure", query.get("insecure", "0")) == "1",
+                  }
+
+              if transport_type == "tcp":
+                  stream_settings["tcpSettings"] = {
+                      "header": {"type": query.get("headerType", "none")}
+                  }
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {
+                      "path": unquote(query.get("path", "/")),
+                      "headers": headers,
+                  }
+              elif transport_type == "http":
+                  stream_settings["httpSettings"] = {
+                      "host": [h for h in query.get("host", "").split(",") if h],
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "encryption": qs.get("encryption", "none"),
+                              "flow": qs.get("flow", ""),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(qs, host),
+              }
+          else:
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+              }
+
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "alterId": int(vmess.get("aid", 0) or 0),
+                              "security": vmess.get("scy", "auto"),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(query, host),
+              }
 
           config = {
               "log": {"loglevel": "warning"},
-              "inbounds": [{"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}}],
-              "outbounds": []
+              "inbounds": [{
+                  "listen": "127.0.0.1",
+                  "port": 8080,
+                  "protocol": "http",
+              }],
+              "outbounds": [outbound],
           }
 
-          if url.startswith(("socks5://", "socks://")):
-              with open("use_external_socks.txt", "w") as f: f.write(url.split("#")[0])
-              sys.exit(0)
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PY
 
-          try:
-              if url.startswith("vless://"):
-                  p = urlparse(url); qs = parse_qs(p.query)
-                  net, sec = qs.get("type", ["tcp"])[0], qs.get("security", ["none"])[0]
-                  user = {"id": p.username, "encryption": qs.get("encryption", ["none"])[0]}
-                  flow = qs.get("flow", [""])[0]
-                  if flow:
-                      user["flow"] = flow
-
-                  out = {
-                      "protocol": "vless",
-                      "settings": {"vnext": [{"address": p.hostname, "port": p.port or 443, "users": [user]}]},
-                      "streamSettings": {"network": net, "security": sec}
-                  }
-
-                  if sec == "tls":
-                      tls = {
-                          "serverName": qs.get("sni", [p.hostname])[0],
-                          "fingerprint": qs.get("fp", ["chrome"])[0],
-                          "allowInsecure": qs.get("allowInsecure", qs.get("insecure", ["0"]))[0] == "1"
-                      }
-                      alpn = qs.get("alpn", [""])[0]
-                      if alpn:
-                          tls["alpn"] = [x.strip() for x in alpn.split(",") if x.strip()]
-                      out["streamSettings"]["tlsSettings"] = tls
-
-                  elif sec == "reality":
-                      reality = {
-                          "serverName": qs.get("sni", [p.hostname])[0],
-                          "fingerprint": qs.get("fp", ["chrome"])[0],
-                          "publicKey": qs.get("pbk", [""])[0]
-                      }
-                      short_id = qs.get("sid", qs.get("shortId", [""]))[0]
-                      if short_id:
-                          reality["shortId"] = short_id
-                      spider_x = qs.get("spx", [""])[0]
-                      if spider_x:
-                          reality["spiderX"] = unquote(spider_x)
-                      out["streamSettings"]["realitySettings"] = reality
-
-                  if net == "ws":
-                      out["streamSettings"]["wsSettings"] = {"path": unquote(qs.get("path", ["/"])[0]), "headers": {"Host": qs.get("host", [p.hostname])[0]}}
-                  config["outbounds"].append(out)
-
-              elif url.startswith("vmess://"):
-                  v = json.loads(base64.b64decode(url[8:].split("#")[0] + "==").decode("utf-8"))
-                  out = {
-                      "protocol": "vmess",
-                      "settings": {"vnext": [{"address": v["add"], "port": int(v["port"]), "users": [{"id": v["id"], "alterId": int(v.get("aid", 0))}]}]},
-                      "streamSettings": {"network": v.get("net", "tcp"), "security": v.get("tls", "none")}
-                  }
-                  if v.get("net") == "ws":
-                      out["streamSettings"]["wsSettings"] = {"path": v.get("path", "/"), "headers": {"Host": v.get("host", v["add"])}}
-                  config["outbounds"].append(out)
-
-              elif url.startswith("trojan://"):
-                  p = urlparse(url); qs = parse_qs(p.query)
-                  config["outbounds"].append({
-                      "protocol": "trojan",
-                      "settings": {"servers": [{"address": p.hostname, "port": p.port or 443, "password": p.username}]},
-                      "streamSettings": {"network": qs.get("type", ["tcp"])[0], "security": "tls", "tlsSettings": {"serverName": qs.get("sni", [p.hostname])[0]}}
-                  })
-
-              with open("xray_config.json", "w") as f: json.dump(config, f, indent=2)
-          except Exception as e:
-              sys.exit(1)
-          PYEOF
-          
-          if [ -f "use_external_socks.txt" ]; then
-            echo "PROXY_SOCKS5=$(cat use_external_socks.txt)" >> $GITHUB_ENV
+          nohup xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 2
+          xray version
+          sed -n '1,20p' xray.log || true
+          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/theberry_proxy_ip; then
+            echo "[proxy] 代理可用，出口 IP: $(cat /tmp/theberry_proxy_ip)"
+            echo "PROXY_SOCKS5=http://127.0.0.1:8080" >> "$GITHUB_ENV"
           else
-            ./xray/xray run -c xray_config.json > xray.log 2>&1 &
-            XRAY_PID=$!
-            sleep 8
-            if kill -0 "$XRAY_PID" 2>/dev/null; then
-              echo "PROXY_SOCKS5=socks5h://127.0.0.1:10808" >> $GITHUB_ENV
-            else
-              cat xray.log && exit 1
-            fi
+            echo "[proxy] 代理不可用，停止运行"
+            cat xray.log
+            exit 1
           fi
 
       - name: 🎮 5. 执行每日领取
