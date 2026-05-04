@@ -2,7 +2,7 @@ name: Zampto 续期
 
 on:
   schedule:
-    - cron: '47 0 * * *'  
+    - cron: '47 0 * * *'
   workflow_dispatch:
 
 jobs:
@@ -31,335 +31,208 @@ jobs:
       - name: 安装依赖
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb unzip
-          pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 "requests[socks]>=2.31.0"
+          pip install "seleniumbase>=4.25.0" "pyvirtualdisplay>=3.0" "requests>=2.31.0"
+
+      - name: 修复 DNS
+        run: |
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1\n" | sudo tee /etc/resolv.conf
 
       - name: 安装并启动代理
         env:
-          PROXY_NODE: ${{ secrets.PROXY_NODE }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
-          if [ -z "$PROXY_NODE" ]; then
-            echo "[INFO] 未配置代理，直连模式"
-            exit 0
+          if [ -z "${PROXY_URL}" ]; then
+            echo "[ERROR] PROXY_URL 未配置，禁止直连"
+            exit 1
           fi
-          
+
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
-          
-          python3 << 'PYEOF'
-          import os, sys, json, base64
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+
+          sed 's/^          //' << 'PYEOF' | python3
+          import base64
+          import json
+          import os
           from urllib.parse import parse_qs, unquote, urlparse
 
-          def mask(s):
-              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
+          proxy_url = os.environ["PROXY_URL"].strip()
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
 
-          url = os.environ.get("PROXY_NODE", "").strip()
-          if not url:
-              print("[ERROR] PROXY_NODE 为空")
-              sys.exit(1)
+          if scheme not in {"vless", "vmess"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
 
-          # 解析协议
-          if url.startswith("vless://"):
-              protocol = "vless"
-              content = url[8:]
-          elif url.startswith("vmess://"):
-              protocol = "vmess"
-              content = url[8:]
-          elif url.startswith("trojan://"):
-              protocol = "trojan"
-              content = url[9:]
-          elif url.startswith("ss://"):
-              protocol = "ss"
-              content = url[5:]
-          elif url.startswith("socks5://") or url.startswith("socks://"):
-              protocol = "socks5"
-              # 直接使用外部 SOCKS5
-              content = url.split("://")[1].split("#")[0]
-              if "@" in content:
-                  server = content.split("@")[1].split(":")[0]
-              else:
-                  server = content.split(":")[0]
-              print(f"[INFO] SOCKS5 -> {mask(server)}")
-              with open("use_external_socks.txt", "w") as f:
-                  f.write(url.split("#")[0])
-              sys.exit(0)
-          else:
-              print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
-              sys.exit(1)
+          def truthy(value):
+              return str(value).lower() in {"1", "true", "yes"}
 
-          # 去除备注
-          if "#" in content:
-              content = content.rsplit("#", 1)[0]
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
 
-          config = {
-              "log": {"loglevel": "warning"},
-              "inbounds": [
-                  {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
-                  {"port": 10809, "listen": "127.0.0.1", "protocol": "http"}
-              ],
-              "outbounds": []
-          }
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
 
-          if protocol == "vless":
-              # vless://uuid@server:port?params
-              uuid, rest = content.split("@", 1)
-              if "?" in rest:
-                  host_port, params_str = rest.split("?", 1)
-              else:
-                  host_port, params_str = rest, ""
-              
-              if ":" in host_port:
-                  address, port = host_port.rsplit(":", 1)
-              else:
-                  address, port = host_port, "443"
-              
-              params = parse_qs(params_str)
-              security = params.get("security", ["none"])[0]
-              network = params.get("type", ["tcp"])[0]
-              sni = params.get("sni", [address])[0]
-              fp = params.get("fp", ["chrome"])[0]
-              flow = params.get("flow", [""])[0]
-              pbk = params.get("pbk", [""])[0]
-              host = params.get("host", [sni])[0]
-              path = unquote(params.get("path", ["/"])[0])
-              
-              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
-              
+              if stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "allowInsecure": truthy(query.get("allowInsecure", query.get("insecure", "0"))),
+                  }
+
+              if transport_type == "tcp":
+                  stream_settings["tcpSettings"] = {
+                      "header": {"type": query.get("headerType", "none")}
+                  }
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {
+                      "path": query.get("path", "/"),
+                      "headers": headers,
+                  }
+              elif transport_type == "http":
+                  stream_settings["httpSettings"] = {
+                      "host": [h for h in query.get("host", "").split(",") if h],
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
               outbound = {
                   "protocol": "vless",
                   "settings": {
                       "vnext": [{
-                          "address": address,
-                          "port": int(port),
-                          "users": [{"id": uuid, "encryption": "none"}]
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "encryption": qs.get("encryption", "none"),
+                              "flow": qs.get("flow", ""),
+                          }],
                       }]
                   },
-                  "streamSettings": {
-                      "network": network,
-                      "security": security
-                  }
+                  "streamSettings": build_stream_settings(qs, host),
               }
-              
-              # 添加 flow
-              if flow:
-                  outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
-              
-              # Reality 设置
-              if security == "reality":
-                  outbound["streamSettings"]["realitySettings"] = {
-                      "serverName": sni,
-                      "fingerprint": fp,
-                      "publicKey": pbk
-                  }
-              # TLS 设置
-              elif security == "tls":
-                  outbound["streamSettings"]["tlsSettings"] = {
-                      "serverName": sni,
-                      "fingerprint": fp,
-                      "allowInsecure": False
-                  }
-              
-              # WebSocket 设置
-              if network == "ws":
-                  outbound["streamSettings"]["wsSettings"] = {
-                      "path": path,
-                      "headers": {"Host": host}
-                  }
-              # gRPC 设置
-              elif network == "grpc":
-                  service_name = params.get("serviceName", [""])[0]
-                  outbound["streamSettings"]["grpcSettings"] = {
-                      "serviceName": service_name
-                  }
-              
-              config["outbounds"].append(outbound)
+          else:
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
 
-          elif protocol == "vmess":
-              # vmess://base64
-              try:
-                  # 处理 URL 安全的 base64
-                  padding = 4 - len(content) % 4
-                  if padding != 4:
-                      content += "=" * padding
-                  decoded = base64.b64decode(content).decode("utf-8")
-                  vm = json.loads(decoded)
-              except Exception as e:
-                  print(f"[ERROR] VMess 解析失败: {e}")
-                  sys.exit(1)
-              
-              address = vm.get("add", "")
-              port = int(vm.get("port", 443))
-              uuid = vm.get("id", "")
-              aid = int(vm.get("aid", 0))
-              cipher = vm.get("scy", "auto")
-              network = vm.get("net", "tcp")
-              tls = vm.get("tls", "")
-              sni = vm.get("sni", "") or vm.get("host", address)
-              host = vm.get("host", address)
-              path = vm.get("path", "/")
-              fp = vm.get("fp", "chrome")
-              
-              print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
-              
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+              }
+
               outbound = {
                   "protocol": "vmess",
                   "settings": {
                       "vnext": [{
-                          "address": address,
+                          "address": host,
                           "port": port,
-                          "users": [{"id": uuid, "alterId": aid, "security": cipher}]
+                          "users": [{
+                              "id": user_id,
+                              "alterId": int(vmess.get("aid", 0) or 0),
+                              "security": vmess.get("scy", "auto"),
+                          }],
                       }]
                   },
-                  "streamSettings": {
-                      "network": network,
-                      "security": "tls" if tls == "tls" else "none"
-                  }
+                  "streamSettings": build_stream_settings(query, host),
               }
-              
-              if tls == "tls":
-                  outbound["streamSettings"]["tlsSettings"] = {
-                      "serverName": sni,
-                      "fingerprint": fp,
-                      "allowInsecure": False
-                  }
-              
-              if network == "ws":
-                  outbound["streamSettings"]["wsSettings"] = {
-                      "path": path,
-                      "headers": {"Host": host}
-                  }
-              
-              config["outbounds"].append(outbound)
 
-          elif protocol == "trojan":
-              # trojan://password@server:port?params
-              password, rest = content.split("@", 1)
-              if "?" in rest:
-                  host_port, params_str = rest.split("?", 1)
-              else:
-                  host_port, params_str = rest, ""
-              
-              if ":" in host_port:
-                  address, port = host_port.rsplit(":", 1)
-              else:
-                  address, port = host_port, "443"
-              
-              params = parse_qs(params_str)
-              sni = params.get("sni", [address])[0]
-              network = params.get("type", ["tcp"])[0]
-              host = params.get("host", [sni])[0]
-              path = unquote(params.get("path", ["/"])[0])
-              fp = params.get("fp", ["chrome"])[0]
-              
-              print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
-              
-              outbound = {
-                  "protocol": "trojan",
-                  "settings": {
-                      "servers": [{
-                          "address": address,
-                          "port": int(port),
-                          "password": password
-                      }]
-                  },
-                  "streamSettings": {
-                      "network": network,
-                      "security": "tls",
-                      "tlsSettings": {
-                          "serverName": sni,
-                          "fingerprint": fp,
-                          "allowInsecure": False
-                      }
-                  }
-              }
-              
-              if network == "ws":
-                  outbound["streamSettings"]["wsSettings"] = {
-                      "path": path,
-                      "headers": {"Host": host}
-                  }
-              
-              config["outbounds"].append(outbound)
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{
+                  "listen": "127.0.0.1",
+                  "port": 8080,
+                  "protocol": "http",
+              }],
+              "outbounds": [outbound],
+          }
 
-          elif protocol == "ss":
-              # ss://base64@server:port 或 ss://base64#name
-              try:
-                  if "@" in content:
-                      # 新格式: base64(method:password)@server:port
-                      encoded, server_part = content.split("@", 1)
-                      decoded = base64.b64decode(encoded + "==").decode("utf-8")
-                      method, password = decoded.split(":", 1)
-                      address, port = server_part.split(":", 1)
-                  else:
-                      # 旧格式: base64(method:password@server:port)
-                      decoded = base64.b64decode(content + "==").decode("utf-8")
-                      if "@" in decoded:
-                          user_part, server_part = decoded.split("@", 1)
-                          method, password = user_part.split(":", 1)
-                          address, port = server_part.split(":", 1)
-                      else:
-                          raise ValueError("无法解析")
-              except Exception as e:
-                  print(f"[ERROR] Shadowsocks 解析失败: {e}")
-                  sys.exit(1)
-              
-              print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
-              
-              outbound = {
-                  "protocol": "shadowsocks",
-                  "settings": {
-                      "servers": [{
-                          "address": address,
-                          "port": int(port),
-                          "method": method,
-                          "password": password
-                      }]
-                  }
-              }
-              
-              config["outbounds"].append(outbound)
-
-          # 保存配置
-          with open("xray_config.json", "w") as f:
+          with open("xray-config.json", "w", encoding="ascii") as f:
               json.dump(config, f, indent=2)
-          
-          print("[INFO] ✅ 代理配置已生成")
           PYEOF
-          
-          # 检查是否使用外部 SOCKS5
-          if [ -f "use_external_socks.txt" ]; then
-            EXTERNAL_SOCKS=$(cat use_external_socks.txt)
-            echo "PROXY_SOCKS5=$EXTERNAL_SOCKS" >> $GITHUB_ENV
-            echo "[INFO] ✅ 使用外部 SOCKS5 代理"
-            exit 0
+
+          ./xray-bin/xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 2
+          ./xray-bin/xray version
+          sed -n '1,20p' xray.log || true
+
+          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/zampto_proxy_ip; then
+            echo "[INFO] ✅ 代理可用，出口 IP: $(cat /tmp/zampto_proxy_ip)"
+            echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+          else
+            echo "[ERROR] ❌ 代理不可用，禁止直连"
+            cat xray.log
+            exit 1
           fi
-          
-          # 启动 Xray
-          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
-          sleep 5
-          
-          # 测试代理
-          echo "[INFO] 测试代理连接..."
-          for i in 1 2 3 4 5; do
-            if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
-              echo "[INFO] ✅ 代理连接成功"
-              echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
-              exit 0
-            fi
-            echo "[WARN] 尝试 $i/5..."
-            sleep 3
-          done
-          
-          echo "[ERROR] ❌ 代理连接失败"
-          echo "--- Xray 日志 ---"
-          cat xray.log
-          exit 1
+
+      - name: 检查脚本代理出口
+        run: |
+          if [ -z "${PROXY_SERVER}" ]; then
+            echo "[ERROR] PROXY_SERVER 为空，禁止直连"
+            exit 1
+          fi
+
+          echo "[INFO] 检查代理出口 IP..."
+          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org && echo
+
+          echo "[INFO] 检查代理访问 Zampto..."
+          curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://auth.zampto.net/ | sed -n '1,8p'
 
       - name: 执行续期
         env:
           ZAMPTO_ACCOUNT: ${{ secrets.ZAMPTO_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
+          PROXY_URL: ${{ env.PROXY_SERVER }}
         run: python scripts/Zampto/Zampto_Renew.py
 #        > /dev/null 2>&1
 
@@ -378,4 +251,4 @@ jobs:
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
-          keep_minimum_runs: 3
+          keep_minimum_runs: 5
