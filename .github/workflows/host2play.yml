@@ -59,10 +59,9 @@ jobs:
           nslookup host2play.gratis 1.1.1.1 || echo "[WARN] 解析失败"
 
           echo ""
-          echo "[INFO] 当前出口 IP:"
-          curl -s --max-time 10 https://api.ipify.org && echo
+          echo "[INFO] 当前出口 IP: ***.***.***.***"
           echo "[INFO] WARP Trace:"
-          curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace | grep -E 'ip=|warp=|loc=' || true
+          curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace | grep -E 'warp=|loc=' || true
 
       - name: 执行续订脚本
         env:
@@ -71,7 +70,13 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           cd scripts/host2play
-          python main.py
+          set -o pipefail
+          python main.py 2>&1 | sed -E \
+            -e 's#(https://host2play\.gratis/server/renew\?i=)[^[:space:]'"'"'"<>]+#\1***#g' \
+            -e 's#\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b#***#g' \
+            -e 's#bot[0-9]{6,}:[A-Za-z0-9_-]+#bot***#g' \
+            -e 's#\b[0-9]{1,3}(\.[0-9]{1,3}){3}\b#***.***.***.***#g' \
+            -e 's#\b([0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b#****:****:****:****#g'
 
       - name: 清理历史运行记录
         if: always()
