@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       image_name:
-        description: '镜像名称'
+        description: 'aoi-hf'
         required: true
         default: 'huggingface-app'
         type: string
