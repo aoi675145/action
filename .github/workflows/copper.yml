@@ -3,7 +3,7 @@ name: Coppernodes 积分获取
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 0 * * *'
+    - cron: '33 16 * * *'
 
 jobs:
   run:
