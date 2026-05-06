@@ -1,4 +1,4 @@
-name: x10hosting Login
+name: X10hosting Login
 
 on:
   workflow_dispatch:
