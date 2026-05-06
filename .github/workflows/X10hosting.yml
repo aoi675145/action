@@ -28,7 +28,8 @@ jobs:
         run: |
           set -euo pipefail
           sudo -E apt-get update -qq
-          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 ffmpeg
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 \
+            xvfb ffmpeg mesa-utils libgl1-mesa-glx libgl1-mesa-dri
           pip install --quiet playwright requests SpeechRecognition pydub
           python -m playwright install --with-deps chromium
 
@@ -53,11 +54,23 @@ jobs:
             echo "WARP 连接中... ($i/30)"
             sleep 2
           done
-          echo -n "出口 IP: " && curl -s https://api.ipify.org && echo
            
       - name: Run
         env:
+          PYTHONUNBUFFERED: "1"
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           X10hosting: ${{ secrets.X10hosting }}
-        run: python scripts/X10hosting/login_script.py
+          X10_MAX_LOGIN_ATTEMPTS: "5"
+          DISPLAY: :99
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: "llvmpipe"
+        run: |
+          set -o pipefail
+          xvfb-run --auto-servernum \
+            --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
+            python -u scripts/X10hosting/login_script.py 2>&1 | sed -E \
+              -e 's#[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}#***@***#g' \
+              -e 's#bot[0-9]{6,}:[A-Za-z0-9_-]+#bot***#g' \
+              -e 's#\b[0-9]{1,3}(\.[0-9]{1,3}){3}\b#***.***.***.***#g' \
+              -e 's#\b([0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}\b#****:****:****:****#g'
