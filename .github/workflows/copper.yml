@@ -39,16 +39,178 @@ jobs:
 
           sudo -E apt-get update -qq
           sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 \
-            xvfb p7zip-full ffmpeg \
+            xvfb p7zip-full ffmpeg unzip \
             mesa-utils libgl1-mesa-glx libgl1-mesa-dri
 
           pip install --quiet playwright requests SpeechRecognition pydub
           python -m playwright install --with-deps chromium
 
+      - name: 安装 Xray
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip \
+            -o Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+
+      - name: 构建 Xray 配置
+        id: build_xray
+        env:
+          PROXY_URL: ${{ secrets.Copper_ROXY_NODE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${PROXY_URL}" ]; then
+            echo "use_proxy=false" >> "$GITHUB_OUTPUT"
+            echo "[INFO] 未配置 Copper_ROXY_NODE，使用直连"
+            exit 0
+          fi
+
+          if python - <<'PY'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          proxy_url = os.environ["PROXY_URL"].strip()
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
+
+              if stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                  }
+              elif stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+
+              if transport_type == "tcp":
+                  stream_settings["tcpSettings"] = {"header": {"type": query.get("headerType", "none")}}
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {"path": query.get("path", "/"), "headers": headers}
+              elif transport_type == "http":
+                  stream_settings["httpSettings"] = {
+                      "host": [h for h in query.get("host", "").split(",") if h],
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {"vnext": [{"address": host, "port": port, "users": [{
+                      "id": user_id,
+                      "encryption": qs.get("encryption", "none"),
+                      "flow": qs.get("flow", ""),
+                  }]}]},
+                  "streamSettings": build_stream_settings(qs, host),
+              }
+          else:
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+              }
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {"vnext": [{"address": host, "port": port, "users": [{
+                      "id": user_id,
+                      "alterId": int(vmess.get("aid", 0) or 0),
+                      "security": vmess.get("scy", "auto"),
+                  }]}]},
+                  "streamSettings": build_stream_settings(query, host),
+              }
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{"listen": "127.0.0.1", "port": 8080, "protocol": "http"}],
+              "outbounds": [outbound],
+          }
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PY
+          then
+            echo "use_proxy=true" >> "$GITHUB_OUTPUT"
+            echo "[INFO] 代理节点解析成功"
+          else
+            echo "use_proxy=false" >> "$GITHUB_OUTPUT"
+            echo "[WARN] 代理节点解析失败，自动回退直连"
+          fi
+
+      - name: 启动 Xray 代理
+        id: start_xray
+        if: steps.build_xray.outputs.use_proxy == 'true'
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          nohup xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 3
+          if curl -s --max-time 15 --proxy http://127.0.0.1:8080 https://api.ipify.org; then
+            echo
+            echo "use_proxy=true" >> "$GITHUB_OUTPUT"
+            echo "[INFO] Xray 代理可用"
+          else
+            echo "use_proxy=false" >> "$GITHUB_OUTPUT"
+            echo "[WARN] Xray 代理不可用，自动回退直连"
+          fi
+
       - name: 执行续期
         env:
           Coppernodes: ${{ secrets.Coppernodes }}
-          Copper_ROXY_NODE: ${{ secrets.Copper_ROXY_NODE }}
+          Copper_ROXY_NODE: ${{ steps.start_xray.outputs.use_proxy == 'true' && 'http://127.0.0.1:8080' || '' }}
           Copper_COOKIE: ${{ secrets.Copper_COOKIE }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
