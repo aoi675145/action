@@ -2,7 +2,7 @@ name: VPS8 每日签到
 
 on:
   schedule:
-    - cron: '35 3 * * *'  # 每天北京时间 11:35 运行
+    - cron: '35 16 * * *'  
   workflow_dispatch:
 
 jobs:
