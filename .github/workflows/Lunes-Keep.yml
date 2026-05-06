@@ -2,7 +2,7 @@ name: Lunes Host 自动保活
 
 on:
   schedule:
-    - cron: '22 1 1,11,21 * *'
+    - cron: '07 1 1,11,21 * *'
   workflow_dispatch:
 
 jobs:
