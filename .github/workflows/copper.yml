@@ -1,4 +1,4 @@
-name: Coppernodes 续期
+name: Coppernodes 积分获取
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   run:
-    name: 执行续期
+    name: 执行积分获取
     runs-on: ubuntu-22.04
     timeout-minutes: 20
 
@@ -207,7 +207,7 @@ jobs:
             echo "[WARN] Xray 代理不可用，自动回退直连"
           fi
 
-      - name: 执行续期
+      - name: 执行积分获取
         env:
           Coppernodes: ${{ secrets.Coppernodes }}
           Copper_ROXY_NODE: ${{ steps.start_xray.outputs.use_proxy == 'true' && 'http://127.0.0.1:8080' || '' }}
