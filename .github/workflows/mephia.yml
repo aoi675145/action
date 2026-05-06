@@ -2,7 +2,7 @@ name: Mephia 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '18 17 */5 * *'
+    - cron: '13 1 */5 * *'
 
 jobs:
   renew:
