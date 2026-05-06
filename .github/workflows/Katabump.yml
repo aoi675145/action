@@ -2,7 +2,7 @@ name: Katabump Auto Renew
 
 on:  
   schedule:
-    - cron: '17 1 * * *'  
+    - cron: '02 1 * * *'  
   workflow_dispatch:  # 允许手动触发
 
 jobs:
