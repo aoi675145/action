@@ -1,0 +1,77 @@
+name: Coppernodes 续期
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '33 0 * * *'
+
+jobs:
+  run:
+    name: 执行续期
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - name: 拉取本仓库
+        uses: actions/checkout@v4
+
+      - name: 拉取脚本
+        run: |
+          set -euo pipefail
+          curl -fsSL \
+            "https://raw.githubusercontent.com/akina005/scripts/main/scripts/copper/main.py" \
+            -o main.py
+
+      - name: 安装 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
+        run: |
+          set -euo pipefail
+
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 \
+            xvfb p7zip-full ffmpeg \
+            mesa-utils libgl1-mesa-glx libgl1-mesa-dri
+
+          pip install --quiet playwright requests SpeechRecognition pydub
+          python -m playwright install --with-deps chromium
+
+      - name: 执行续期
+        env:
+          Coppernodes: ${{ secrets.Coppernodes }}
+          Copper_ROXY_NODE: ${{ secrets.Copper_ROXY_NODE }}
+          Copper_COOKIE: ${{ secrets.Copper_COOKIE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          DISPLAY: :99
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: "llvmpipe"
+        run: |
+          xvfb-run --auto-servernum \
+            --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
+            python main.py
+
+      - name: 上传截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ github.run_number }}
+          path: screenshots/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: 清理历史
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
