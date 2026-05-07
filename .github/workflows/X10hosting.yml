@@ -22,6 +22,7 @@ jobs:
           python-version: '3.11'
        
       - name: Install
+        timeout-minutes: 10
         env:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
@@ -40,12 +41,12 @@ jobs:
           mode: client
 
       - name: 配置 DNS 并验证 WARP
+        timeout-minutes: 5
         run: |
           set -euo pipefail
           sudo systemctl stop systemd-resolved 2>/dev/null || true
           sudo rm -f /etc/resolv.conf
           echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" | sudo tee /etc/resolv.conf
-          sudo chattr +i /etc/resolv.conf 2>/dev/null || true
           sleep 3
 
           for i in {1..30}; do
@@ -56,12 +57,14 @@ jobs:
           done
            
       - name: Run
+        timeout-minutes: 30
         env:
           PYTHONUNBUFFERED: "1"
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           X10hosting: ${{ secrets.X10hosting }}
           X10_MAX_LOGIN_ATTEMPTS: "3"
+          X10_MAX_CAPTCHA: "8"
           X10_MAX_RUN_SECONDS: "1800"
           X10_TG_PROGRESS: "1"
           DISPLAY: :99
@@ -71,3 +74,15 @@ jobs:
           xvfb-run --auto-servernum \
             --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
             python -u scripts/X10hosting/login_script.py
+
+      - name: Job Summary
+        if: always()
+        timeout-minutes: 1
+        run: |
+          {
+            echo "## X10hosting Job"
+            echo ""
+            echo "- Job finished at: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            echo "- Run step timeout: 30 minutes"
+            echo "- Artifact upload: disabled"
+          } >> "$GITHUB_STEP_SUMMARY"
