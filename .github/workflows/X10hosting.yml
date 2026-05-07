@@ -62,6 +62,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           X10hosting: ${{ secrets.X10hosting }}
           X10_MAX_LOGIN_ATTEMPTS: "3"
+          X10_TG_PROGRESS: "1"
           DISPLAY: :99
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: "llvmpipe"
