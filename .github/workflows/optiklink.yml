@@ -39,8 +39,11 @@ jobs:
           fi
 
           # 1. 下载并解压 Xray
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
           
           # 2. 运行 Python 脚本解析节点并生成配置文件
           python3 << 'PYEOF'
@@ -317,7 +320,7 @@ jobs:
           fi
 
           # 4. 后台启动 Xray
-          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          xray run -c xray_config.json > xray.log 2>&1 &
           sleep 5
 
           # 5. 测试本地代理端口是否正常工作
