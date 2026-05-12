@@ -3,7 +3,7 @@ name: HidenCloud 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '22 3 17 5 *'   # 自动更新下次运行时间
+    - cron: '33 3 27 4 *'   # 自动更新下次运行时间
 
 permissions:
   contents: write
@@ -29,6 +29,21 @@ jobs:
       - name: 安装依赖 
         run: |
           pip install --quiet seleniumbase requests beautifulsoup4
+
+      - name: 生成账号专属缓存前缀
+        env:
+          HIDENCLOUD: ${{ secrets.HIDENCLOUD }}
+        run: |
+          set -e
+          if [[ "$HIDENCLOUD" != *"-----"* ]]; then
+            echo "::error::HIDENCLOUD 格式错误，应为 email-----password"
+            exit 1
+          fi
+
+          EMAIL="${HIDENCLOUD%%-----*}"
+          CACHE_SCOPE=$(printf '%s' "$EMAIL" | sha256sum | cut -c1-16)
+          echo "HIDENCLOUD_CACHE_PREFIX=hidencloud-state-${CACHE_SCOPE}-" >> "$GITHUB_ENV"
+          echo "✅ 已生成账号专属缓存前缀"
 
       - name: 安装并启动代理
         env:
@@ -335,9 +350,9 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: browser_state
-          key: hidencloud-state-${{ github.run_id }}
+          key: ${{ env.HIDENCLOUD_CACHE_PREFIX }}${{ github.run_id }}
           restore-keys: |
-            hidencloud-state-
+            ${{ env.HIDENCLOUD_CACHE_PREFIX }}
 
       - name: 清理 Chrome 锁文件
         run: |
@@ -371,7 +386,7 @@ jobs:
           echo "🗑️ 清理旧缓存..."
           
           # 缓存键前缀（必须与 cache 步骤中使用的 key 前缀一致）
-          PREFIX="hidencloud-state-"
+          PREFIX="${HIDENCLOUD_CACHE_PREFIX}"
           
           # 获取所有匹配前缀的缓存键列表
           CACHE_KEYS=$(gh cache list --limit 100 --json key -q '.[].key' --repo ${{ github.repository }} | grep "^${PREFIX}" || true)
@@ -396,7 +411,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: browser_state
-          key: hidencloud-state-${{ github.run_id }}
+          key: ${{ env.HIDENCLOUD_CACHE_PREFIX }}${{ github.run_id }}
 
       - name: 提取到期时间
         id: extract_due
