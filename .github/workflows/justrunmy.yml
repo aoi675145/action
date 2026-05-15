@@ -9,6 +9,7 @@ on:
 # ⚠️ 必须添加权限配置，允许 Action 修改仓库文件
 permissions:
   contents: write
+  actions: write
 
 jobs:
   run_renewal:
@@ -299,7 +300,7 @@ jobs:
       if: always()
       uses: Mattraks/delete-workflow-runs@v2
       with:
-        token: ${{ github.token }}
+        token: ${{ secrets.REPO_TOKEN }}
         repository: ${{ github.repository }}
         delete_workflow_pattern: ${{ github.workflow }}
         retain_days: 0
