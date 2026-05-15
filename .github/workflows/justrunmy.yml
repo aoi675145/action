@@ -2,7 +2,7 @@ name: JustRunMy Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '16 1 */2 * *'
+    - cron: '21 1 */2 * *'
   repository_dispatch:
     types: [just]
 
@@ -281,6 +281,7 @@ jobs:
           echo "检测到 Cookie 更新，正在提交..."
           git add scripts/justrunmy/cookie.txt
           git commit -m "Auto-update auth cookie [skip ci]"
+          git pull --rebase origin main
           git push
         else
           echo "Cookie 无变化，跳过提交。"
