@@ -116,6 +116,8 @@ jobs:
             sni = params.get("sni", [address])[0]
             fp = params.get("fp", ["chrome"])[0]
             flow = params.get("flow", [""])[0]
+            sid = params.get("sid", [""])[0]
+            spider_x = unquote(params.get("spx", ["/"])[0])
             host = params.get("host", [sni])[0]
             path = unquote(params.get("path", ["/"])[0])
 
@@ -149,7 +151,9 @@ jobs:
                 outbound["streamSettings"]["realitySettings"] = {
                     "serverName": sni,
                     "fingerprint": fp,
-                    "publicKey": params.get("pbk", [""])[0]
+                    "publicKey": params.get("pbk", [""])[0],
+                    "shortId": sid,
+                    "spiderX": spider_x
                 }
 
             if network == "ws":
