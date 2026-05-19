@@ -109,12 +109,14 @@ jobs:
                 address, port = host_port.rsplit(":", 1)
             else:
                 address, port = host_port, "443"
+            port = port.rstrip("/")
 
             params = parse_qs(params_str)
             security = params.get("security", ["none"])[0]
             network = params.get("type", ["tcp"])[0]
             sni = params.get("sni", [address])[0]
             fp = params.get("fp", ["chrome"])[0]
+            allow_insecure = params.get("allowInsecure", params.get("insecure", ["0"]))[0] in ("1", "true", "True")
             flow = params.get("flow", [""])[0]
             sid = params.get("sid", [""])[0]
             spider_x = unquote(params.get("spx", ["/"])[0])
@@ -145,7 +147,7 @@ jobs:
                 outbound["streamSettings"]["tlsSettings"] = {
                     "serverName": sni,
                     "fingerprint": fp,
-                    "allowInsecure": False
+                    "allowInsecure": allow_insecure
                 }
             elif security == "reality":
                 outbound["streamSettings"]["realitySettings"] = {
