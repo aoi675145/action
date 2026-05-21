@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
   schedule:
-    - cron: "53 0 * * *"
+    - cron: "19 0 * * *"
 
   push:
     paths:
@@ -242,12 +242,24 @@ jobs:
 
       - name: 检查当前出口 IP
         run: |
+          mask_ip() {
+            printf '%s' "$1" | sed -E 's/^([0-9]+)\.[0-9]+\.[0-9]+\.([0-9]+)$/\1.xx.xx.\2/'
+          }
+          show_ipinfo() {
+            printf '%s' "$1" | sed -E \
+              -e 's/("ip"[[:space:]]*:[[:space:]]*")([0-9]+)\.[0-9]+\.[0-9]+\.([0-9]+)(")/\1\2.xx.xx.\3\4/' \
+              -e 's/("loc"[[:space:]]*:[[:space:]]*")[-0-9.]+,[-0-9.]+(")/\1已隐藏\2/'
+          }
           if [ -n "${VPS8_RUNTIME_PROXY}" ]; then
-            curl -s --proxy "$VPS8_RUNTIME_PROXY" https://api.ipify.org && echo
-            curl -s --proxy "$VPS8_RUNTIME_PROXY" https://ipinfo.io
+            proxy_ip="$(curl -s --proxy "$VPS8_RUNTIME_PROXY" https://api.ipify.org)"
+            mask_ip "$proxy_ip" && echo
+            proxy_info="$(curl -s --proxy "$VPS8_RUNTIME_PROXY" https://ipinfo.io)"
+            show_ipinfo "$proxy_info"
           else
-            curl -s https://api.ipify.org && echo
-            curl -s https://ipinfo.io
+            direct_ip="$(curl -s https://api.ipify.org)"
+            mask_ip "$direct_ip" && echo
+            direct_info="$(curl -s https://ipinfo.io)"
+            show_ipinfo "$direct_info"
           fi
 
       - name: 运行 VPS8 签到兑换续期流程
