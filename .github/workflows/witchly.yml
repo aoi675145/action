@@ -1,4 +1,4 @@
-name:  Witchly Auto Renew
+name:  Witchly 签到
 on:
   workflow_dispatch:
   schedule:
@@ -352,7 +352,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_URL: ${{ env.PROXY_SERVER }}
         run: |
-          python witchly.py
+          python main.py
 
       - name: 🧹 清理旧的运行记录 (仅保留最近 5 个)
         uses: Mattraks/delete-workflow-runs@v2
