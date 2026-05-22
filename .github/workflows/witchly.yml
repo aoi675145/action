@@ -2,7 +2,7 @@ name:  Witchly 签到
 on:
   workflow_dispatch:
   schedule:
-    - cron: '9 14 * * *' # 每天 22:00 北京时间
+    - cron: '9 09 * * *' 
 
 jobs:
   run_renewal:
