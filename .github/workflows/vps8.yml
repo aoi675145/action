@@ -208,7 +208,7 @@ jobs:
           PIP_DISABLE_PIP_VERSION_CHECK: "1"
         run: |
           missing=""
-          for pkg in xvfb python3-tk python3-dev google-chrome-stable fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei; do
+          for pkg in fonts-noto-cjk fonts-wqy-zenhei fonts-wqy-microhei; do
             dpkg -s "$pkg" >/dev/null 2>&1 || missing="$missing $pkg"
           done
           if [ -n "$missing" ]; then
@@ -219,7 +219,8 @@ jobs:
             echo "[环境] apt 依赖已存在"
           fi
           echo "[环境] 安装 Python 依赖"
-          python3 -m pip install -q seleniumbase pyvirtualdisplay requests
+          python3 -m pip install -q playwright requests hcaptcha_challenger
+          python3 -m playwright install --with-deps chromium
 
       - name: 从私库拉取 VPS8 脚本
         env:
@@ -269,6 +270,9 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           vps8_PROXY: ${{ env.VPS8_RUNTIME_PROXY }}
           vps8_FORCE_RENEW: ${{ secrets.vps8_FORCE_RENEW }}
+          AI_BASE_URL: ${{ secrets.AI_BASE_URL }}
+          AI_API_KEY: ${{ secrets.AI_API_KEY }}
+          AI_MODEL_NAME: ${{ secrets.AI_MODEL_NAME }}
         run: |
           python3 checkin.py
 
