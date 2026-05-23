@@ -219,7 +219,7 @@ jobs:
             echo "[环境] apt 依赖已存在"
           fi
           echo "[环境] 安装 Python 依赖"
-          python3 -m pip install -q --upgrade playwright requests hcaptcha-challenger
+          python3 -m pip install -q --upgrade playwright requests hcaptcha-challenger PyYAML
           python3 -m playwright install --with-deps chromium
 
       - name: 从私库拉取 VPS8 脚本
