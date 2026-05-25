@@ -35,7 +35,7 @@ jobs:
         if: steps.check.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
-          repository: 'akina005/scripts'
+          repository: 'aoi675145/scripts'
           # 使用你指定的 REPO_TOKEN 变量名
           token: ${{ secrets.REPO_TOKEN }} 
 
