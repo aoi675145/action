@@ -14,7 +14,7 @@ jobs:
       - name: 📥 1. 拉取私有仓库代码
         uses: actions/checkout@v4
         with:
-          repository: akina005/scripts
+          repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
