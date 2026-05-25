@@ -2,7 +2,7 @@ name:  Witchly 签到
 on:
   workflow_dispatch:
   schedule:
-    - cron: '9 00 * * *' 
+    - cron: '9 09 * * *' 
 
 jobs:
   run_renewal:
@@ -355,6 +355,17 @@ jobs:
           PROXY_URL: ${{ env.PROXY_SERVER }}
         run: |
           python main.py
+
+      - name: 💾 提交稳定性缓存到私库
+        working-directory: scripts_repo
+        run: |
+          if [ -f scripts/witchly/stability_cache.json ]; then
+            git config user.name "witchly-bot"
+            git config user.email "bot@witchly"
+            git add scripts/witchly/stability_cache.json
+            git diff --cached --quiet || git commit -m "chore: update stability cache [skip ci]"
+            git push
+          fi
 
       - name: 清理运行记录
         if: always()
