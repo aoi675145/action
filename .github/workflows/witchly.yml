@@ -16,14 +16,14 @@ jobs:
       - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
-          repository: akina005/scripts
+          repository: aoi675145/scripts
           path: scripts_repo
           token: ${{ secrets.REPO_TOKEN }}
 
       - name: 📥 拉取工作流仓库
         uses: actions/checkout@v4
         with:
-          repository: akina005/action
+          repository: aoi675145/action
           path: action_repo
           token: ${{ secrets.REPO_TOKEN }}
 
@@ -50,7 +50,7 @@ jobs:
             exit 1
           fi
 
-          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          wget -q https://github.com/aoi675145/akina/releases/download/proxy/Xray-linux-64.zip
           mkdir -p xray-bin
           unzip -oq Xray-linux-64.zip -d xray-bin
           chmod +x xray-bin/xray
