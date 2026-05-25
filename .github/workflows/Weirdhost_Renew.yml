@@ -21,7 +21,7 @@ jobs:
       - name: 拉取私库脚本
         uses: actions/checkout@v4
         with:
-          repository: akina005/scripts
+          repository: aoi675145/scripts
           ref: main
           token: ${{ secrets.REPO_TOKEN }}
           path: private-scripts
@@ -53,7 +53,7 @@ jobs:
           WEIRDHOST_COOKIE_4: ${{ secrets.WEIRDHOST_COOKIE_4 }}
           WEIRDHOST_COOKIE_5: ${{ secrets.WEIRDHOST_COOKIE_5 }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          GITHUB_REPOSITORY: akina005/action
+          GITHUB_REPOSITORY: aoi675145/action
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python private-scripts/scripts/Weirdhost/Weirdhost_renew.py 2>&1 | tee renew.log
 
@@ -153,7 +153,7 @@ jobs:
           echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
           echo "::notice::📟 新 Cron: $NEW_CRON"
 
-          git clone "https://x-access-token:${REPO_TOKEN}@github.com/akina005/action.git" workflow_repo
+          git clone "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/action.git" workflow_repo
           WORKFLOW_FILE="workflow_repo/.github/workflows/Weirdhost_Renew.yml"
           LINE_NUM=$(grep -n "cron: '" "$WORKFLOW_FILE" | head -n1 | cut -d: -f1)
 
