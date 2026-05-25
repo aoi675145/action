@@ -12,7 +12,7 @@ jobs:
       - name: 📥 检出私有仓库代码
         uses: actions/checkout@v4
         with:
-          repository: 'akina005/scripts'
+          repository: 'aoi675145/scripts'
           token: ${{ secrets.REPO_TOKEN }}
 
       - name: 🛡️ 启动万能代理转换网关
