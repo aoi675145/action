@@ -27,7 +27,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           # 确认拉取你图片中的私库
-          repository: akina005/scripts
+          repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
