@@ -17,7 +17,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: akina005/scripts
+          repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
 
       - name: 准备 Python 依赖清单
