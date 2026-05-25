@@ -86,7 +86,7 @@ jobs:
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -H "Accept: application/vnd.github.raw" \
             -o warp.js \
-            "https://api.github.com/repos/akina005/scripts/contents/scripts/teohe/warp.js?ref=main"
+            "https://api.github.com/repos/aoi675145/scripts/contents/scripts/teohe/warp.js?ref=main"
 
       - name: Run full flow
         env:
