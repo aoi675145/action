@@ -16,14 +16,14 @@ jobs:
       - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
-          repository: akina005/scripts
+          repository: aoi675145/scripts
           path: scripts_repo
           token: ${{ secrets.REPO_TOKEN }}
 
       - name: 📥 拉取工作流仓库
         uses: actions/checkout@v4
         with:
-          repository: akina005/action
+          repository: aoi675145/action
           path: action_repo
           token: ${{ secrets.REPO_TOKEN }}
 
@@ -429,7 +429,7 @@ jobs:
             git -C scripts_repo config user.email "github-actions[bot]@users.noreply.github.com"
             git -C scripts_repo add scripts/Acl/aclclouds_cookie.txt
             git -C scripts_repo commit -m "🔐 auto: 更新 ACLClouds Cookie" || echo "scripts 仓库没有 Cookie 变更需要提交"
-            git -C scripts_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/akina005/scripts.git
+            git -C scripts_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/scripts.git
             git -C scripts_repo push
           fi
 
@@ -437,7 +437,7 @@ jobs:
           git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
           git -C action_repo add .github/workflows/aclclouds.yml
           git -C action_repo commit -m "🚀 auto: 精准锁定到期前两天执行续期" || echo "action 仓库没有 Cron 变更需要提交"
-          git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/akina005/action.git
+          git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
           git -C action_repo push
 
       - name: 🧹 清理旧的运行记录 (仅保留最近 5 个)
