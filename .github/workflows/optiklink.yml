@@ -12,7 +12,7 @@ jobs:
       - name: 📥 拉取私有代码
         uses: actions/checkout@v4
         with:
-          repository: akina005/scripts
+          repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
@@ -39,7 +39,7 @@ jobs:
           fi
 
           # 1. 下载并解压 Xray
-          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          wget -q https://github.com/aoi675145/akina/releases/download/proxy/Xray-linux-64.zip
           mkdir -p xray-bin
           unzip -oq Xray-linux-64.zip -d xray-bin
           chmod +x xray-bin/xray
