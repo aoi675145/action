@@ -1,0 +1,39 @@
+name: SlimeNodes AutoCoin
+
+on:
+  schedule:
+    - cron: '30 0 * * *'   # 00:30 UTC = 08:30 CST
+    - cron: '30 12 * * *'  # 12:30 UTC = 20:30 CST
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  earn-coins:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout private scripts
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          ref: main
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-scripts
+          sparse-checkout: |
+            scripts/slime
+          sparse-checkout-cone-mode: true
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run auto-coin
+        env:
+          DISCORD_ACCOUNT: ${{ secrets.DISCORD_ACCOUNT }}
+          PROXY_URL: ${{ secrets.PROXY_URL }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          MAX_ADS: 10
+        run: python private-scripts/scripts/slime/main.py
