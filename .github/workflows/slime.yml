@@ -2,7 +2,7 @@ name: Slime 金币获取
 
 on:
   schedule:
-    - cron: '16 */12 * * *'  
+    - cron: '16 0 * * *'  # 北京时间 08:16，每天一次
   workflow_dispatch:
 
 permissions:
@@ -177,7 +177,7 @@ jobs:
           PROXY_URL: ${{ secrets.PROXY_URL }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
           TG_BOT: ${{ secrets.TG_BOT }}
-          MAX_ADS: 10
+          MAX_ADS: 20
         run: python private-scripts/scripts/slime/main.py
 
       - name: 清理运行记录
