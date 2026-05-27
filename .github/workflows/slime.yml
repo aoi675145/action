@@ -2,7 +2,7 @@ name: Slime 金币获取
 
 on:
   schedule:
-    - cron: '30 */12 * * *'  # 每 12 小时运行一次
+    - cron: '30 */12 * * *'  
   workflow_dispatch:
 
 permissions:
