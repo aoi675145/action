@@ -1,4 +1,4 @@
-name: SlimeNodes AutoCoin
+name: Slime 金币获取
 
 on:
   schedule:
