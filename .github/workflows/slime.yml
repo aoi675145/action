@@ -30,10 +30,14 @@ jobs:
           python-version: '3.11'
 
       - name: Install and start Xray proxy
-        if: ${{ secrets.PROXY_URL != '' }}
         env:
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
+          if [ -z "${PROXY_URL}" ]; then
+            echo "[proxy] PROXY_URL 未配置，代理为必填"
+            exit 1
+          fi
+
           sudo apt-get update
           sudo apt-get install -y unzip
           wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
