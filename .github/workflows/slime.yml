@@ -186,6 +186,7 @@ jobs:
           if [ -f scripts/slime/renew_cache.json ]; then
             git config user.name "slime-bot"
             git config user.email "bot@slime"
+            git pull --rebase --autostash
             git add scripts/slime/renew_cache.json
             git diff --cached --quiet || git commit -m "chore: update renew cache [skip ci]"
             git push
