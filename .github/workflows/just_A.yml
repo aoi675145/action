@@ -40,7 +40,7 @@ jobs:
 
     - name: 配置代理隧道 Xray
       env:
-        JUST_A: ${{ secrets.JUST_A }}
+        JUST_A_PROXY_NODE: ${{ secrets.JUST_A_PROXY_NODE }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
@@ -56,8 +56,8 @@ jobs:
           fi
         }
 
-        if [ -z "$JUST_A" ]; then
-          notify_fail "未配置代理节点 JUST_A，已禁止直连"
+        if [ -z "$JUST_A_PROXY_NODE" ]; then
+          notify_fail "未配置代理节点 JUST_A_PROXY_NODE，已禁止直连"
           exit 1
         fi
 
@@ -71,9 +71,9 @@ jobs:
         def mask(s):
             return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
 
-        url = os.environ.get("JUST_A", "").strip()
+        url = os.environ.get("JUST_A_PROXY_NODE", "").strip()
         if not url:
-            print("[ERROR] JUST_A 为空")
+            print("[ERROR] JUST_A_PROXY_NODE 为空")
             sys.exit(1)
 
         if url.startswith("vless://"):
@@ -255,6 +255,7 @@ jobs:
 
     - name: 运行续期脚本
       env:
+        JUST_A_ID: ${{ secrets.JUST_A_ID }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}      # 已经改好的新变量名
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
