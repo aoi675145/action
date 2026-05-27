@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   earn-coins:
@@ -18,10 +18,7 @@ jobs:
           repository: aoi675145/scripts
           ref: main
           token: ${{ secrets.REPO_TOKEN }}
-          path: .
-          sparse-checkout: |
-            scripts/slime
-          sparse-checkout-cone-mode: true
+          path: scripts_repo
 
       - name: 2. 设置 Python 环境
         uses: actions/setup-python@v5
@@ -178,7 +175,18 @@ jobs:
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
           TG_BOT: ${{ secrets.TG_BOT }}
           MAX_ADS: 20
-        run: python scripts/slime/main.py
+        run: python scripts_repo/scripts/slime/main.py
+
+      - name: 5. 提交续期缓存到私库
+        run: |
+          cd scripts_repo
+          if [ -f scripts/slime/renew_cache.json ]; then
+            git config user.name "slime-bot"
+            git config user.email "bot@slime"
+            git add scripts/slime/renew_cache.json
+            git diff --cached --quiet || git commit -m "chore: update renew cache [skip ci]"
+            git push
+          fi
 
       - name: 清理运行记录
         if: always()
