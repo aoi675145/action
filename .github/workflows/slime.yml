@@ -13,7 +13,7 @@ jobs:
   earn-coins:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout private scripts
+      - name: 1. 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -24,12 +24,12 @@ jobs:
             scripts/slime
           sparse-checkout-cone-mode: true
 
-      - name: Set up Python
+      - name: 2. 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Install and start Xray proxy
+      - name: 3. 安装并启动 Xray 代理
         env:
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
@@ -172,7 +172,7 @@ jobs:
             exit 1
           fi
 
-      - name: Run auto-coin
+      - name: 4. 执行 Slime 金币获取
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
@@ -180,3 +180,13 @@ jobs:
           TG_BOT: ${{ secrets.TG_BOT }}
           MAX_ADS: 10
         run: python private-scripts/scripts/slime/main.py
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 5
