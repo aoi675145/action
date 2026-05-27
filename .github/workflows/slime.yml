@@ -160,7 +160,10 @@ jobs:
           xray version
           sed -n '1,20p' xray.log || true
           if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/slime_proxy_ip; then
-            echo "[proxy] 代理可用，出口 IP: $(cat /tmp/slime_proxy_ip)"
+            PROXY_IP=$(cat /tmp/slime_proxy_ip)
+            echo "::add-mask::$PROXY_IP"
+            MASKED_IP=$(echo "$PROXY_IP" | awk -F. '{print $1".xxx.xxx."$4}')
+            echo "[proxy] 代理可用，出口 IP: $MASKED_IP"
             echo "PROXY_SOCKS5=http://127.0.0.1:8080" >> "$GITHUB_ENV"
           else
             echo "[proxy] 代理不可用，停止运行"
