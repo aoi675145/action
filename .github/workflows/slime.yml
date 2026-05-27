@@ -18,7 +18,7 @@ jobs:
           repository: aoi675145/scripts
           ref: main
           token: ${{ secrets.REPO_TOKEN }}
-          path: private-scripts
+          path: .
           sparse-checkout: |
             scripts/slime
           sparse-checkout-cone-mode: true
@@ -178,7 +178,7 @@ jobs:
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
           TG_BOT: ${{ secrets.TG_BOT }}
           MAX_ADS: 20
-        run: python private-scripts/scripts/slime/main.py
+        run: python scripts/slime/main.py
 
       - name: 清理运行记录
         if: always()
