@@ -174,7 +174,7 @@ jobs:
           PROXY_URL: ${{ secrets.PROXY_URL }}
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
           TG_BOT: ${{ secrets.TG_BOT }}
-          Slime_MAX_ADS: ${{ vars.Slime_MAX_ADS }}
+          Slime_MAX_ADS: ${{ vars.Slime_MAX_ADS || 20 }}
         run: python scripts_repo/scripts/slime/main.py
 
       - name: 5. 提交续期缓存到私库
