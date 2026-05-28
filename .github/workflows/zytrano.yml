@@ -1,4 +1,4 @@
-name: Zytrano Auto Renew
+name: Zytrano 续期
 
 on:
   schedule:
