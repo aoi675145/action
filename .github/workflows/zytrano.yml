@@ -58,7 +58,7 @@ jobs:
           Zytrano_PROXY: ${{ secrets.PROXY_URL }}
         run: |
           if [ -z "$Zytrano_PROXY" ]; then
-            echo "[INFO] 未配置代理，直连模式"
+            echo "[WARN] 未配置代理 URL"
             exit 0
           fi
 
@@ -78,8 +78,8 @@ jobs:
 
           url = os.environ.get("Zytrano_PROXY", "").strip()
           if not url:
-              print("[ERROR] Zytrano_PROXY 为空")
-              sys.exit(1)
+              print("[WARN] Zytrano_PROXY 为空")
+              sys.exit(0)
 
           if url.startswith("vless://"):
               protocol = "vless"
@@ -104,8 +104,8 @@ jobs:
                   handle.write(url.split("#", 1)[0])
               sys.exit(0)
           else:
-              print(f"[ERROR] 不支持的协议: {url.split('://', 1)[0]}")
-              sys.exit(1)
+              print(f"[WARN] 不支持的协议: {url.split('://', 1)[0]}")
+              sys.exit(0)
 
           if "#" in content:
               content = content.rsplit("#", 1)[0]
@@ -195,8 +195,8 @@ jobs:
                   decoded = base64.b64decode(content).decode("utf-8")
                   vmess = json.loads(decoded)
               except Exception as exc:
-                  print(f"[ERROR] VMess 解析失败: {exc}")
-                  sys.exit(1)
+                  print(f"[WARN] VMess 解析失败: {exc}")
+                  sys.exit(0)
 
               address = vmess.get("add", "")
               port = int(vmess.get("port", 443))
@@ -306,8 +306,8 @@ jobs:
                       else:
                           raise ValueError("无法解析")
               except Exception as exc:
-                  print(f"[ERROR] Shadowsocks 解析失败: {exc}")
-                  sys.exit(1)
+                  print(f"[WARN] Shadowsocks 解析失败: {exc}")
+                  sys.exit(0)
 
               print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
 
@@ -352,9 +352,9 @@ jobs:
             sleep 3
           done
 
-          echo "[ERROR] ❌ 代理连接失败"
-          cat xray.log
-          exit 1
+          echo "[WARN] ❌ 代理连接失败"
+          cat xray.log || true
+          exit 0
 
       - name: 🚀 运行 Zytrano Python 脚本
         if: steps.check.outputs.run == 'true'
