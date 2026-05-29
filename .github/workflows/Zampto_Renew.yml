@@ -2,12 +2,13 @@ name: Zampto 续期
 
 on:
   schedule:
-    - cron: '44 0 * * *'
+    - cron: '47 0 * * *'
   workflow_dispatch:
 
 jobs:
   renew:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
       actions: write
