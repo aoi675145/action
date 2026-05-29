@@ -43,7 +43,7 @@ jobs:
 
       - name: 🛡️ 安装并启动代理
         env:
-          Acl_PROXY: ${{ secrets.PROXY_URL }}
+          Acl_PROXY: ${{ secrets.Acl_PROXY }}
         run: |
           if [ -z "$Acl_PROXY" ]; then
             echo "[INFO] 未配置代理，直连模式"
