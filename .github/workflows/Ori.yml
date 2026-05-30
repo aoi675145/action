@@ -2,7 +2,7 @@ name:  OriHost 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 3 26 5 *' # 下一个: 2026-05-26 03:33 UTC / 2026-05-26 11:33 北京时间 (到期前1天执行)
+    - cron: '56 10 * * *' # 下一个: 2026-05-31 10:56 UTC / 2026-05-31 18:56 北京时间 (兜底方案)
 
 jobs:
   run_renewal:
