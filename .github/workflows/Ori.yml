@@ -2,7 +2,7 @@ name:  OriHost 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '1 11 * * *' # 下一个: 2026-05-31 11:01 UTC / 2026-05-31 19:01 北京时间 (兜底方案)
+    - cron: '33 3 26 5 *' # 下一个: 2026-05-26 03:33 UTC / 2026-05-26 11:33 北京时间 (到期前1天执行)
 
 jobs:
   run_renewal:
@@ -353,76 +353,6 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           python Ori.py
-
-      - name: 自动修改下一次运行时间
-        env:
-          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          WORKFLOW_FILE: action_repo/.github/workflows/Ori.yml
-        run: |
-          python3 << 'EOF'
-          import re
-          import os
-          from datetime import datetime, timedelta
-
-          workflow_file = os.environ.get("WORKFLOW_FILE")
-          date_file = 'scripts_repo/scripts/Ori/next_time.txt'
-          
-          now_utc = datetime.utcnow()
-          target_date = None
-          
-          if os.path.exists(date_file):
-              with open(date_file, 'r', encoding='utf-8') as f:
-                  content = f.read()
-              
-              match = re.search(r'(\d+)\s*[dj]\s*(\d+)\s*h', content, re.IGNORECASE)
-              if match:
-                  days = int(match.group(1))
-                  hours = int(match.group(2))
-                  
-                  expire_time = now_utc + timedelta(days=days, hours=hours)
-                  
-                  target_date = expire_time - timedelta(days=1)
-
-          if target_date and target_date > now_utc:
-              cron_month = target_date.month
-              cron_day = target_date.day
-              cron_hour = target_date.hour
-              cron_minute = target_date.minute
-              
-              bj_date = target_date + timedelta(hours=8)
-              next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC / {bj_date.strftime('%Y-%m-%d %H:%M')} 北京时间 (到期前1天执行)"
-              new_cron = f"{cron_minute} {cron_hour} {cron_day} {cron_month} *"
-          else:
-              tomorrow_utc = now_utc + timedelta(days=1)
-              tomorrow_bj = tomorrow_utc + timedelta(hours=8)
-              new_cron = f"{tomorrow_utc.minute} {tomorrow_utc.hour} * * *"
-              next_date_str = f"{tomorrow_utc.strftime('%Y-%m-%d %H:%M')} UTC / {tomorrow_bj.strftime('%Y-%m-%d %H:%M')} 北京时间 (兜底方案)"
-
-          try:
-              with open(workflow_file, 'r', encoding='utf-8') as f:
-                  content = f.read()
-
-              new_content = re.sub(
-                  r"- cron: '.*?'.*",
-                  f"- cron: '{new_cron}' # 下一个: {next_date_str}",
-                  content,
-                  count=1
-              )
-
-              with open(workflow_file, 'w', encoding='utf-8') as f:
-                  f.write(new_content)
-              print(f"✅ 已精准将下一次运行时间更新为: {new_cron} (目标时间: {next_date_str})")
-          except Exception as e:
-              print(f"❌ 修改 yml 文件失败: {e}")
-              exit(1)
-          EOF
-
-          git -C action_repo config user.name "github-actions[bot]"
-          git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
-          git -C action_repo add .github/workflows/Ori.yml
-          git -C action_repo commit -m "🚀 auto: 精准锁定到期前1天执行续期" || echo "action 仓库没有 Cron 变更需要提交"
-          git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
-          git -C action_repo push
 
       - name: 清理运行记录
         if: always()
