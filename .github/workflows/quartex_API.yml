@@ -2,7 +2,7 @@ name: QuartexNode_API 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 3 26 5 *' # 下一个: 2026-05-26 03:33 UTC / 2026-05-26 11:33 北京时间 (API剩余时间减24h执行)
+    - cron: '1 10 1 6 *' # 下一个: 2026-06-01 10:01 UTC / 2026-06-01 18:01 北京时间 (API剩余时间减24h执行)
 
 jobs:
   run_renewal_api:
