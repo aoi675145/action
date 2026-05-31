@@ -349,10 +349,10 @@ jobs:
       - name: 🚀 运行 Witchly Python 脚本
         working-directory: scripts_repo/scripts/witchly
         env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_URL: ${{ env.PROXY_SERVER }}
+          Witchly_RENEW_API: ${{ secrets.Witchly_RENEW_API }}
         run: |
           python main.py
 
