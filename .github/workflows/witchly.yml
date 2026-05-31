@@ -353,6 +353,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_URL: ${{ env.PROXY_SERVER }}
           Witchly_RENEW_API: ${{ secrets.Witchly_RENEW_API }}
+          Witchly_server_id: ${{ secrets.Witchly_server_id }}
         run: |
           python main.py
 
@@ -361,7 +362,7 @@ jobs:
         run: |
           git config user.name "witchly-bot"
           git config user.email "bot@witchly"
-          git add scripts/witchly/stability_cache.json scripts/witchly/cookie.txt 2>/dev/null || true
+          git add scripts/witchly/cookie.txt 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "chore: update witchly cache [skip ci]"
             git push
