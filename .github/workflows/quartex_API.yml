@@ -2,7 +2,7 @@ name: QuartexNode_API 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '46 10 1 6 *' # 下一个: 2026-06-01 10:46 UTC / 2026-06-01 18:46 北京时间 (API剩余时间减24h执行)
+    - cron: '33 3 26 5 *' # 下一个: 2026-05-26 03:33 UTC / 2026-05-26 11:33 北京时间 (API剩余时间减24h执行)
 
 jobs:
   run_renewal_api:
@@ -44,7 +44,6 @@ jobs:
       - name: 🚀 运行 QuartexNode API 脚本
         working-directory: scripts_repo/scripts/quartex
         env:
-          quartexnode: ${{ secrets.quartexnode }}
           quartexnode_TOKEN: ${{ secrets.quartexnode_TOKEN }}
           quartexnode_SERVER_ID: ${{ secrets.quartexnode_SERVER_ID }}
           WORKFLOW_FILE: ${{ github.workspace }}/action_repo/.github/workflows/quartex_API.yml
