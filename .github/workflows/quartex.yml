@@ -2,7 +2,7 @@ name: QuartexNode 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 3 26 5 *' # 下一个: 2026-05-26 03:33 UTC / 2026-05-26 11:33 北京时间 (到期前1天执行)
+    - cron: '22 10 2 6 *' # 下一个: 2026-06-02 10:22 UTC / 2026-06-02 18:22 北京时间 (按页面剩余时间执行)
 
 jobs:
   run_renewal:
