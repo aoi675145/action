@@ -1,4 +1,4 @@
-name: QuartexNode 登录
+name: QuartexNode 续期
 on:
   workflow_dispatch:
   schedule:
