@@ -25,8 +25,11 @@ jobs:
           fi
 
           # 1. 下载核心组件
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
 
           # 2. Python 自动化解析与配置生成
           python3 << 'PYEOF'
@@ -192,7 +195,7 @@ jobs:
             echo "::add-mask::$EXT_PROXY"
             echo "GLOBAL_PROXY=$EXT_PROXY" >> $GITHUB_ENV
           else
-            ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+            xray run -c xray_config.json > xray.log 2>&1 &
             sleep 8
             if curl -x socks5://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null; then
               echo "GLOBAL_PROXY=socks5://127.0.0.1:10808" >> $GITHUB_ENV
