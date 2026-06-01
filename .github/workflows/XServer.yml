@@ -2,7 +2,7 @@ name: XServer 游戏机续期
 
 on:
   schedule:
-    - cron: '23 10 * * *' # 下一个: 2026-06-02 10:23 UTC (兜底方案)
+    - cron: '0 18 2 6 *' # 下一个: 2026-06-02 18:00 UTC (对应网页时间: 2026-06-03 03:00)
   workflow_dispatch:
 
 jobs:
