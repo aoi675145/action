@@ -2,7 +2,9 @@ name: Lunes Host 自动保活
 
 on:
   schedule:
-    - cron: '11 1 1,11,21 * *'
+    # 每10天运行：1号、11号、21号 中午12:12 (北京时间)
+    # UTC 时间 = 北京时间 - 8小时 = 04:12
+    - cron: '12 4 1,11,21 * *'
   workflow_dispatch:
 
 jobs:
@@ -35,21 +37,23 @@ jobs:
 
       - name: 配置代理
         env:
-          LUNES__PROXY_NODE: ${{ secrets.LUNES__PROXY_NODE }}
+          LUNES_1_PROXY_NODE: ${{ secrets.LUNES_1_PROXY_NODE }}
+          LUNES_2_PROXY_NODE: ${{ secrets.LUNES_2_PROXY_NODE }}
+          LUNES_3_PROXY_NODE: ${{ secrets.LUNES_3_PROXY_NODE }}
+          LUNES_4_PROXY_NODE: ${{ secrets.LUNES_4_PROXY_NODE }}
+          LUNES_5_PROXY_NODE: ${{ secrets.LUNES_5_PROXY_NODE }}
         run: |
-          wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -O xray.zip
-          unzip -q xray.zip -d xray-bin
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
           chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
 
           python - <<'PY'
           import base64
           import json
           import os
           from urllib.parse import parse_qs, unquote, urlparse
-
-          node = os.environ.get("LUNES__PROXY_NODE", "").strip()
-          if not node:
-              raise SystemExit("LUNES__PROXY_NODE 未配置")
 
           def to_bool(value: str) -> bool:
               return str(value).lower() in {"1", "true", "yes", "on"}
@@ -168,41 +172,57 @@ jobs:
                   "streamSettings": build_common_stream(network, security, query, host),
               }
 
-          if node.startswith("vless://"):
-              outbound = parse_vless(node)
-          elif node.startswith("vmess://"):
-              outbound = parse_vmess(node)
-          else:
-              raise SystemExit("仅支持 vless:// 或 vmess:// 节点")
+          configured = []
+          for account_index in range(1, 6):
+              node = os.environ.get(f"LUNES_{account_index}_PROXY_NODE", "").strip()
+              if not node:
+                  continue
 
-          xray_config = {
-              "log": {"loglevel": "warning"},
-              "inbounds": [{
-                  "tag": "http-in",
-                  "port": 7890,
-                  "listen": "127.0.0.1",
-                  "protocol": "http",
-                  "settings": {},
-              }],
-              "outbounds": [
-                  {"tag": "proxy", **outbound},
-                  {"tag": "direct", "protocol": "freedom", "settings": {}},
-              ],
-              "routing": {
-                  "domainStrategy": "AsIs",
-                  "rules": [{
-                      "type": "field",
-                      "inboundTag": ["http-in"],
-                      "outboundTag": "proxy",
+              if node.startswith("vless://"):
+                  outbound = parse_vless(node)
+              elif node.startswith("vmess://"):
+                  outbound = parse_vmess(node)
+              else:
+                  raise SystemExit(f"LUNES_{account_index}_PROXY_NODE 仅支持 vless:// 或 vmess:// 节点")
+
+              port = 7890 + account_index
+              xray_config = {
+                  "log": {"loglevel": "warning"},
+                  "inbounds": [{
+                      "tag": "http-in",
+                      "port": port,
+                      "listen": "127.0.0.1",
+                      "protocol": "http",
+                      "settings": {},
                   }],
-              },
-          }
+                  "outbounds": [
+                      {"tag": "proxy", **outbound},
+                      {"tag": "direct", "protocol": "freedom", "settings": {}},
+                  ],
+                  "routing": {
+                      "domainStrategy": "AsIs",
+                      "rules": [{
+                          "type": "field",
+                          "inboundTag": ["http-in"],
+                          "outboundTag": "proxy",
+                      }],
+                  },
+              }
 
-          with open("xray.json", "w", encoding="utf-8") as f:
-              json.dump(xray_config, f, ensure_ascii=True, indent=2)
+              config_path = f"xray-{account_index}.json"
+              with open(config_path, "w", encoding="utf-8") as f:
+                  json.dump(xray_config, f, ensure_ascii=True, indent=2)
+              configured.append((account_index, config_path, port))
+
+          with open("xray-start.sh", "w", encoding="utf-8") as f:
+              f.write("#!/usr/bin/env bash\nset -e\n")
+              for account_index, config_path, port in configured:
+                  f.write(f"xray run -c {config_path} > xray-{account_index}.log 2>&1 &\n")
+                  f.write(f"echo '账号 {account_index} 代理已启动: http://127.0.0.1:{port}'\n")
           PY
 
-          ./xray-bin/xray run -c xray.json &
+          chmod +x xray-start.sh
+          ./xray-start.sh
           sleep 3
 
       - name: 执行保活
@@ -214,9 +234,13 @@ jobs:
           LUNES_3: ${{ secrets.LUNES_3 }}
           LUNES_4: ${{ secrets.LUNES_4 }}
           LUNES_5: ${{ secrets.LUNES_5 }}
+          LUNES_1_PROXY_NODE: ${{ secrets.LUNES_1_PROXY_NODE }}
+          LUNES_2_PROXY_NODE: ${{ secrets.LUNES_2_PROXY_NODE }}
+          LUNES_3_PROXY_NODE: ${{ secrets.LUNES_3_PROXY_NODE }}
+          LUNES_4_PROXY_NODE: ${{ secrets.LUNES_4_PROXY_NODE }}
+          LUNES_5_PROXY_NODE: ${{ secrets.LUNES_5_PROXY_NODE }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_SERVER: http://127.0.0.1:7890
         run: python scripts/Lunes/Lunes-Keep.py
 
 #      - name: 上传截图
