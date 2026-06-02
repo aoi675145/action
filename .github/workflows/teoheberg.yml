@@ -1,4 +1,4 @@
-name: Teohe Auto Renew (warp)
+name: Teohe Auto Renew
 
 on:
   workflow_dispatch:
@@ -8,8 +8,8 @@ on:
 
   push:
     paths:
-      - "teohe-warp/teoheberg.js"
-      - "teohe-warp/Teohe_warp.yml"
+      - "teoheberg/teoheberg.js"
+      - "teoheberg/teoheberg.yml"
 
 jobs:
   run:
@@ -28,7 +28,7 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           set -euo pipefail
-          APP_DIR="teohe-warp"
+          APP_DIR="teoheberg"
           mkdir -p "$APP_DIR"
 
           sudo -E apt-get update -qq
@@ -42,10 +42,23 @@ jobs:
       - name: 安装并启动代理
         env:
           TEOHE_PROXY_NODE: ${{ secrets.TEOHE_PROXY_NODE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
+          tg_send() {
+            local msg="$1"
+            if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
+              curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+                -d "chat_id=${TG_CHAT_ID}" \
+                -d "text=${msg}" \
+                -d "parse_mode=Markdown" > /dev/null 2>&1
+            fi
+            echo "$msg"
+          }
+
           if [ -z "$TEOHE_PROXY_NODE" ]; then
-            echo "[INFO] 未配置代理，直连模式"
-            exit 0
+            tg_send "❌ Teohe 执行失败: 未配置 TEOHE_PROXY_NODE"
+            exit 1
           fi
 
           wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
@@ -299,7 +312,7 @@ jobs:
             sleep 3
           done
 
-          echo "[ERROR] ❌ 代理连接失败"
+          tg_send "❌ Teohe 执行失败: 代理连接失败"
           cat xray.log
           exit 1
 
@@ -325,7 +338,7 @@ jobs:
           TEOHE_COOKIES: ${{ secrets.TEOHE_COOKIES }}
         run: |
           set -euo pipefail
-          APP_DIR="teohe-warp"
+          APP_DIR="teoheberg"
           cd "$APP_DIR"
           mkdir -p screenshots
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" node teoheberg.js
@@ -335,7 +348,7 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          WORKFLOW_FILE: Teohe_warp.yml
+          WORKFLOW_FILE: teoheberg.yml
         run: |
           python - <<'PY'
           import json, os, subprocess
