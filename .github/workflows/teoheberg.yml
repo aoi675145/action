@@ -321,7 +321,7 @@ jobs:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           set -euo pipefail
-          APP_DIR="teohe-warp"
+          APP_DIR="teoheberg"
           mkdir -p "$APP_DIR"
           cd "$APP_DIR"
           curl -fsSL \
