@@ -362,7 +362,7 @@ jobs:
         run: |
           git config user.name "witchly-bot"
           git config user.email "bot@witchly"
-          git add scripts/witchly/cookie.txt scripts/witchly/stability_cache.json 2>/dev/null || true
+          git add scripts/witchly/cookie.txt 2>/dev/null || true
           if ! git diff --cached --quiet; then
             git commit -m "chore: update witchly cache [skip ci]"
             git push
