@@ -43,9 +43,9 @@ jobs:
 
       - name: 🛡️ 安装并启动代理
         env:
-          PROXY_URL: ${{ secrets.PROXY_URL }}
+          Witchly_PROXY_NODE: ${{ secrets.Witchly_PROXY_NODE }}
         run: |
-          if [ -z "$PROXY_URL" ]; then
+          if [ -z "$Witchly_PROXY_NODE" ]; then
             echo "[ERROR] 未配置固定代理，禁止直连"
             exit 1
           fi
@@ -66,9 +66,9 @@ jobs:
           def mask(value):
               return f"{value[:2]}***{value[-2:]}" if len(value) > 4 else "****"
 
-          url = os.environ.get("PROXY_URL", "").strip()
+          url = os.environ.get("Witchly_PROXY_NODE", "").strip()
           if not url:
-              print("[ERROR] PROXY_URL 为空")
+              print("[ERROR] Witchly_PROXY_NODE 为空")
               sys.exit(1)
 
           if url.startswith("vless://"):
@@ -349,21 +349,22 @@ jobs:
       - name: 🚀 运行 Witchly Python 脚本
         working-directory: scripts_repo/scripts/witchly
         env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_URL: ${{ env.PROXY_SERVER }}
+          Witchly_PROXY_NODE: ${{ env.PROXY_SERVER }}
+          Witchly_RENEW_API: ${{ secrets.Witchly_RENEW_API }}
+          Witchly_server_id: ${{ secrets.Witchly_server_id }}
         run: |
           python main.py
 
-      - name: 💾 提交稳定性缓存到私库
+      - name: 💾 提交缓存与 Cookie 到私库
         working-directory: scripts_repo
         run: |
-          if [ -f scripts/witchly/stability_cache.json ]; then
-            git config user.name "witchly-bot"
-            git config user.email "bot@witchly"
-            git add scripts/witchly/stability_cache.json
-            git diff --cached --quiet || git commit -m "chore: update stability cache [skip ci]"
+          git config user.name "witchly-bot"
+          git config user.email "bot@witchly"
+          git add scripts/witchly/cookie.txt 2>/dev/null || true
+          if ! git diff --cached --quiet; then
+            git commit -m "chore: update witchly cache [skip ci]"
             git push
           fi
 
