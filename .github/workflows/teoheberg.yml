@@ -1,4 +1,4 @@
-name: Teohe Auto Renew
+name: Teoheberg 续期
 
 on:
   workflow_dispatch:
