@@ -244,6 +244,7 @@ jobs:
           TG_BOT_TOKEN:                 ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:                   ${{ secrets.TG_CHAT_ID }}
           PROXY_URL:                    ${{ env.PROXY_URL }}
+          PYTHONUNBUFFERED:             1
         run: python scripts/hnhost/main.py
 
       - name: 清理运行记录
