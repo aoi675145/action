@@ -2,7 +2,7 @@ name: Weirdhost 续期
 
 on:
   schedule:
-    - cron: '58 23 7 6 *'   # 自动更新下次运行时间
+    - cron: '9 23 7 6 *'   # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
