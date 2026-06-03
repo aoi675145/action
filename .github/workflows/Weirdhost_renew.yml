@@ -349,7 +349,7 @@ jobs:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/weirdhost_renew.py 2>&1 | tee renew.log
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python "scripts/Weirdhost/Weirdhost_renew.py" 2>&1 | tee renew.log
 
       - name: 提取到期时间
         id: extract_due
