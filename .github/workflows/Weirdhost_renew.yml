@@ -18,6 +18,13 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v4
 
+      - name: 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
       - name: 设置 Python 环境
         uses: actions/setup-python@v5
         with:
