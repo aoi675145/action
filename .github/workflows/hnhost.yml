@@ -26,7 +26,9 @@ jobs:
           python-version: '3.11'
 
       - name: 安装依赖
-        run: pip install --quiet requests
+        run: |
+          pip install --quiet playwright requests
+          python -m playwright install chromium --with-deps
 
       - name: 安装并启动代理
         env:
@@ -289,8 +291,6 @@ jobs:
       - name: 运行签到脚本
         env:
           DISCORD_TOKEN:                ${{ secrets.DISCORD_TOKEN }}
-          HNHOST_DISCORD_CLIENT_ID:     ${{ secrets.HNHOST_DISCORD_CLIENT_ID }}
-          HNHOST_DISCORD_REDIRECT_URI:  ${{ secrets.HNHOST_DISCORD_REDIRECT_URI }}
           TG_BOT_TOKEN:                 ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:                   ${{ secrets.TG_CHAT_ID }}
           PROXY_URL:                    ${{ env.PROXY_URL }}
