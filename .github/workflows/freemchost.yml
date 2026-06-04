@@ -314,7 +314,7 @@ jobs:
             exit 0
           fi
 
-          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          xray run -c xray_config.json > xray.log 2>&1 &
           sleep 5
 
           echo "[INFO] 测试代理连接..."
