@@ -12,8 +12,11 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: 拉取本仓库
+      - name: 拉取私库代码
         uses: actions/checkout@v4
+        with:
+          repository: 'aoi675145/scripts'
+          token: ${{ secrets.REPO_TOKEN }}
 
       - name: 安装 Python 环境
         uses: actions/setup-python@v5
@@ -35,7 +38,7 @@ jobs:
           pip install --quiet playwright requests SpeechRecognition pydub
           python -m playwright install --with-deps chromium
 
-          TURNSTILE_DIR="extensions/turnstile-bypasser/unpacked"
+          TURNSTILE_DIR="scripts/teohe/extensions/turnstile-bypasser/unpacked"
           mkdir -p "$TURNSTILE_DIR"
 
           curl -fsSL \
@@ -44,7 +47,7 @@ jobs:
           7z x -y turnstile.crx -o"$TURNSTILE_DIR" >/dev/null
 
           [ -f "$TURNSTILE_DIR/manifest.json" ]
-          
+
       - name: 安装并启动 Xray 代理
         env:
           TEOHE_PROXY_NODE: ${{ secrets.TEOHE_PROXY_NODE }}
@@ -228,7 +231,6 @@ jobs:
 
       - name: 执行续期
         env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           TEOHE_COOKIES: ${{ secrets.TEOHE_COOKIES }}
           TEOHE_PROXY_NODE: ${{ env.TEOHE_PROXY_NODE }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -237,6 +239,7 @@ jobs:
           LIBGL_ALWAYS_SOFTWARE: "1"
           GALLIUM_DRIVER: "llvmpipe"
         run: |
+          cd scripts/teohe
           xvfb-run --auto-servernum \
             --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
             python main.py
@@ -246,11 +249,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots-${{ github.run_number }}
-          path: screenshots/*.png
+          path: scripts/teohe/screenshots/*.png
           retention-days: 7
           if-no-files-found: ignore
 
-      - name: 清理历史
+      - name: 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
