@@ -38,16 +38,6 @@ jobs:
           pip install --quiet playwright requests SpeechRecognition pydub
           python -m playwright install --with-deps chromium
 
-          TURNSTILE_DIR="scripts/teohe/extensions/turnstile-bypasser/unpacked"
-          mkdir -p "$TURNSTILE_DIR"
-
-          curl -fsSL \
-            "https://github.com/oyz6/action/releases/download/Verification/turnstile.crx" \
-            -o turnstile.crx
-          7z x -y turnstile.crx -o"$TURNSTILE_DIR" >/dev/null
-
-          [ -f "$TURNSTILE_DIR/manifest.json" ]
-
       - name: 安装并启动 Xray 代理
         env:
           TEOHE_PROXY_NODE: ${{ secrets.TEOHE_PROXY_NODE }}
@@ -243,15 +233,6 @@ jobs:
           xvfb-run --auto-servernum \
             --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
             python main.py
-
-      - name: 上传截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshots-${{ github.run_number }}
-          path: scripts/teohe/screenshots/*.png
-          retention-days: 7
-          if-no-files-found: ignore
 
       - name: 清理运行记录
         if: always()
