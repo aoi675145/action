@@ -1,0 +1,261 @@
+name: TeoHeberg 续期
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '33 0 * * *'
+
+jobs:
+  run:
+    name: 执行续期
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+
+    steps:
+      - name: 拉取本仓库
+        uses: actions/checkout@v4
+
+      - name: 安装 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
+        run: |
+          set -euo pipefail
+
+          sudo -E apt-get update -qq
+          sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 \
+            xvfb p7zip-full ffmpeg \
+            mesa-utils libgl1-mesa-glx libgl1-mesa-dri
+
+          pip install --quiet playwright requests SpeechRecognition pydub
+          python -m playwright install --with-deps chromium
+
+          TURNSTILE_DIR="extensions/turnstile-bypasser/unpacked"
+          mkdir -p "$TURNSTILE_DIR"
+
+          curl -fsSL \
+            "https://github.com/oyz6/action/releases/download/Verification/turnstile.crx" \
+            -o turnstile.crx
+          7z x -y turnstile.crx -o"$TURNSTILE_DIR" >/dev/null
+
+          [ -f "$TURNSTILE_DIR/manifest.json" ]
+          
+      - name: 安装并启动 Xray 代理
+        env:
+          TEOHE_PROXY_NODE: ${{ secrets.TEOHE_PROXY_NODE }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "$TEOHE_PROXY_NODE" ]; then
+            echo "[INFO] 未配置 TEOHE_PROXY_NODE，直连模式"
+            exit 0
+          fi
+
+          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
+
+          python3 << 'PYEOF'
+          import os, sys, json, base64
+          from urllib.parse import parse_qs, unquote
+
+          def mask(s):
+              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
+
+          url = os.environ.get("TEOHE_PROXY_NODE", "").strip()
+          if not url:
+              print("[ERROR] TEOHE_PROXY_NODE 为空")
+              sys.exit(1)
+
+          if url.startswith("vless://"):
+              protocol = "vless"; content = url[8:]
+          elif url.startswith("vmess://"):
+              protocol = "vmess"; content = url[8:]
+          elif url.startswith("trojan://"):
+              protocol = "trojan"; content = url[9:]
+          elif url.startswith("ss://"):
+              protocol = "ss"; content = url[5:]
+          elif url.startswith("socks5://") or url.startswith("socks://"):
+              protocol = "socks5"; content = url.split("://")[1].split("#")[0]
+              if "@" in content:
+                  server = content.split("@")[1].split(":")[0]
+              else:
+                  server = content.split(":")[0]
+              print(f"[INFO] SOCKS5 -> {mask(server)}")
+              with open("use_external_socks.txt", "w") as f:
+                  f.write(url.split("#")[0])
+              sys.exit(0)
+          else:
+              print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
+              sys.exit(1)
+
+          if "#" in content:
+              content = content.rsplit("#", 1)[0]
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [
+                  {"port": 1080, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                  {"port": 1081, "listen": "127.0.0.1", "protocol": "http"}
+              ],
+              "outbounds": []
+          }
+
+          if protocol == "vless":
+              uuid, rest = content.split("@", 1)
+              host_port, params_str = rest.split("?", 1) if "?" in rest else (rest, "")
+              address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
+              params = parse_qs(params_str)
+              security = params.get("security", ["none"])[0]
+              network = params.get("type", ["tcp"])[0]
+              sni = params.get("sni", [address])[0]
+              fp = params.get("fp", ["chrome"])[0]
+              flow = params.get("flow", [""])[0]
+              pbk = params.get("pbk", [""])[0]
+              host = params.get("host", [sni])[0]
+              path = unquote(params.get("path", ["/"])[0])
+              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {"vnext": [{"address": address, "port": int(port), "users": [{"id": uuid, "encryption": "none"}]}]},
+                  "streamSettings": {"network": network, "security": security}
+              }
+              if flow:
+                  outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
+              if security == "reality":
+                  outbound["streamSettings"]["realitySettings"] = {"serverName": sni, "fingerprint": fp, "publicKey": pbk}
+              elif security == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {"serverName": sni, "fingerprint": fp, "allowInsecure": False}
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {"path": path, "headers": {"Host": host}}
+              elif network == "grpc":
+                  outbound["streamSettings"]["grpcSettings"] = {"serviceName": params.get("serviceName", [""])[0]}
+              config["outbounds"].append(outbound)
+
+          elif protocol == "vmess":
+              padding = 4 - len(content) % 4
+              if padding != 4: content += "=" * padding
+              vm = json.loads(base64.b64decode(content).decode("utf-8"))
+              address = vm.get("add", ""); port = int(vm.get("port", 443))
+              uuid = vm.get("id", ""); aid = int(vm.get("aid", 0))
+              network = vm.get("net", "tcp"); tls = vm.get("tls", "")
+              sni = vm.get("sni", "") or vm.get("host", address)
+              host = vm.get("host", address); path = vm.get("path", "/")
+              fp = vm.get("fp", "chrome")
+              print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {"vnext": [{"address": address, "port": port, "users": [{"id": uuid, "alterId": aid, "security": "auto"}]}]},
+                  "streamSettings": {"network": network, "security": "tls" if tls == "tls" else "none"}
+              }
+              if tls == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {"serverName": sni, "fingerprint": fp, "allowInsecure": False}
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {"path": path, "headers": {"Host": host}}
+              config["outbounds"].append(outbound)
+
+          elif protocol == "trojan":
+              password, rest = content.split("@", 1)
+              host_port, params_str = rest.split("?", 1) if "?" in rest else (rest, "")
+              address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
+              params = parse_qs(params_str)
+              sni = params.get("sni", [address])[0]; network = params.get("type", ["tcp"])[0]
+              host = params.get("host", [sni])[0]; path = unquote(params.get("path", ["/"])[0])
+              fp = params.get("fp", ["chrome"])[0]
+              print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
+              outbound = {
+                  "protocol": "trojan",
+                  "settings": {"servers": [{"address": address, "port": int(port), "password": password}]},
+                  "streamSettings": {"network": network, "security": "tls", "tlsSettings": {"serverName": sni, "fingerprint": fp, "allowInsecure": False}}
+              }
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {"path": path, "headers": {"Host": host}}
+              config["outbounds"].append(outbound)
+
+          elif protocol == "ss":
+              if "@" in content:
+                  encoded, server_part = content.split("@", 1)
+                  decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                  method, password = decoded.split(":", 1)
+                  address, port = server_part.split(":", 1)
+              else:
+                  decoded = base64.b64decode(content + "==").decode("utf-8")
+                  if "@" in decoded:
+                      user_part, server_part = decoded.split("@", 1)
+                      method, password = user_part.split(":", 1)
+                      address, port = server_part.split(":", 1)
+                  else:
+                      raise ValueError("无法解析")
+              print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
+              config["outbounds"].append({
+                  "protocol": "shadowsocks",
+                  "settings": {"servers": [{"address": address, "port": int(port), "method": method, "password": password}]}
+              })
+
+          with open("xray_config.json", "w") as f:
+              json.dump(config, f, indent=2)
+          print("[INFO] ✅ 代理配置已生成")
+          PYEOF
+
+          if [ -f "use_external_socks.txt" ]; then
+            EXTERNAL_SOCKS=$(cat use_external_socks.txt)
+            echo "TEOHE_PROXY_NODE=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "[INFO] ✅ 使用外部 SOCKS5 代理"
+            exit 0
+          fi
+
+          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          sleep 5
+
+          echo "[INFO] 测试代理连接..."
+          for i in 1 2 3 4 5; do
+            if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "[INFO] ✅ 代理连接成功"
+              echo "TEOHE_PROXY_NODE=socks5://127.0.0.1:1080" >> $GITHUB_ENV
+              exit 0
+            fi
+            echo "[WARN] 尝试 $i/5..."
+            sleep 3
+          done
+
+          echo "[ERROR] ❌ 代理连接失败"
+          cat xray.log
+          exit 1
+
+      - name: 执行续期
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          TEOHE_COOKIES: ${{ secrets.TEOHE_COOKIES }}
+          TEOHE_PROXY_NODE: ${{ env.TEOHE_PROXY_NODE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          DISPLAY: :99
+          LIBGL_ALWAYS_SOFTWARE: "1"
+          GALLIUM_DRIVER: "llvmpipe"
+        run: |
+          xvfb-run --auto-servernum \
+            --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
+            python main.py
+
+      - name: 上传截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots-${{ github.run_number }}
+          path: screenshots/*.png
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: 清理历史
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
