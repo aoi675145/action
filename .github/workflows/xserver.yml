@@ -129,7 +129,7 @@ jobs:
         run: |
           set -e
           echo "⬇️ 下载 Xray..."
-          wget -q --show-progress https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
           echo "📦 解压..."
           mkdir -p xray-bin
           unzip -oq Xray-linux-64.zip -d xray-bin
@@ -156,10 +156,22 @@ jobs:
                   alpn = query.get("alpn", [""])[0]
                   if alpn:
                       tls_settings["alpn"] = [s.strip() for s in alpn.split(",") if s.strip()]
+                  stream["tlsSettings"] = tls_settings
+              elif security == "reality":
+                  reality_settings = {"serverName": query.get("sni", [host])[0] or host}
                   fp = query.get("fp", [""])[0] or query.get("fingerprint", [""])[0]
                   if fp:
-                      tls_settings["fingerprint"] = fp
-                  stream["tlsSettings"] = tls_settings
+                      reality_settings["fingerprint"] = fp
+                  pbk = query.get("pbk", [""])[0] or query.get("publicKey", [""])[0]
+                  if pbk:
+                      reality_settings["publicKey"] = pbk
+                  sid = query.get("sid", [""])[0] or query.get("shortId", [""])[0]
+                  if sid:
+                      reality_settings["shortId"] = sid
+                  spx = query.get("spx", [""])[0] or query.get("spiderX", [""])[0]
+                  if spx:
+                      reality_settings["spiderX"] = spx
+                  stream["realitySettings"] = reality_settings
               if network == "ws":
                   ws_host = query.get("host", [host])[0]
                   stream["wsSettings"] = {
