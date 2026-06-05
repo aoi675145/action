@@ -1,0 +1,279 @@
+name: XServer 续期
+
+on:
+  schedule:
+    - cron: '40 9 * * *'  # 日本时间 18:40
+  workflow_dispatch:
+
+jobs:
+  extend-server:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 检查是否需要续期
+        id: check
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          echo "[INFO] 通过 GitHub API 读取 logs.txt..."
+
+          HTTP_CODE=$(curl -s -o /tmp/logs_response.json -w "%{http_code}" \
+            -H "Authorization: token $REPO_TOKEN" \
+            -H "Accept: application/vnd.github.v3+json" \
+            "https://api.github.com/repos/akina005/scripts/contents/scripts/XServer/logs.txt")
+
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "[WARN] 无法读取 logs.txt (HTTP $HTTP_CODE)，视为全部需要续期"
+            echo "need_renew=true" >> $GITHUB_OUTPUT
+            echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 解码 base64 内容
+          cat /tmp/logs_response.json | python3 -c "
+          import sys, json, base64
+          data = json.load(sys.stdin)
+          content = base64.b64decode(data['content']).decode('utf-8')
+          print(content)
+          " > /tmp/logs.txt
+
+          echo "[INFO] logs.txt 读取成功 ($(wc -l < /tmp/logs.txt) 行)"
+
+          # 获取文件 SHA（后续更新用）
+          LOG_SHA=$(cat /tmp/logs_response.json | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
+          echo "log_sha=$LOG_SHA" >> $GITHUB_OUTPUT
+
+          python3 << 'PYEOF'
+          import os, sys
+          from datetime import datetime, timedelta, timezone
+
+          jst = timezone(timedelta(hours=9))
+          now = datetime.now(jst)
+
+          print(f"[INFO] 当前日本时间: {now.strftime('%Y-%m-%d %H:%M')}")
+
+          accounts_to_renew = []
+
+          with open("/tmp/logs.txt", "r") as f:
+              for line in f:
+                  line = line.strip()
+                  if not line or line.startswith("#") or "-----" not in line:
+                      continue
+                  parts = line.split("-----")
+                  if len(parts) < 2:
+                      continue
+                  email = parts[0].strip()
+                  next_run_str = parts[1].strip()
+                  try:
+                      next_run_dt = datetime.strptime(next_run_str, "%Y-%m-%d %H:%M").replace(tzinfo=jst)
+                      if now >= next_run_dt:
+                          print(f"[INFO] 账号需要续期 → 执行时间已到 ({next_run_str})")
+                          accounts_to_renew.append(email)
+                      else:
+                          print(f"[INFO] 账号跳过 → 下次执行时间 {next_run_str}")
+                  except ValueError:
+                      print(f"[WARN] 日期解析失败，加入续期列表")
+                      accounts_to_renew.append(email)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as gh:
+              if accounts_to_renew:
+                  gh.write(f"need_renew=true\n")
+                  gh.write(f"accounts_to_renew={','.join(accounts_to_renew)}\n")
+                  print(f"[INFO] 共 {len(accounts_to_renew)} 个账号需要续期")
+              else:
+                  gh.write("need_renew=false\n")
+                  gh.write("accounts_to_renew=\n")
+                  print("[INFO] ✅ 所有账号均不需要续期，跳过后续操作")
+          PYEOF
+
+      # ========== 以下所有步骤仅在需要续期时执行 ==========
+      - name: 拉取私有仓库
+        if: steps.check.outputs.need_renew == 'true'
+        uses: actions/checkout@v4
+        with:
+          repository: akina005/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 设置 Python
+        if: steps.check.outputs.need_renew == 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        if: steps.check.outputs.need_renew == 'true'
+        run: |
+          pip install playwright httpx
+          playwright install --with-deps chromium
+
+      - name: 配置代理节点
+        if: steps.check.outputs.need_renew == 'true'
+        env:
+          XSERVER_1_XARY: ${{ secrets.XSERVER_1_XARY }}
+          XSERVER_2_XARY: ${{ secrets.XSERVER_2_XARY }}
+          XSERVER_3_XARY: ${{ secrets.XSERVER_3_XARY }}
+          XSERVER_4_XARY: ${{ secrets.XSERVER_4_XARY }}
+          XSERVER_5_XARY: ${{ secrets.XSERVER_5_XARY }}
+          XSERVER_6_XARY: ${{ secrets.XSERVER_6_XARY }}
+          XSERVER_7_XARY: ${{ secrets.XSERVER_7_XARY }}
+          XSERVER_8_XARY: ${{ secrets.XSERVER_8_XARY }}
+          XSERVER_9_XARY: ${{ secrets.XSERVER_9_XARY }}
+          XSERVER_10_XARY: ${{ secrets.XSERVER_10_XARY }}
+        run: |
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+
+          python - <<'PY'
+          import base64, json, os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          def to_bool(v): return str(v).lower() in {"1","true","yes","on"}
+
+          def build_stream(network, security, query, host):
+              stream = {"network": network or "tcp", "security": "none"}
+              if security and security != "none":
+                  stream["security"] = security
+              if security == "tls":
+                  tls_settings = {
+                      "serverName": query.get("sni", [host])[0] or host,
+                      "allowInsecure": True,
+                  }
+                  alpn = query.get("alpn", [""])[0]
+                  if alpn:
+                      tls_settings["alpn"] = [s.strip() for s in alpn.split(",") if s.strip()]
+                  fp = query.get("fp", [""])[0] or query.get("fingerprint", [""])[0]
+                  if fp:
+                      tls_settings["fingerprint"] = fp
+                  stream["tlsSettings"] = tls_settings
+              if network == "ws":
+                  ws_host = query.get("host", [host])[0]
+                  stream["wsSettings"] = {
+                      "path": unquote(query.get("path", ["/"])[0] or "/"),
+                      "headers": {"Host": ws_host} if ws_host else {},
+                  }
+              elif network == "grpc":
+                  stream["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", [""])[0],
+                      "multiMode": to_bool(query.get("mode", [""])[0] == "multi"),
+                  }
+              return stream
+
+          def parse_vless(url):
+              p = urlparse(url)
+              q = parse_qs(p.query)
+              host, port, uuid = p.hostname, p.port, p.username
+              if not host or not port or not uuid:
+                  raise SystemExit("VLESS 节点格式无效")
+              user = {"id": uuid, "encryption": "none"}
+              flow = q.get("flow", [""])[0]
+              if flow:
+                  user["flow"] = flow
+              network = q.get("type", ["tcp"])[0]
+              security = q.get("security", ["none"])[0]
+              return {
+                  "protocol": "vless",
+                  "settings": {"vnext": [{"address": host, "port": port, "users": [user]}]},
+                  "streamSettings": build_stream(network, security, q, host),
+              }
+
+          def parse_vmess(url):
+              payload = url[len("vmess://"):].strip() + "=" * (-len(url[len("vmess://"):].strip()) % 4)
+              try:
+                  c = json.loads(base64.urlsafe_b64decode(payload).decode("utf-8"))
+              except Exception as e:
+                  raise SystemExit(f"VMess 解析失败: {e}")
+              host, port, uuid = c.get("add"), int(c.get("port", 0)), c.get("id")
+              if not host or not port or not uuid:
+                  raise SystemExit("VMess 节点格式无效")
+              network = c.get("net", "tcp")
+              security = "tls" if str(c.get("tls", "")).lower() == "tls" else "none"
+              query = {
+                  "path": [c.get("path", "/")],
+                  "host": [c.get("host", host)],
+                  "sni": [c.get("sni", host)],
+              }
+              if c.get("alpn"): query["alpn"] = [c["alpn"]]
+              if c.get("fp"): query["fp"] = [c["fp"]]
+              return {
+                  "protocol": "vmess",
+                  "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": uuid, "alterId": int(c.get("aid", 0) or 0), "security": c.get("scy", "auto") or "auto"}]}]},
+                  "streamSettings": build_stream(network, security, query, host),
+              }
+
+          configured = []
+          for i in range(1, 21):
+              node = os.environ.get(f"XSERVER_{i}_XARY", "").strip()
+              if not node:
+                  continue
+              if node.startswith("vless://"):
+                  outbound = parse_vless(node)
+              elif node.startswith("vmess://"):
+                  outbound = parse_vmess(node)
+              else:
+                  print(f"⚠️ XSERVER_{i}_XARY 不支持的格式（仅 vless/vmess），跳过")
+                  continue
+              port = 7890 + i
+              config = {
+                  "log": {"loglevel": "warning"},
+                  "inbounds": [{"tag": "http-in", "port": port, "listen": "127.0.0.1", "protocol": "http", "settings": {}}],
+                  "outbounds": [{"tag": "proxy", **outbound}, {"tag": "direct", "protocol": "freedom", "settings": {}}],
+                  "routing": {"domainStrategy": "AsIs", "rules": [{"type": "field", "inboundTag": ["http-in"], "outboundTag": "proxy"}]},
+              }
+              with open(f"xray-{i}.json", "w") as f:
+                  json.dump(config, f, ensure_ascii=True, indent=2)
+              configured.append((i, port))
+
+          with open("xray-start.sh", "w") as f:
+              f.write("#!/usr/bin/env bash\nset -e\n")
+              for i, port in configured:
+                  f.write(f"xray run -c xray-{i}.json > xray-{i}.log 2>&1 &\n")
+                  f.write(f"echo '账号 {i} 代理已启动: http://127.0.0.1:{port}'\n")
+          PY
+
+          chmod +x xray-start.sh
+          ./xray-start.sh
+          sleep 3
+
+      - name: 运行续期脚本
+        if: steps.check.outputs.need_renew == 'true'
+        env:
+          XSERVER_1: ${{ secrets.XSERVER_1 }}
+          XSERVER_2: ${{ secrets.XSERVER_2 }}
+          XSERVER_3: ${{ secrets.XSERVER_3 }}
+          XSERVER_4: ${{ secrets.XSERVER_4 }}
+          XSERVER_5: ${{ secrets.XSERVER_5 }}
+          XSERVER_6: ${{ secrets.XSERVER_6 }}
+          XSERVER_7: ${{ secrets.XSERVER_7 }}
+          XSERVER_8: ${{ secrets.XSERVER_8 }}
+          XSERVER_9: ${{ secrets.XSERVER_9 }}
+          XSERVER_10: ${{ secrets.XSERVER_10 }}
+          XSERVER_1_XARY: ${{ secrets.XSERVER_1_XARY }}
+          XSERVER_2_XARY: ${{ secrets.XSERVER_2_XARY }}
+          XSERVER_3_XARY: ${{ secrets.XSERVER_3_XARY }}
+          XSERVER_4_XARY: ${{ secrets.XSERVER_4_XARY }}
+          XSERVER_5_XARY: ${{ secrets.XSERVER_5_XARY }}
+          XSERVER_6_XARY: ${{ secrets.XSERVER_6_XARY }}
+          XSERVER_7_XARY: ${{ secrets.XSERVER_7_XARY }}
+          XSERVER_8_XARY: ${{ secrets.XSERVER_8_XARY }}
+          XSERVER_9_XARY: ${{ secrets.XSERVER_9_XARY }}
+          XSERVER_10_XARY: ${{ secrets.XSERVER_10_XARY }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          ACCOUNTS_TO_RENEW: ${{ steps.check.outputs.accounts_to_renew }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          LOG_SHA: ${{ steps.check.outputs.log_sha }}
+        run: python scripts/XServer/main.py
+
+      - name: 清理旧运行
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 1
