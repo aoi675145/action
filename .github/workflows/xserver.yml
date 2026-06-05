@@ -49,48 +49,9 @@ jobs:
           LOG_SHA=$(cat /tmp/logs_response.json | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
           echo "log_sha=$LOG_SHA" >> $GITHUB_OUTPUT
 
-          python3 << 'PYEOF'
-          import os, sys
-          from datetime import datetime, timedelta, timezone
-
-          jst = timezone(timedelta(hours=9))
-          now = datetime.now(jst)
-
-          print(f"[INFO] 当前日本时间: {now.strftime('%Y-%m-%d %H:%M')}")
-
-          accounts_to_renew = []
-
-          with open("/tmp/logs.txt", "r") as f:
-              for line in f:
-                  line = line.strip()
-                  if not line or line.startswith("#") or "-----" not in line:
-                      continue
-                  parts = line.split("-----")
-                  if len(parts) < 2:
-                      continue
-                  email = parts[0].strip()
-                  next_run_str = parts[1].strip()
-                  try:
-                      next_run_dt = datetime.strptime(next_run_str, "%Y-%m-%d %H:%M").replace(tzinfo=jst)
-                      if now >= next_run_dt:
-                          print(f"[INFO] 账号需要续期 → 执行时间已到 ({next_run_str})")
-                          accounts_to_renew.append(email)
-                      else:
-                          print(f"[INFO] 账号跳过 → 下次执行时间 {next_run_str}")
-                  except ValueError:
-                      print(f"[WARN] 日期解析失败，加入续期列表")
-                      accounts_to_renew.append(email)
-
-          with open(os.environ["GITHUB_OUTPUT"], "a") as gh:
-              if accounts_to_renew:
-                  gh.write(f"need_renew=true\n")
-                  gh.write(f"accounts_to_renew={','.join(accounts_to_renew)}\n")
-                  print(f"[INFO] 共 {len(accounts_to_renew)} 个账号需要续期")
-              else:
-                  gh.write("need_renew=false\n")
-                  gh.write("accounts_to_renew=\n")
-                  print("[INFO] ✅ 所有账号均不需要续期，跳过后续操作")
-          PYEOF
+          echo "need_renew=true" >> $GITHUB_OUTPUT
+          echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
+          echo "[INFO] logs.txt 可用，继续执行续期（时间判断由主脚本处理）"
 
       # ========== 以下所有步骤仅在需要续期时执行 ==========
       - name: 拉取私有仓库
