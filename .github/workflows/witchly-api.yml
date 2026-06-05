@@ -134,7 +134,7 @@ jobs:
               sni = params.get("sni", [address])[0]
               fp = params.get("fp", ["chrome"])[0]
               flow = params.get("flow", [""])[0]
-               pbk = params.get("pbk", [""])[0]
+              pbk = params.get("pbk", [""])[0]
               sid = params.get("sid", [""])[0]
               host = params.get("host", [sni])[0]
               path = unquote(params.get("path", ["/"])[0])
