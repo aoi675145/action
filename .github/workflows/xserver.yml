@@ -17,13 +17,19 @@ jobs:
         run: |
           echo "[INFO] 通过 GitHub API 读取 logs.txt..."
 
-          HTTP_CODE=$(curl -s -o /tmp/logs_response.json -w "%{http_code}" \
+          HTTP_CODE=$(curl -sL -o /tmp/logs_response.json -w "%{http_code}" \
             -H "Authorization: token $REPO_TOKEN" \
             -H "Accept: application/vnd.github.v3+json" \
             "https://api.github.com/repos/akina005/scripts/contents/scripts/XServer/logs.txt")
 
+          if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
+            echo "[INFO] logs.txt 不存在（HTTP $HTTP_CODE），首次运行视为全部需要续期"
+            echo "need_renew=true" >> $GITHUB_OUTPUT
+            echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "[WARN] 无法读取 logs.txt (HTTP $HTTP_CODE)，视为全部需要续期"
+            echo "[WARN] 读取 logs.txt 失败 (HTTP $HTTP_CODE)，视为全部需要续期"
             echo "need_renew=true" >> $GITHUB_OUTPUT
             echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
             exit 0
@@ -121,12 +127,17 @@ jobs:
           XSERVER_9_XARY: ${{ secrets.XSERVER_9_XARY }}
           XSERVER_10_XARY: ${{ secrets.XSERVER_10_XARY }}
         run: |
-          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          set -e
+          echo "⬇️ 下载 Xray..."
+          wget -q --show-progress https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          echo "📦 解压..."
           mkdir -p xray-bin
           unzip -oq Xray-linux-64.zip -d xray-bin
           chmod +x xray-bin/xray
           sudo mv xray-bin/xray /usr/local/bin/xray
+          echo "✅ Xray $(xray version | head -1)"
 
+          echo "⚙️ 生成代理配置..."
           python - <<'PY'
           import base64, json, os
           from urllib.parse import parse_qs, unquote, urlparse
@@ -167,11 +178,10 @@ jobs:
               q = parse_qs(p.query)
               host, port, uuid = p.hostname, p.port, p.username
               if not host or not port or not uuid:
-                  raise SystemExit("VLESS 节点格式无效")
+                  raise SystemExit("VLESS 格式无效")
               user = {"id": uuid, "encryption": "none"}
               flow = q.get("flow", [""])[0]
-              if flow:
-                  user["flow"] = flow
+              if flow: user["flow"] = flow
               network = q.get("type", ["tcp"])[0]
               security = q.get("security", ["none"])[0]
               return {
@@ -188,7 +198,7 @@ jobs:
                   raise SystemExit(f"VMess 解析失败: {e}")
               host, port, uuid = c.get("add"), int(c.get("port", 0)), c.get("id")
               if not host or not port or not uuid:
-                  raise SystemExit("VMess 节点格式无效")
+                  raise SystemExit("VMess 格式无效")
               network = c.get("net", "tcp")
               security = "tls" if str(c.get("tls", "")).lower() == "tls" else "none"
               query = {
@@ -214,7 +224,7 @@ jobs:
               elif node.startswith("vmess://"):
                   outbound = parse_vmess(node)
               else:
-                  print(f"⚠️ XSERVER_{i}_XARY 不支持的格式（仅 vless/vmess），跳过")
+                  print(f"⚠️ XSERVER_{i}_XARY 不支持的格式，跳过")
                   continue
               port = 7890 + i
               config = {
@@ -226,17 +236,37 @@ jobs:
               with open(f"xray-{i}.json", "w") as f:
                   json.dump(config, f, ensure_ascii=True, indent=2)
               configured.append((i, port))
+              print(f"  ✅ 账号 {i} → 127.0.0.1:{port}")
 
           with open("xray-start.sh", "w") as f:
               f.write("#!/usr/bin/env bash\nset -e\n")
               for i, port in configured:
                   f.write(f"xray run -c xray-{i}.json > xray-{i}.log 2>&1 &\n")
-                  f.write(f"echo '账号 {i} 代理已启动: http://127.0.0.1:{port}'\n")
           PY
 
+          echo "🚀 启动代理..."
           chmod +x xray-start.sh
           ./xray-start.sh
           sleep 3
+
+          echo "🔍 检查代理进程..."
+          if pgrep -x xray > /dev/null 2>&1; then
+              echo "✅ Xray 进程数: $(pgrep -x xray | wc -l)"
+          else
+              echo "❌ Xray 进程未运行！检查日志："
+              for f in xray-*.log; do
+                  [ -f "$f" ] && echo "--- $f ---" && cat "$f"
+              done
+              exit 1
+          fi
+          echo "🔍 连通性测试..."
+          for i in $(seq 1 20); do
+              port=$((7890 + i))
+              if curl -s -o /dev/null --max-time 5 -x "http://127.0.0.1:$port" https://api.ipify.org 2>/dev/null; then
+                  ip=$(curl -s --max-time 5 -x "http://127.0.0.1:$port" https://api.ipify.org 2>/dev/null)
+                  echo "  ✅ 账号 $i 代理正常: http://127.0.0.1:$port → IP $ip"
+              fi
+          done
 
       - name: 运行续期脚本
         if: steps.check.outputs.need_renew == 'true'
