@@ -275,8 +275,7 @@ jobs:
           for i in $(seq 1 20); do
               port=$((7890 + i))
               if curl -s -o /dev/null --max-time 5 -x "http://127.0.0.1:$port" https://api.ipify.org 2>/dev/null; then
-                  ip=$(curl -s --max-time 5 -x "http://127.0.0.1:$port" https://api.ipify.org 2>/dev/null)
-                  echo "  ✅ 账号 $i 代理正常: http://127.0.0.1:$port → IP $ip"
+                  echo "  ✅ 账号 $i 代理正常"
               fi
           done
 
