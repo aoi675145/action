@@ -153,12 +153,11 @@ jobs:
                   outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
 
               if security == "reality":
-                  short_ids = [sid] if sid else [""]
                   outbound["streamSettings"]["realitySettings"] = {
                       "serverName": sni,
                       "fingerprint": fp,
                       "publicKey": pbk,
-                      "shortIds": short_ids,
+                      "shortId": sid or "",
                   }
               elif security == "tls":
                   outbound["streamSettings"]["tlsSettings"] = {
