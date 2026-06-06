@@ -48,44 +48,20 @@ jobs:
 
           [ -f "$TURNSTILE_DIR/manifest.json" ]
           
-      - name: 安装 WARP
+      - name: 启用 WARP 网络
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: client
+
+      - name: 修复 DNS
         run: |
-          set -euo pipefail
-          curl -fsSL https://pkg.cloudflareclient.com/pubkey.gpg | sudo gpg --yes --dearmor --output /usr/share/keyrings/cloudflare-warp-archive-keyring.gpg
-          echo "deb [arch=amd64 signed-by=/usr/share/keyrings/cloudflare-warp-archive-keyring.gpg] https://pkg.cloudflareclient.com/ $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/cloudflare-client.list
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq cloudflare-warp
-
-      - name: 配置并连接 WARP
-        run: |
-          set -euo pipefail
-
-          # 注册（失败则重试）
-          for i in {1..3}; do
-            sudo warp-cli --accept-tos registration new && break
-            echo "WARP 注册失败，重试 ($i/3)..."
-            sleep 3
-          done
-
-          sudo warp-cli --accept-tos mode warp+doh
-          sudo warp-cli --accept-tos connect
-
-          # 等待连接成功
-          for i in {1..30}; do
-            status=$(curl -s --max-time 5 https://www.cloudflare.com/cdn-cgi/trace | grep -oP 'warp=\K\w+' || echo unknown)
-            [[ "$status" =~ ^(on|plus)$ ]] && echo "WARP 已连接" && break
-            echo "WARP 连接中... ($i/30)"
-            sleep 2
-          done
-
-          # 配置 DNS
           sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
           sudo rm -f /etc/resolv.conf
-          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8" | sudo tee /etc/resolv.conf
-          sudo chattr +i /etc/resolv.conf 2>/dev/null || true
-
-          echo -n "出口 IP: "
-          curl -s https://api.ipify.org && echo
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
+          echo "[INFO] 出口 IP:"
+          curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace | grep -E 'warp=|loc=' || true
 
       - name: 执行续期
         env:
@@ -100,16 +76,7 @@ jobs:
           cd scripts/teohe
           xvfb-run --auto-servernum \
             --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
-            python main.py
-
-      - name: 上传截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: screenshots-${{ github.run_number }}
-          path: screenshots/*.png
-          retention-days: 7
-          if-no-files-found: ignore
+            python -u main.py
 
       - name: 清理运行记录
         if: always()
