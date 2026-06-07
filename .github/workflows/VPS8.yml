@@ -142,6 +142,7 @@ jobs:
               fp = params.get("fp", ["chrome"])[0]
               flow = params.get("flow", [""])[0]
               pbk = params.get("pbk", [""])[0]
+              sid = params.get("sid", [""])[0]
               host = params.get("host", [sni])[0]
               path = unquote(params.get("path", ["/"])[0])
               
@@ -168,11 +169,14 @@ jobs:
               
               # Reality 设置
               if security == "reality":
-                  outbound["streamSettings"]["realitySettings"] = {
+                  reality = {
                       "serverName": sni,
                       "fingerprint": fp,
-                      "publicKey": pbk
+                      "publicKey": pbk,
                   }
+                  if sid:
+                      reality["shortId"] = sid
+                  outbound["streamSettings"]["realitySettings"] = reality
               # TLS 设置
               elif security == "tls":
                   outbound["streamSettings"]["tlsSettings"] = {
