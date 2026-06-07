@@ -379,7 +379,7 @@ jobs:
 #          retention-days: 3
 #          if-no-files-found: ignore
 
-      - name: 随机化下次 cron 运行时间 
+      - name: 随机化下次 cron 运行时间 (UTC 0-3时 = 北京 8-12时)
         if: always()
         run: |
           RND_HOUR=$((RANDOM % 4))
@@ -396,7 +396,7 @@ jobs:
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
-          token: ${{ github.token }}
+          token: ${{ secrets.REPO_TOKEN }}
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
