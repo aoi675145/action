@@ -379,7 +379,7 @@ jobs:
 #          retention-days: 3
 #          if-no-files-found: ignore
 
-      - name: 随机化下次 cron 运行时间 (UTC 0-3时 = 北京 8-12时)
+      - name: 随机化下次 cron 运行时间 
         if: always()
         run: |
           RND_HOUR=$((RANDOM % 4))
