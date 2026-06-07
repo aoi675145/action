@@ -2,6 +2,8 @@ name: VPS8 签到 NopeCHA
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 0 * * *"
 
 jobs:
   sign:
@@ -9,10 +11,14 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     permissions:
-      contents: read
+      contents: write
       actions: write
 
     steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -372,6 +378,19 @@ jobs:
 #          path: screenshots/*.png
 #          retention-days: 3
 #          if-no-files-found: ignore
+
+      - name: 随机化下次 cron 运行时间 (UTC 0-3时 = 北京 8-12时)
+        if: always()
+        run: |
+          RND_HOUR=$((RANDOM % 4))
+          RND_MINUTE=$((RANDOM % 60))
+          WORKFLOW=".github/workflows/VPS8_NopeCHA.yml"
+          sed -i "s/- cron: \".*\"/- cron: \"$RND_MINUTE $RND_HOUR * * *\"/" "$WORKFLOW"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "$WORKFLOW"
+          git diff --cached --quiet || git commit -m "随机化下次 cron: $RND_MINUTE $RND_HOUR * * * (UTC)"
+          git push
 
       - name: 清理历史运行记录
         if: always()
