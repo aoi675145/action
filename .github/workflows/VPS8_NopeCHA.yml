@@ -1,4 +1,4 @@
-name: VPS8 签到 NopeCHA
+name: VPS8 签到 
 
 on:
   workflow_dispatch:
@@ -27,12 +27,12 @@ jobs:
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          echo "[INFO] 从私库拉取 main_NopeCHA.py..."
+          echo "[INFO] 从私库拉取 main.py..."
           curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
-            -o main_NopeCHA.py \
-            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/vps8/main_NopeCHA.py"
-          echo "[INFO] ✅ main_NopeCHA.py 已下载 ($(wc -l < main_NopeCHA.py) 行)"
+            -o main.py \
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/vps8/main.py"
+          echo "[INFO] ✅ main.py 已下载 ($(wc -l < main.py) 行)"
 
       - name: 安装系统依赖
         run: |
@@ -368,7 +368,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           NOPECHA_KEY: ${{ secrets.NOPECHA_KEY }}
           PROXY_HTTP: ${{ env.PROXY_SOCKS5 }}
-        run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main_NopeCHA.py
+        run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py
 
 #      - name: 上传截图
 #        if: always()
@@ -384,7 +384,7 @@ jobs:
         run: |
           RND_HOUR=$((RANDOM % 4))
           RND_MINUTE=$((RANDOM % 60))
-          WORKFLOW=".github/workflows/VPS8_NopeCHA.yml"
+          WORKFLOW=".github/workflows/VPS8.yml"
           sed -i "s/- cron: \".*\"/- cron: \"$RND_MINUTE $RND_HOUR * * *\"/" "$WORKFLOW"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
