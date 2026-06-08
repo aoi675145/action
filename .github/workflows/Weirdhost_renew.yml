@@ -25,22 +25,55 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
+      - name: 检查是否需要续期
+        id: check_renew
+        run: |
+          LOG_FILE="scripts/Weirdhost/logs.txt"
+          if [ ! -f "$LOG_FILE" ]; then
+            echo "need_renew=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          if python3 -c "
+import json, sys
+from datetime import datetime
+with open('$LOG_FILE') as f:
+    log = json.load(f)
+now = datetime.now()
+for _, entry in log.items():
+    nrs = entry.get('nextRun', '')
+    if not nrs: sys.exit(0)
+    try:
+        if now >= datetime.strptime(nrs, '%Y-%m-%d %H:%M'): sys.exit(0)
+    except:
+        sys.exit(0)
+sys.exit(1)
+"; then
+            echo "need_renew=false" >> $GITHUB_OUTPUT
+            echo "::notice::所有服务器均未到续期时间，跳过本次运行"
+          else
+            echo "need_renew=true" >> $GITHUB_OUTPUT
+          fi
+
       - name: 设置 Python 环境
+        if: steps.check_renew.outputs.need_renew == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
       - name: 安装系统依赖
+        if: steps.check_renew.outputs.need_renew == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb x11-utils fonts-nanum fonts-noto-cjk xdotool scrot
 
       - name: 安装 Python 依赖
+        if: steps.check_renew.outputs.need_renew == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install seleniumbase aiohttp pynacl
 
       - name: 安装并启动代理
+        if: steps.check_renew.outputs.need_renew == 'true'
         env:
           WEIRDHOST_PROXY_NODE: ${{ secrets.WEIRDHOST_PROXY_NODE }}
         run: |
@@ -341,6 +374,7 @@ jobs:
           exit 1
 
       - name: 运行续期脚本
+        if: steps.check_renew.outputs.need_renew == 'true'
         env:
           WEIRDHOST_COOKIE: ${{ secrets.WEIRDHOST_COOKIE }}
           WEIRDHOST_PROXY_NODE: ${{ env.PROXY_SERVER }}
@@ -352,10 +386,11 @@ jobs:
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python "scripts/Weirdhost/Weirdhost_renew.py" 2>&1 | tee renew.log
 
       - name: 清理旧的工作流运行记录
+        if: steps.check_renew.outputs.need_renew == 'true'
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
-          keep_minimum_runs: 6
+          keep_minimum_runs: 3
