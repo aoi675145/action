@@ -3,7 +3,7 @@ name: VPS8 签到 NopeCHA
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "5 2 * * *"
 
 jobs:
   sign:
