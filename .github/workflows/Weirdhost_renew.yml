@@ -33,25 +33,16 @@ jobs:
             echo "need_renew=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          python3 << 'PYEOF'
-import json, sys
-from datetime import datetime
-with open("scripts/Weirdhost/logs.txt") as f:
-    log = json.load(f)
-now = datetime.now()
-for _, entry in log.items():
-    nrs = entry.get("nextRun", "")
-    if not nrs:
-        sys.exit(0)
-    try:
-        nd = datetime.strptime(nrs, "%Y-%m-%d %H:%M")
-        if now >= nd:
-            sys.exit(0)
-    except:
-        sys.exit(0)
-sys.exit(1)
-PYEOF
-          if [ $? -eq 1 ]; then
+          ALL_SKIP=true
+          for uuid in $(jq -r 'keys[]' "$LOG_FILE"); do
+            next_run=$(jq -r ".[\"$uuid\"].nextRun" "$LOG_FILE")
+            if [ -z "$next_run" ] || [ "$next_run" = "null" ]; then
+              ALL_SKIP=false; break
+            fi
+            next_ts=$(date -d "$next_run" +%s 2>/dev/null) || { ALL_SKIP=false; break; }
+            [ "$(date +%s)" -ge "$next_ts" ] && { ALL_SKIP=false; break; }
+          done
+          if [ "$ALL_SKIP" = "true" ]; then
             echo "need_renew=false" >> $GITHUB_OUTPUT
             echo "::notice::所有服务器均未到续期时间，跳过本次运行"
           else
