@@ -207,7 +207,7 @@ jobs:
 
       - name: 🔧 执行续期
         env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_TOKEN_1: ${{ secrets.DISCORD_TOKEN_1 }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
           TG_BOT: ${{ secrets.TG_BOT }}
         run: bash scripts/Mephia/mephia_renew.sh
