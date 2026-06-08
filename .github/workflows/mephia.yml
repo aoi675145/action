@@ -149,6 +149,12 @@ jobs:
                           "security": v.get("tls", "none")
                       }
                   }
+                  if v.get("tls", "none") == "tls":
+                      out["streamSettings"]["tlsSettings"] = {
+                          "serverName": v.get("sni", v["add"]),
+                          "fingerprint": v.get("fp", "chrome"),
+                          "allowInsecure": v.get("insecure", v.get("allowInsecure", "0")) in ("1", "true")
+                      }
                   if v.get("net") == "ws":
                       out["streamSettings"]["wsSettings"] = {
                           "path": v.get("path", "/"),
