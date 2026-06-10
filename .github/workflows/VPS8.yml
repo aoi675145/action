@@ -2,8 +2,13 @@ name: VPS8 签到 NopeCHA
 
 on:
   workflow_dispatch:
+    inputs:
+      force_renew:
+        description: '强制续期（跳过缓存，填 1 启用）'
+        required: false
+        default: ''
   schedule:
-    - cron: "1 2 * * *"
+    - cron: "0 0 * * *"
 
 jobs:
   sign:
@@ -368,6 +373,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           NOPECHA_KEY: ${{ secrets.NOPECHA_KEY }}
           PROXY_HTTP: ${{ env.PROXY_SOCKS5 }}
+          VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
         run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py
 
 #      - name: 上传截图
@@ -379,6 +385,31 @@ jobs:
 #          retention-days: 3
 #          if-no-files-found: ignore
 
+      - name: 保存服务到期缓存到私库
+        if: always()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          if [ ! -s vps8_service_expiry.txt ]; then
+            echo "[缓存] vps8_service_expiry.txt 不存在或为空，本次不提交私库"
+            exit 0
+          fi
+          echo "[缓存] 克隆私库 aoi675145/scripts，保存 vps8_service_expiry.txt"
+          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
+          mkdir -p scripts-cache/scripts/vps8
+          cp vps8_service_expiry.txt scripts-cache/scripts/vps8/vps8_service_expiry.txt
+          cd scripts-cache
+          if [ -z "$(git status --porcelain -- scripts/vps8/vps8_service_expiry.txt)" ]; then
+            echo "[缓存] 服务到期缓存无变化，不需要提交"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/vps8/vps8_service_expiry.txt
+          git commit -m "更新 VPS8 服务到期缓存"
+          git push
+          echo "[缓存] vps8_service_expiry.txt 已保存到私库 scripts/vps8/"
+
       - name: 随机化下次 cron 运行时间 (UTC 0-3时 = 北京 8-12时)
         if: always()
         run: |
@@ -389,8 +420,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add "$WORKFLOW"
-          git diff --cached --quiet || git commit -m "随机化下次 cron: $RND_MINUTE $RND_HOUR * * * (UTC)"
-          git push
+          git diff --cached --quiet || (git commit -m "随机化下次 cron: $RND_MINUTE $RND_HOUR * * * (UTC)" && git pull --rebase && git push)
 
       - name: 清理历史运行记录
         if: always()
