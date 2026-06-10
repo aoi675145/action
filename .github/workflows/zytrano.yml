@@ -2,7 +2,7 @@ name: Zytrano 续期
 
 on:
   schedule:
-    - cron: '17 * 5 * *'  # 每天运行一次（UTC时间 01:17）
+    - cron: '17 1 5 * *'  # 每天运行一次（UTC时间 01:17）
   workflow_dispatch:
 
 jobs:
