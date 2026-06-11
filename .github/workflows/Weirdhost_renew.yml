@@ -67,6 +67,14 @@ jobs:
           python -m pip install --upgrade pip
           pip install seleniumbase aiohttp pynacl
 
+      - name: 屏蔽广告域名
+        if: steps.check_renew.outputs.need_renew == 'true'
+        run: |
+          for domain in pagead2.googlesyndication.com googleads.g.doubleclick.net www.googleadservices.com ep2.adtrafficquality.google; do
+            echo "0.0.0.0 $domain" | sudo tee -a /etc/hosts > /dev/null
+            echo "[INFO] 已屏蔽 $domain"
+          done
+
       - name: 安装并启动代理
         if: steps.check_renew.outputs.need_renew == 'true'
         env:
