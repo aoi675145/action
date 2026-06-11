@@ -2,7 +2,7 @@ name: FreezeHost 自动续期
 
 on:
   schedule:
-    - cron: '51 3 12 6 *' # 下一个: 2026-06-12 03:51 UTC (时间不足或解析失败，12h后重试)
+    - cron: '57 3 12 6 *' # 下一个: 2026-06-12 03:57 UTC (时间不足或解析失败，12h后重试)
   workflow_dispatch:
 
 jobs:
