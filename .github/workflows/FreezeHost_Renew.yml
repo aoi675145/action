@@ -2,7 +2,7 @@ name: FreezeHost 自动续期
 
 on:
   schedule:
-    - cron: '29 3 12 6 *' # 下一个: 2026-06-12 03:29 UTC (时间不足或解析失败，12h后重试)
+    - cron: '18 15 21 4 *' # 下一个: 2026-04-21 15:18 UTC (到期前2天自动执行)
   workflow_dispatch:
 
 jobs:
@@ -35,8 +35,8 @@ jobs:
 
       - name: 📦 安装依赖
         run: |
-          pip install playwright
-          playwright install chromium --with-deps
+          pip install seleniumbase Pillow
+          sudo apt-get install -y xvfb
 
       - name: 🔧 修复 DNS
         run: |
@@ -250,28 +250,8 @@ jobs:
           print(f"[INFO] 代理出口 IP: {ip}")
           PYEOF
 
-          echo "[INFO] 检查代理访问 FreezeHost..."
+          echo "[INFO] 检查 FreezeHost 可访问..."
           curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://free.freezehost.pro/ | sed -n '1,8p'
-
-          echo "[INFO] 检查 Playwright 代理访问..."
-          python3 << 'PYEOF'
-          import os
-          from playwright.sync_api import sync_playwright
-
-          proxy = os.environ["PROXY_SERVER"]
-          with sync_playwright() as pw:
-              browser = pw.chromium.launch(headless=True, proxy={"server": proxy})
-              page = browser.new_page()
-              page.set_default_timeout(30000)
-              resp = page.goto("https://api.ipify.org?format=json", wait_until="domcontentloaded")
-              print(f"[INFO] Playwright IP status: {resp.status if resp else 'none'}")
-              body = page.text_content("body")[:120]
-              body = __import__("re").sub(r"\b(\d{1,3}\.\d{1,3}\.)\d{1,3}\.(\d{1,3})\b", r"\1***.\2", body)
-              print(body)
-              resp = page.goto("https://free.freezehost.pro/", wait_until="domcontentloaded")
-              print(f"[INFO] Playwright FreezeHost status: {resp.status if resp else 'none'}")
-              browser.close()
-          PYEOF
 
       - name: 🚀 运行续期脚本
         env:
@@ -279,7 +259,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_URL: ${{ env.PROXY_SERVER }}
-        run: python scripts_repo/scripts/freezehost/renew.py
+        run: xvfb-run python scripts_repo/scripts/freezehost/renew.py
 
       - name: ⚙️ 自动修改下一次运行时间
         env:
@@ -367,4 +347,4 @@ jobs:
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
-          keep_minimum_runs: 2
+          keep_minimum_runs: 5
