@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "42 1 * * *"
+    - cron: "0 0 * * *"
 
 jobs:
   sign:
@@ -28,7 +28,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 从私库拉取 VPS8 脚本
+      - name: 从私库拉取脚本和到期缓存
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -38,6 +38,16 @@ jobs:
             -o main.py \
             "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/vps8/main.py"
           echo "[INFO] ✅ main.py 已下载 ($(wc -l < main.py) 行)"
+
+          echo "[INFO] 拉取服务到期缓存..."
+          if curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o vps8_service_expiry.txt \
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/vps8/vps8_service_expiry.txt" 2>/dev/null; then
+            echo "[INFO] ✅ vps8_service_expiry.txt 已下载 ($(wc -l < vps8_service_expiry.txt) 行)"
+          else
+            echo "[INFO] 私库尚无缓存文件，首次运行"
+          fi
 
       - name: 安装系统依赖
         run: |
