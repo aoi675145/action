@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "14 1 * * *"
+    - cron: "35 0 * * *"
 
 jobs:
   sign:
