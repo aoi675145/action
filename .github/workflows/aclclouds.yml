@@ -2,7 +2,7 @@ name:  ACLClouds Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '53 17 17 6 *' # 下一个: 2026-06-17 17:53 UTC / 2026-06-18 01:53 北京时间 (到期前1天执行)
+    - cron: '33 3 26 5 *' # 下一个: 2026-05-26 03:33 UTC / 2026-05-26 11:33 北京时间 (到期前1天执行)
 
 jobs:
   run_renewal:
@@ -422,7 +422,7 @@ jobs:
           git -C action_repo add .github/workflows/aclclouds.yml
           git -C action_repo commit -m "🚀 auto: 精准锁定到期前1天执行续期" || echo "action 仓库没有 Cron 变更需要提交"
           git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
-          git -C action_repo push
+          git -C action_repo push --force
 
       - name: 清理运行记录
         if: always()
