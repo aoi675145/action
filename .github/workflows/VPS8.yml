@@ -1,4 +1,4 @@
-name: VPS8 签到 NopeCHA
+name: VPS8 签到 
 
 on:
   workflow_dispatch:
