@@ -61,7 +61,7 @@ jobs:
           import os
           from datetime import datetime, timedelta, timezone
 
-          # 解析 XSERVER_N 环境变量获取账号邮箱
+          # 解析 XSERVER_N 环境变量获取账号邮箱（仅内部判断用，不输出到日志）
           accounts = []
           for key, value in sorted(os.environ.items()):
               if not key.startswith("XSERVER_") or not key[8:].isdigit():
@@ -93,20 +93,20 @@ jobs:
           now = datetime.now(jst)
 
           needs_renew = False
-          for email in accounts:
+          for i, email in enumerate(accounts, 1):
               if email not in logs_map:
-                  print(f"  👤 {email}: 不在 logs.txt 中，需要续期")
+                  print(f"  👤 账号{i}: 不在 logs.txt 中，需要续期")
                   needs_renew = True
                   break
               try:
                   next_dt = datetime.strptime(logs_map[email], '%Y-%m-%d %H:%M').replace(tzinfo=jst)
                   if now >= next_dt:
-                      print(f"  👤 {email}: 已到续期时间 ({logs_map[email]})，需要续期")
+                      print(f"  👤 账号{i}: 已到续期时间 ({logs_map[email]})，需要续期")
                       needs_renew = True
                       break
-                  print(f"  👤 {email}: 跳过 ({logs_map[email]})")
+                  print(f"  👤 账号{i}: 跳过 ({logs_map[email]})")
               except ValueError:
-                  print(f"  👤 {email}: 时间格式无效，需要续期")
+                  print(f"  👤 账号{i}: 时间格式无效，需要续期")
                   needs_renew = True
                   break
 
