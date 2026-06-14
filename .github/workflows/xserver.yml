@@ -14,8 +14,18 @@ jobs:
         id: check
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          XSERVER_1: ${{ secrets.XSERVER_1 }}
+          XSERVER_2: ${{ secrets.XSERVER_2 }}
+          XSERVER_3: ${{ secrets.XSERVER_3 }}
+          XSERVER_4: ${{ secrets.XSERVER_4 }}
+          XSERVER_5: ${{ secrets.XSERVER_5 }}
+          XSERVER_6: ${{ secrets.XSERVER_6 }}
+          XSERVER_7: ${{ secrets.XSERVER_7 }}
+          XSERVER_8: ${{ secrets.XSERVER_8 }}
+          XSERVER_9: ${{ secrets.XSERVER_9 }}
+          XSERVER_10: ${{ secrets.XSERVER_10 }}
         run: |
-          echo "[INFO] 通过 GitHub API 读取 logs.txt..."
+          echo "📋 读取 logs.txt..."
 
           HTTP_CODE=$(curl -sL -o /tmp/logs_response.json -w "%{http_code}" \
             -H "Authorization: token $REPO_TOKEN" \
@@ -23,35 +33,93 @@ jobs:
             "https://api.github.com/repos/akina005/scripts/contents/scripts/XServer/logs.txt")
 
           if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "[INFO] logs.txt 不存在（HTTP $HTTP_CODE），首次运行视为全部需要续期"
+            echo "📭 logs.txt 不存在，首次运行视为全部需要续期"
             echo "need_renew=true" >> $GITHUB_OUTPUT
             echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
             exit 0
           fi
           if [ "$HTTP_CODE" != "200" ]; then
-            echo "[WARN] 读取 logs.txt 失败 (HTTP $HTTP_CODE)，视为全部需要续期"
+            echo "⚠️ 读取 logs.txt 失败 (HTTP $HTTP_CODE)，视为全部需要续期"
             echo "need_renew=true" >> $GITHUB_OUTPUT
             echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          # 解码 base64 内容
-          cat /tmp/logs_response.json | python3 -c "
+          # 解码 logs.txt 并保存 SHA
+          python3 -c "
           import sys, json, base64
           data = json.load(sys.stdin)
           content = base64.b64decode(data['content']).decode('utf-8')
-          print(content)
-          " > /tmp/logs.txt
+          print(content, end='')
+          " < /tmp/logs_response.json > /tmp/logs.txt
 
-          echo "[INFO] logs.txt 读取成功 ($(wc -l < /tmp/logs.txt) 行)"
-
-          # 获取文件 SHA（后续更新用）
-          LOG_SHA=$(cat /tmp/logs_response.json | python3 -c "import sys,json; print(json.load(sys.stdin)['sha'])")
+          LOG_SHA=$(python3 -c "import sys,json; print(json.load(open('/tmp/logs_response.json'))['sha'])")
           echo "log_sha=$LOG_SHA" >> $GITHUB_OUTPUT
 
-          echo "need_renew=true" >> $GITHUB_OUTPUT
-          echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
-          echo "[INFO] logs.txt 可用，继续执行续期（时间判断由主脚本处理）"
+          echo "📋 检查各账号续期时间..."
+          python3 << 'PY'
+          import os
+          from datetime import datetime, timedelta, timezone
+
+          # 解析 XSERVER_N 环境变量获取账号邮箱
+          accounts = []
+          for key, value in sorted(os.environ.items()):
+              if not key.startswith("XSERVER_") or not key[8:].isdigit():
+                  continue
+              if key.endswith("_XARY"):
+                  continue
+              parts = value.split("-----")
+              if len(parts) < 2:
+                  continue
+              email = parts[0].strip()
+              if email:
+                  accounts.append(email.lower())
+
+          # 解析 logs.txt
+          logs_map = {}
+          try:
+              with open('/tmp/logs.txt') as f:
+                  for line in f:
+                      line = line.strip()
+                      if '-----' not in line:
+                          continue
+                      p = line.split('-----')
+                      if len(p) >= 2:
+                          logs_map[p[0].strip().lower()] = p[1].strip()
+          except FileNotFoundError:
+              pass
+
+          jst = timezone(timedelta(hours=9))
+          now = datetime.now(jst)
+
+          needs_renew = False
+          for email in accounts:
+              if email not in logs_map:
+                  print(f"  👤 {email}: 不在 logs.txt 中，需要续期")
+                  needs_renew = True
+                  break
+              try:
+                  next_dt = datetime.strptime(logs_map[email], '%Y-%m-%d %H:%M').replace(tzinfo=jst)
+                  if now >= next_dt:
+                      print(f"  👤 {email}: 已到续期时间 ({logs_map[email]})，需要续期")
+                      needs_renew = True
+                      break
+                  print(f"  👤 {email}: 跳过 ({logs_map[email]})")
+              except ValueError:
+                  print(f"  👤 {email}: 时间格式无效，需要续期")
+                  needs_renew = True
+                  break
+
+          print(f"need_renew={'true' if needs_renew else 'false'}")
+          print(f"accounts_to_renew=ALL")
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"need_renew={'true' if needs_renew else 'false'}\n")
+              f.write(f"accounts_to_renew=ALL\n")
+          PY
+
+          if [ "$(grep 'need_renew=false' $GITHUB_OUTPUT)" ]; then
+            echo "✅ 所有账号均未到续期时间，跳过后续步骤"
+          fi
 
       # ========== 以下所有步骤仅在需要续期时执行 ==========
       - name: 拉取私有仓库
