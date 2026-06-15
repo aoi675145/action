@@ -182,12 +182,14 @@ jobs:
 
       - name: 启动代理
         if: ${{ env.TECHNO_PROXY != '' }}
+        env:
+          TECHNO_PROXY: ${{ secrets.TECHNO_PROXY }}
         run: |
           nohup xray run -c xray-config.json > xray.log 2>&1 &
           sleep 3
           echo "✅ Xray 已启动，测试连通性..."
           curl -s -x http://127.0.0.1:8080 https://api.ipify.org \
-            | sed 's/\([0-9]*\.[0-9]*\.[0-9]*\.\)[0-9]*/\1**/g'
+            | sed 's/\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)/\1.xxx.xxx.\4/g'
 
       - name: 🛠️ 安装系统依赖
         run: |
@@ -213,9 +215,4 @@ jobs:
         run: |
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python techon_coins.py
 
-      - name: 📸 上传截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-screenshots
-          path: "*.png"
+
