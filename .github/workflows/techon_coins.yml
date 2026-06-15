@@ -205,7 +205,7 @@ jobs:
       - name: 🚀 运行脚本
         env:
           PYTHONIOENCODING: utf-8
-          TECHNO_ACCOUNT: ${{ secrets.TECHNO_ACCOUNT }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TECHNO_PROXY: ${{ secrets.TECHNO_PROXY }}
           TG_BOT: ${{ secrets.TG_BOT }}
         run: |
