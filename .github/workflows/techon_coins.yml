@@ -10,13 +10,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
 
-      - name: 📥 下载私库脚本
+      - name: 下载私库脚本
         run: |
           curl -L -o techon_coins.py \
             -H "Authorization: token ${{ secrets.REPO_TOKEN }}" \
             "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/techon/techon_coins.py"
 
-      - name: 🐍 设置 Python
+      - name: 设置 Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
@@ -193,7 +193,7 @@ jobs:
           curl -s -x http://127.0.0.1:8080 https://api.ipify.org \
             | sed 's/\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)/\1.xxx.xxx.\4/g'
 
-      - name: 🛠️ 安装系统依赖
+      - name: 安装系统依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -203,12 +203,12 @@ jobs:
             xdotool \
             scrot
 
-      - name: 🐍 安装 Python 依赖
+      - name: 安装 Python 依赖
         run: |
           pip install seleniumbase
           seleniumbase install chromedriver
 
-      - name: 🚀 运行脚本
+      - name: 运行脚本
         env:
           PYTHONIOENCODING: utf-8
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
