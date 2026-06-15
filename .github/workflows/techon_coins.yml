@@ -30,10 +30,13 @@ jobs:
           sudo mv xray-bin/xray /usr/local/bin/xray
 
       - name: 构建 Xray 配置
-        if: ${{ env.TECHNO_PROXY != '' }}
         env:
           TECHNO_PROXY: ${{ secrets.TECHNO_PROXY }}
         run: |
+          if [ -z "${TECHNO_PROXY}" ]; then
+            echo "[ERROR] TECHNO_PROXY 未配置，禁止直连"
+            exit 1
+          fi
           python3 << 'PYEOF'
           import base64
           import json
@@ -181,7 +184,6 @@ jobs:
           PYEOF
 
       - name: 启动代理
-        if: ${{ env.TECHNO_PROXY != '' }}
         env:
           TECHNO_PROXY: ${{ secrets.TECHNO_PROXY }}
         run: |
