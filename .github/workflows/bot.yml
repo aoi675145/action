@@ -3,7 +3,7 @@ name: Bot-Hosting 金币领取
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 0 * * *"
+    - cron: "16 2 * * *"
 
 jobs:
   earn:
