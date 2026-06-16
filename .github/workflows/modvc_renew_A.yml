@@ -23,7 +23,7 @@ jobs:
           path: private
 
       - name: 📂 复制脚本到工作目录
-        run: cp private/scripts/modvc/modvc_renew.py modvc_renew_A.py
+        run: cp private/scripts/modvc/modvc_renew_A.py modvc_renew_A.py
 
       - name: 🐍 安装依赖
         run: pip install requests pysocks
