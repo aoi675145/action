@@ -1,0 +1,358 @@
+name: ModVC 续期  A
+
+on:
+  schedule:
+    - cron: '0 0 7 6 *'  # 自动更新下次运行时间，到期前 5 天
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: 📥 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private
+
+      - name: 📂 复制脚本到工作目录
+        run: cp private/scripts/modvc/modvc_renew.py modvc_renew_A.py
+
+      - name: 🐍 安装依赖
+        run: pip install requests pysocks
+
+      - name: 🛡️ 安装并启动 Xray 代理
+        env:
+          PROXY_NODE: ${{ secrets.MODVC_ROXY_NODE_A }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+        run: |
+          notify_proxy_error() {
+            local message="$1"
+            echo "[ERROR] $message"
+            if [ -n "$TG_BOT" ] && echo "$TG_BOT" | grep -q ','; then
+              TG_CHAT_ID="${TG_BOT%%,*}"
+              TG_BOT_TOKEN="${TG_BOT#*,}"
+              curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+                -d "chat_id=${TG_CHAT_ID}" \
+                --data-urlencode "text=❌ ModVC 代理错误\n${message}" > /dev/null || true
+            else
+              echo "[WARN] 未设置 TG_BOT，无法发送代理错误通知"
+            fi
+          }
+
+          if [ -z "$PROXY_NODE" ]; then
+            notify_proxy_error "未配置 MODVC_ROXY_NODE_A，已禁止直连"
+            exit 1
+          fi
+
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+
+          if ! python3 << 'PYEOF'; then
+          import os, sys, json, base64
+          from urllib.parse import parse_qs, unquote
+
+          def mask(s):
+              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
+
+          url = os.environ.get("PROXY_NODE", "").strip()
+          if not url:
+              print("[ERROR] PROXY_NODE 为空")
+              sys.exit(1)
+
+          if url.startswith("vless://"):
+              protocol = "vless"
+              content = url[8:]
+          elif url.startswith("vmess://"):
+              protocol = "vmess"
+              content = url[8:]
+          elif url.startswith("trojan://"):
+              protocol = "trojan"
+              content = url[9:]
+          elif url.startswith("ss://"):
+              protocol = "ss"
+              content = url[5:]
+          elif url.startswith("socks5://") or url.startswith("socks://"):
+              content = url.split("://", 1)[1].split("#", 1)[0]
+              server = content.split("@", 1)[-1].split(":", 1)[0]
+              print(f"[INFO] SOCKS5 -> {mask(server)}")
+              with open("use_external_socks.txt", "w") as f:
+                  f.write(url.split("#", 1)[0])
+              sys.exit(0)
+          else:
+              print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
+              sys.exit(1)
+
+          if "#" in content:
+              content = content.rsplit("#", 1)[0]
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [
+                  {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                  {"port": 10809, "listen": "127.0.0.1", "protocol": "http"}
+              ],
+              "outbounds": []
+          }
+
+          if protocol == "vless":
+              uuid, rest = content.split("@", 1)
+              host_port, params_str = rest.split("?", 1) if "?" in rest else (rest, "")
+              address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
+              params = parse_qs(params_str)
+              security = params.get("security", ["none"])[0]
+              network = params.get("type", ["tcp"])[0]
+              sni = params.get("sni", [address])[0]
+              fp = params.get("fp", ["chrome"])[0]
+              flow = params.get("flow", [""])[0]
+              pbk = params.get("pbk", [""])[0]
+              sid = params.get("sid", [""])[0]
+              spx = params.get("spx", [""])[0]
+              host = params.get("host", [sni])[0]
+              path_val = unquote(params.get("path", ["/"])[0])
+              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {"vnext": [{"address": address, "port": int(port), "users": [{"id": uuid, "encryption": "none"}]}]},
+                  "streamSettings": {"network": network, "security": security}
+              }
+              if flow:
+                  outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
+              if security == "reality":
+                  reality_settings = {"serverName": sni, "fingerprint": fp, "publicKey": pbk}
+                  if sid:
+                      reality_settings["shortId"] = sid
+                  if spx:
+                      reality_settings["spiderX"] = spx
+                  outbound["streamSettings"]["realitySettings"] = reality_settings
+              elif security == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {"serverName": sni, "fingerprint": fp, "allowInsecure": False}
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {"path": path_val, "headers": {"Host": host}}
+              elif network == "grpc":
+                  outbound["streamSettings"]["grpcSettings"] = {"serviceName": params.get("serviceName", [""])[0]}
+              config["outbounds"].append(outbound)
+
+          elif protocol == "vmess":
+              try:
+                  padding = 4 - len(content) % 4
+                  if padding != 4:
+                      content += "=" * padding
+                  vm = json.loads(base64.b64decode(content).decode("utf-8"))
+              except Exception as e:
+                  print(f"[ERROR] VMess 解析失败: {e}")
+                  sys.exit(1)
+              address = vm.get("add", "")
+              port = int(vm.get("port", 443))
+              uuid = vm.get("id", "")
+              aid = int(vm.get("aid", 0))
+              network = vm.get("net", "tcp")
+              tls = vm.get("tls", "")
+              sni = vm.get("sni", "") or vm.get("host", address)
+              host = vm.get("host", address)
+              path_val = vm.get("path", "/")
+              fp = vm.get("fp", "chrome")
+              allow_insecure = str(vm.get("allowInsecure", vm.get("insecure", "0"))).lower() in ("1", "true", "yes")
+              print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {"vnext": [{"address": address, "port": port, "users": [{"id": uuid, "alterId": aid, "security": "auto"}]}]},
+                  "streamSettings": {"network": network, "security": "tls" if tls == "tls" else "none"}
+              }
+              if tls == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {"serverName": sni, "fingerprint": fp, "allowInsecure": allow_insecure}
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {"path": path_val, "headers": {"Host": host}}
+              config["outbounds"].append(outbound)
+
+          elif protocol == "trojan":
+              password, rest = content.split("@", 1)
+              host_port, params_str = rest.split("?", 1) if "?" in rest else (rest, "")
+              address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
+              params = parse_qs(params_str)
+              sni = params.get("sni", [address])[0]
+              network = params.get("type", ["tcp"])[0]
+              host = params.get("host", [sni])[0]
+              path_val = unquote(params.get("path", ["/"])[0])
+              fp = params.get("fp", ["chrome"])[0]
+              print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
+              outbound = {
+                  "protocol": "trojan",
+                  "settings": {"servers": [{"address": address, "port": int(port), "password": password}]},
+                  "streamSettings": {"network": network, "security": "tls", "tlsSettings": {"serverName": sni, "fingerprint": fp, "allowInsecure": False}}
+              }
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {"path": path_val, "headers": {"Host": host}}
+              config["outbounds"].append(outbound)
+
+          elif protocol == "ss":
+              try:
+                  if "@" in content:
+                      encoded, server_part = content.split("@", 1)
+                      decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                      method, password = decoded.split(":", 1)
+                      address, port = server_part.split(":", 1)
+                  else:
+                      decoded = base64.b64decode(content + "==").decode("utf-8")
+                      user_part, server_part = decoded.split("@", 1)
+                      method, password = user_part.split(":", 1)
+                      address, port = server_part.split(":", 1)
+              except Exception as e:
+                  print(f"[ERROR] Shadowsocks 解析失败: {e}")
+                  sys.exit(1)
+              print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
+              config["outbounds"].append({
+                  "protocol": "shadowsocks",
+                  "settings": {"servers": [{"address": address, "port": int(port), "method": method, "password": password}]}
+              })
+
+          with open("xray_config.json", "w") as f:
+              json.dump(config, f, indent=2)
+          print("[INFO] ✅ 代理配置已生成")
+          PYEOF
+            notify_proxy_error "MODVC_ROXY_NODE_A 解析失败，请检查节点格式"
+            exit 1
+          fi
+
+          if [ -f "use_external_socks.txt" ]; then
+            EXTERNAL_SOCKS=$(cat use_external_socks.txt)
+            echo "[INFO] 测试外部 SOCKS5 代理连接..."
+            if curl -x "$EXTERNAL_SOCKS" -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "MODVC_PROXY_URL=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+              echo "[INFO] ✅ 使用外部 SOCKS5 代理"
+              exit 0
+            fi
+            notify_proxy_error "外部 SOCKS5 代理连接失败或节点已失效，请更换可用节点"
+            exit 1
+          fi
+
+          xray run -c xray_config.json > xray.log 2>&1 &
+          sleep 5
+
+          echo "[INFO] 测试代理连接..."
+          for i in 1 2 3 4 5; do
+            if curl -x http://127.0.0.1:10809 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "MODVC_PROXY_URL=http://127.0.0.1:10809" >> $GITHUB_ENV
+              echo "[INFO] ✅ 代理连接成功"
+              exit 0
+            fi
+            echo "[WARN] 尝试 $i/5..."
+            sleep 3
+          done
+
+          echo "[ERROR] ❌ 代理连接失败"
+          cat xray.log
+          notify_proxy_error "MODVC_ROXY_NODE_A 代理连接失败或节点已失效，请更换可用节点"
+          exit 1
+
+      - name: 🔄 执行自动续期
+        id: run_renew
+        env:
+          MODVC_REFRESH_TOKEN_A: ${{ secrets.MODVC_REFRESH_TOKEN_A }}
+          MODVC_ROXY_NODE_A: ${{ secrets.MODVC_ROXY_NODE_A }}
+          MODVC_PROXY_URL: ${{ env.MODVC_PROXY_URL }}
+          HTTP_PROXY: ${{ env.MODVC_PROXY_URL }}
+          HTTPS_PROXY: ${{ env.MODVC_PROXY_URL }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+        run: |
+          set -o pipefail
+          python modvc_renew_A.py 2>&1 | tee renew.log
+
+      - name: 提取到期时间
+        id: extract_due
+        if: success()
+        run: |
+          DUE_DATE=$(grep -oP '(到期时间|利用期限)[:：]\s*\K\d{4}-\d{2}-\d{2}' renew.log | tail -1 || echo "")
+          if [ -z "$DUE_DATE" ]; then
+            echo "skip_update=true" >> $GITHUB_OUTPUT
+            echo "::warning::未能提取到期时间，跳过 Cron 更新"
+            exit 0
+          fi
+          echo "due_date=$DUE_DATE" >> $GITHUB_OUTPUT
+          echo "skip_update=false" >> $GITHUB_OUTPUT
+          echo "::notice::📅 当前到期时间: $DUE_DATE"
+
+      - name: 修改下次 Cron 时间
+        if: success() && steps.extract_due.outputs.skip_update != 'true'
+        run: |
+          set -e
+
+          DUE_DATE="${{ steps.extract_due.outputs.due_date }}"
+          echo "📅 当前到期时间: $DUE_DATE"
+
+          CURRENT_EPOCH=$(date -u +%s)
+          TARGET_EPOCH=$(date -u -d "$DUE_DATE 00:00:00 UTC -5 days" +%s)
+
+          if [ "$TARGET_EPOCH" -gt "$CURRENT_EPOCH" ]; then
+            NEXT_EPOCH="$TARGET_EPOCH"
+          else
+            NEXT_EPOCH=$((CURRENT_EPOCH + 6 * 3600))
+            echo "::warning::到期前 5 天时间点已过，6 小时后重试"
+          fi
+
+          NEXT_DATE=$(date -u -d "@$NEXT_EPOCH" +"%Y-%m-%d %H:%M")
+          NEXT_MINUTE=$(date -u -d "@$NEXT_EPOCH" +"%-M")
+          NEXT_HOUR=$(date -u -d "@$NEXT_EPOCH" +"%-H")
+          NEXT_DAY=$(date -u -d "@$NEXT_EPOCH" +"%-d")
+          NEXT_MONTH=$(date -u -d "@$NEXT_EPOCH" +"%-m")
+          NEW_CRON="$NEXT_MINUTE $NEXT_HOUR $NEXT_DAY $NEXT_MONTH *"
+
+          echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
+          echo "::notice::📟 新 Cron: $NEW_CRON"
+
+          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git workflow_repo
+          cd workflow_repo
+
+          WORKFLOW_FILE=".github/workflows/modvc_renew_A.yml"
+          if [ ! -f "$WORKFLOW_FILE" ]; then
+            WORKFLOW_FILE=$(find .github/workflows -type f \( -name '*modvc*.yml' -o -name '*ModVC*.yml' -o -name '*modvc*.yaml' -o -name '*ModVC*.yaml' \) | head -n1)
+          fi
+
+          if [ -z "$WORKFLOW_FILE" ] || [ ! -f "$WORKFLOW_FILE" ]; then
+            echo "::error::找不到 ModVC workflow 文件"
+            exit 1
+          fi
+
+          LINE_NUM=$(grep -n "cron: '" "$WORKFLOW_FILE" | head -n1 | cut -d: -f1)
+          if [ -z "$LINE_NUM" ]; then
+            echo "::error::找不到 cron 行"
+            exit 1
+          fi
+
+          sed -i "${LINE_NUM}c\    - cron: '$NEW_CRON'  # 自动更新下次运行时间，到期前 5 天" "$WORKFLOW_FILE"
+
+          if git diff --quiet "$WORKFLOW_FILE"; then
+            echo "::notice::没有变化需要提交"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$WORKFLOW_FILE"
+          git commit -m "🔄 自动更新 ModVC 续期 Cron" \
+                     -m "下次运行: $NEXT_DATE UTC" \
+                     -m "Cron: $NEW_CRON" \
+                     -m "到期时间: $DUE_DATE"
+          git push
+
+          echo "::notice::✅ Cron 更新成功"
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 6
