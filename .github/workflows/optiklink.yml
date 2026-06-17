@@ -5,31 +5,31 @@ on:
   workflow_dispatch:
 jobs:
   keepalive:
-    name: 🔄 执行保活
+    name: 执行保活
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 📥 拉取私有代码
+      - name: 拉取私有代码
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 🟢 安装 Node.js
+      - name: 安装 Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
 
-      - name: 📦 安装依赖
+      - name: 安装依赖
         working-directory: scripts/OptikLink
         run: npm install
 
-      - name: 🌐 安装 Playwright 浏览器
+      - name: 安装 Playwright 浏览器
         working-directory: scripts/OptikLink
         run: npx playwright install chromium --with-deps
 
-      - name: 🛡️ 解析节点并启动 Xray 代理
+      - name: 解析节点并启动 Xray 代理
         env:
           PROXY_NODE: ${{ secrets.OPTIKLINK_PROXY_NODE }}
         run: |
@@ -117,6 +117,7 @@ jobs:
               fp = params.get("fp", ["chrome"])[0]
               flow = params.get("flow", [""])[0]
               pbk = params.get("pbk", [""])[0]
+              sid = params.get("sid", [""])[0]
               host = params.get("host", [sni])[0]
               path = unquote(params.get("path", ["/"])[0])
               
@@ -140,12 +141,15 @@ jobs:
               if flow:
                   outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
               
-              if security == "reality":
-                  outbound["streamSettings"]["realitySettings"] = {
-                      "serverName": sni,
-                      "fingerprint": fp,
-                      "publicKey": pbk
-                  }
+               if security == "reality":
+                   rs = {
+                       "serverName": sni,
+                       "fingerprint": fp,
+                       "publicKey": pbk,
+                   }
+                   if sid:
+                       rs["shortId"] = sid
+                   outbound["streamSettings"]["realitySettings"] = rs
               elif security == "tls":
                   outbound["streamSettings"]["tlsSettings"] = {
                       "serverName": sni,
@@ -344,7 +348,7 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 🚀 运行保活脚本
+      - name: 运行保活脚本
         id: keepalive
         working-directory: scripts/OptikLink
         env:
@@ -355,7 +359,7 @@ jobs:
           GOST_PROXY:        ${{ env.LOCAL_PROXY }}
         run: npx playwright test
 
-      - name: 📣 发送失败通知
+      - name: 发送失败通知
         if: failure() && steps.keepalive.outcome == 'failure'
         env:
           TG_BOT: ${{ secrets.TG_BOT }}
@@ -404,10 +408,20 @@ jobs:
           req.end(body);
           NODE
 
-      - name: 📸 上传失败截图
+      - name: 上传失败截图
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: failure-screenshots
           path: scripts/OptikLink/test-results/
           retention-days: 7
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 6
