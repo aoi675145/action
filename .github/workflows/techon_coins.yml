@@ -3,7 +3,7 @@ name: TechnoHeberg-Coins
 on:
   workflow_dispatch:
   schedule:
-    - cron: "44 0 * * *"
+    - cron: "42 0 * * *"
   
 jobs:
   run_techno_coins:
