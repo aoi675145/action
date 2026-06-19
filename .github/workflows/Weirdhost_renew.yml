@@ -67,6 +67,16 @@ jobs:
           python -m pip install --upgrade pip
           pip install seleniumbase aiohttp pynacl
 
+      - name: 下载 NopeCHA 扩展
+        if: steps.check_renew.outputs.need_renew == 'true'
+        run: |
+          mkdir -p extensions/nopecha
+          wget -q -O extensions/nopecha/chromium.zip \
+            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.1/chromium.zip
+          unzip -q extensions/nopecha/chromium.zip -d extensions/nopecha/unpacked
+          echo "NOPECHA_PATH=$(pwd)/extensions/nopecha/unpacked" >> $GITHUB_ENV
+          echo "[INFO] ✅ NopeCHA 扩展已下载到 $(pwd)/extensions/nopecha/unpacked"
+
       - name: 屏蔽广告域名
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
@@ -381,6 +391,7 @@ jobs:
         env:
           WEIRDHOST_COOKIE: ${{ secrets.WEIRDHOST_COOKIE }}
           WEIRDHOST_PROXY_NODE: ${{ env.PROXY_SERVER }}
+          NOPECHA_PATH: ${{ env.NOPECHA_PATH }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
