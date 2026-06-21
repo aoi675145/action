@@ -3,7 +3,7 @@ name: Kerit-Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 1 */6 * *'
+    - cron: '33 1 */5 * *'
 
 permissions:
   contents: write
@@ -259,13 +259,6 @@ jobs:
           BILLING_KERIT_PROXY_NODE: ${{ env.BILLING_KERIT_PROXY_NODE }}
         run: |
           python3 scripts/kerit/kerit.py 2>&1 | tee renew.log
-
-      - name: 📸 上传截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-screenshots
-          path: "*.png"
 
       - name: 清理运行记录
         if: always()
