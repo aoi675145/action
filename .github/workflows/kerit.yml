@@ -1,4 +1,4 @@
-name: Kerit-Renew
+name: Kerit 续期
 
 on:
   workflow_dispatch:
