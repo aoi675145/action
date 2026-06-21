@@ -360,17 +360,8 @@ jobs:
       - name: 创建截图输出目录
         run: mkdir -p output/screenshots
       
-      - name: 启动虚拟显示
-        run: |
-          export DISPLAY=:99
-          Xvfb :99 -screen 0 1920x1080x24 &
-          sleep 2
-          fluxbox &
-          sleep 1
-      
-      - name: 执行自动续订
+      - name: 🚀 运行脚本
         env:
-          DISPLAY: ":99"
           # 多账号配置
           BILLING_KERIT_MAIL: ${{ secrets.BILLING_KERIT_MAIL }}
           # 其他配置
@@ -381,8 +372,7 @@ jobs:
           PROXY_SOCKS5: ${{ env.PROXY_SOCKS5 }}
           PROXY_HTTP: ${{ env.PROXY_HTTP }}
         run: |
-          export DISPLAY=:99
-          python scripts/BillingKerit/BillingKerit_Renew.py
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/BillingKerit/BillingKerit_Renew.py
       
 #      - name: 上传截图
 #        uses: actions/upload-artifact@v4
