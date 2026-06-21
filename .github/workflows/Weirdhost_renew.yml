@@ -59,7 +59,7 @@ jobs:
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb x11-utils fonts-nanum fonts-noto-cjk
+          sudo apt-get install -y xvfb x11-utils xdotool scrot fonts-nanum fonts-noto-cjk
 
       - name: 安装 Python 依赖
         if: steps.check_renew.outputs.need_renew == 'true'
