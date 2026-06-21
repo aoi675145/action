@@ -2,18 +2,11 @@ name: Kerit-Renew
 
 on:
   workflow_dispatch:
-    inputs:
-      reset_browser_state:
-        description: '清空当前账号浏览器缓存后运行（换服务器/换环境时勾选）'
-        required: false
-        default: false
-        type: boolean
   schedule:
     - cron: '0 1 */6 * *'
 
 permissions:
   contents: write
-  actions: write
 
 jobs:
   renew:
@@ -32,49 +25,19 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 安装系统依赖
         run: |
-          pip install --quiet seleniumbase requests beautifulsoup4
+          sudo apt-get update
+          sudo apt-get install -y \
+            google-chrome-stable \
+            xvfb \
+            x11-utils \
+            xdotool \
+            scrot
 
-      - name: 生成账号专属缓存前缀
-        env:
-          BILLING_KERIT_MAIL: ${{ secrets.BILLING_KERIT_MAIL }}
+      - name: 安装 Python 依赖
         run: |
-          set -e
-          if [[ "$BILLING_KERIT_MAIL" != *"----"* ]]; then
-            echo "::error::BILLING_KERIT_MAIL 格式错误，应为 email----password"
-            exit 1
-          fi
-
-          EMAIL="${BILLING_KERIT_MAIL%%----*}"
-          CACHE_SCOPE=$(printf '%s' "$EMAIL" | sha256sum | cut -c1-16)
-          echo "KERIT_CACHE_PREFIX=kerit-state-${CACHE_SCOPE}-" >> "$GITHUB_ENV"
-          echo "✅ 已生成账号专属缓存前缀"
-
-      - name: 手动清空当前账号浏览器状态缓存
-        if: ${{ github.event_name == 'workflow_dispatch' && inputs.reset_browser_state }}
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "🗑️ 手动清空当前账号浏览器状态缓存..."
-
-          CACHE_KEYS=$(gh cache list --limit 100 --json key -q '.[].key' --repo ${{ github.repository }} | grep "^${KERIT_CACHE_PREFIX}" || true)
-
-          if [ -z "$CACHE_KEYS" ]; then
-            echo "没有找到当前账号缓存"
-          else
-            echo "找到以下缓存:"
-            echo "$CACHE_KEYS"
-            echo ""
-
-            for key in $CACHE_KEYS; do
-              echo "删除: $key"
-              gh cache delete "$key" --repo ${{ github.repository }} || true
-            done
-
-            echo "✅ 当前账号缓存已清空"
-          fi
+          pip install --quiet seleniumbase
 
       - name: 安装并启动 Xray 代理
         env:
@@ -288,28 +251,6 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 恢复浏览器状态缓存
-        id: cache-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: browser_state
-          key: ${{ env.KERIT_CACHE_PREFIX }}${{ github.run_id }}
-          restore-keys: |
-            ${{ env.KERIT_CACHE_PREFIX }}
-
-      - name: 清理 Chrome 锁文件
-        run: |
-          PROFILE_DIR="browser_state/selenium_profile"
-          if [ -d "$PROFILE_DIR" ]; then
-            echo "🧹 清理浏览器锁文件..."
-            find "$PROFILE_DIR" -name "SingletonLock" -delete 2>/dev/null || true
-            find "$PROFILE_DIR" -name "SingletonSocket" -delete 2>/dev/null || true
-            find "$PROFILE_DIR" -name "SingletonCookie" -delete 2>/dev/null || true
-            echo "✅ 清理完成"
-          else
-            echo "📂 用户数据目录不存在，无需清理"
-          fi
-
       - name: 运行续期脚本
         id: run_renew
         env:
@@ -318,35 +259,6 @@ jobs:
           BILLING_KERIT_PROXY_NODE: ${{ env.BILLING_KERIT_PROXY_NODE }}
         run: |
           python3 scripts/kerit/kerit.py 2>&1 | tee renew.log
-
-      - name: 删除旧浏览器状态缓存
-        if: always()
-        continue-on-error: true
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          echo "🗑️ 清理旧缓存..."
-          PREFIX="${KERIT_CACHE_PREFIX}"
-          CACHE_KEYS=$(gh cache list --limit 100 --json key -q '.[].key' --repo ${{ github.repository }} | grep "^${PREFIX}" || true)
-          if [ -z "$CACHE_KEYS" ]; then
-            echo "没有找到旧缓存"
-          else
-            echo "找到以下缓存:"
-            echo "$CACHE_KEYS"
-            echo ""
-            for key in $CACHE_KEYS; do
-              echo "删除: $key"
-              gh cache delete "$key" --repo ${{ github.repository }} || true
-            done
-            echo "✅ 旧缓存清理完成"
-          fi
-
-      - name: 保存浏览器状态缓存
-        if: success()
-        uses: actions/cache/save@v4
-        with:
-          path: browser_state
-          key: ${{ env.KERIT_CACHE_PREFIX }}${{ github.run_id }}
 
       - name: 📸 上传截图
         if: always()
