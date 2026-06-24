@@ -80,11 +80,31 @@ jobs:
           xvfb-run -a node vektal.js
 
       # =========================
-      # 🟡 7️⃣ 上传截图
+      # 🟡 7️⃣ 上传截图到私库
       # =========================
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: screenshots
-          path: screenshots/*
-          retention-days: 1
+      - name: Clone private repo
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
+
+      - name: Copy screenshots
+        run: |
+          mkdir -p /tmp/scripts-repo/scripts/vektal
+          rm -f /tmp/scripts-repo/scripts/vektal/*.png
+          cp -r screenshots/* /tmp/scripts-repo/scripts/vektal/
+
+      - name: Commit and push
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          cd /tmp/scripts-repo
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add scripts/vektal/
+          if git diff --cached --quiet; then
+            echo "No new screenshots to push"
+          else
+            git commit -m "Update screenshots $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            git push https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git main
+          fi
