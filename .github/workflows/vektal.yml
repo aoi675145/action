@@ -1,0 +1,95 @@
+name: Vektal Register (WARP)
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: '23 0 * * *'
+
+  push:
+    paths:
+      - "**.js"
+      - ".github/workflows/**"
+
+jobs:
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # =========================
+      # 🟡 1️⃣ 安装系统依赖
+      # =========================
+      - name: Install system deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+      # =========================
+      # 🟡 2️⃣ 启用 WARP
+      # =========================
+      - name: 创建WARP网络
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: client
+
+      # =========================
+      # 🟡 3️⃣ Playwright
+      # =========================
+      - name: Install playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      # =========================
+      # 🟡 4️⃣ 拉取私库脚本
+      # =========================
+      - name: Fetch private register script
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -L \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            -o vektal.js \
+            "https://api.github.com/repos/aoi675145/scripts/contents/scripts/vektal/vektal.js?ref=main"
+
+      # =========================
+      # 🟡 5️⃣ 调试 IP
+      # =========================
+      - name: Check IP
+        run: |
+          echo "🌍 当前 IP:"
+          curl -s https://api.ipify.org
+          echo
+          curl -s https://ipinfo.io
+
+      # =========================
+      # 🟡 6️⃣ 运行脚本
+      # =========================
+      - name: Run script
+        env:
+          TARGET_URL: ${{ vars.vektal_TARGET_URL }}
+          REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
+          MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
+        run: |
+          mkdir -p screenshots
+          xvfb-run -a node vektal.js
+
+      # =========================
+      # 🟡 7️⃣ 上传截图
+      # =========================
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: screenshots
+          path: screenshots/*
+          retention-days: 1
