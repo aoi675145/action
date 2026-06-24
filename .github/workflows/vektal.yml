@@ -1,4 +1,4 @@
-name: Vektal Register (WARP)
+name: Vektal Register
 
 on:
   workflow_dispatch:
