@@ -21,7 +21,7 @@ jobs:
       # =========================
       # 🟡 1️⃣ 安装系统依赖
       # =========================
-      - name: Install system deps
+      - name: 安装系统依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
@@ -29,16 +29,16 @@ jobs:
       # =========================
       # 🟡 2️⃣ 启用 WARP
       # =========================
-      - name: 创建WARP网络
+      - name: 创建 WARP 网络
         uses: fscarmen/warp-on-actions@v1.3
         with:
           stack: dual
           mode: client
 
       # =========================
-      # 🟡 3️⃣ Playwright
+      # 🟡 3️⃣ 安装 Playwright
       # =========================
-      - name: Install playwright
+      - name: 安装 Playwright
         run: |
           npm init -y
           npm install playwright
@@ -47,7 +47,7 @@ jobs:
       # =========================
       # 🟡 4️⃣ 拉取私库脚本
       # =========================
-      - name: Fetch private register script
+      - name: 拉取私库脚本
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -58,9 +58,9 @@ jobs:
             "https://api.github.com/repos/aoi675145/scripts/contents/scripts/vektal/vektal.js?ref=main"
 
       # =========================
-      # 🟡 5️⃣ 调试 IP
+      # 🟡 5️⃣ 查看当前 IP
       # =========================
-      - name: Check IP
+      - name: 查看当前 IP
         run: |
           echo "🌍 当前 IP:"
           curl -s https://api.ipify.org
@@ -68,9 +68,9 @@ jobs:
           curl -s https://ipinfo.io
 
       # =========================
-      # 🟡 6️⃣ 运行脚本
+      # 🟡 6️⃣ 运行注册脚本
       # =========================
-      - name: Run script
+      - name: 运行注册脚本
         env:
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
@@ -82,19 +82,19 @@ jobs:
       # =========================
       # 🟡 7️⃣ 上传截图到私库
       # =========================
-      - name: Clone private repo
+      - name: 克隆私库
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
 
-      - name: Copy screenshots
+      - name: 复制截图
         run: |
           mkdir -p /tmp/scripts-repo/scripts/vektal
           rm -f /tmp/scripts-repo/scripts/vektal/*.png
           cp -r screenshots/* /tmp/scripts-repo/scripts/vektal/
 
-      - name: Commit and push
+      - name: 提交并推送截图
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -108,3 +108,16 @@ jobs:
             git commit -m "Update screenshots $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             git push https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git main
           fi
+
+      # =========================
+      # 🟡 8️⃣ 清理运行记录
+      # =========================
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 6
