@@ -6,11 +6,6 @@ on:
   schedule:
     - cron: '23 0 * * *'
 
-  push:
-    paths:
-      - "**.js"
-      - ".github/workflows/**"
-
 jobs:
   run:
     runs-on: ubuntu-22.04
