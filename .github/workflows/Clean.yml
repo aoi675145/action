@@ -1,0 +1,65 @@
+name: Cleanup Failed and Cancelled Runs
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *'
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    permissions:
+      actions: write # 必须赋予写入权限
+      contents: read
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Delete failed and cancelled runs
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "开始清理报错 (failure) 的运行记录..."
+          FAILED_RUNS=$(gh run list --status failure --limit 500 --json databaseId --jq '.[].databaseId')
+          if [ -n "$FAILED_RUNS" ]; then
+            for id in $FAILED_RUNS; do
+              echo "正在删除失败的记录 ID: $id"
+              gh api -X DELETE /repos/${{ github.repository }}/actions/runs/$id --silent || true
+            done
+          fi
+
+          echo "----------------------------------------"
+
+          echo "开始清理已取消 (cancelled) 的运行记录..."
+          CANCELLED_RUNS=$(gh run list --status cancelled --limit 500 --json databaseId --jq '.[].databaseId')
+          if [ -n "$CANCELLED_RUNS" ]; then
+            for id in $CANCELLED_RUNS; do
+              echo "正在删除取消的记录 ID: $id"
+              gh api -X DELETE /repos/${{ github.repository }}/actions/runs/$id --silent || true
+            done
+          fi
+
+      - name: Delete previous cleanup runs (清理历史记录)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "开始清理历史的 'Cleanup' 自身记录..."
+          # 过滤出当前这个工作流之前所有 success 状态的记录（不包含当前正在跑的这条）
+          MY_RUNS=$(gh run list --workflow "Cleanup Failed and Cancelled Runs" --status success --limit 100 --json databaseId --jq '.[].databaseId')
+          if [ -n "$MY_RUNS" ]; then
+            for id in $MY_RUNS; do
+              echo "正在删除历史清理记录 ID: $id"
+              gh api -X DELETE /repos/${{ github.repository }}/actions/runs/$id --silent || true
+            done
+          fi
+
+      - name: Kamikaze (自毁当前运行记录)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "任务完成，准备执行自毁程序..."
+          # GitHub API 限制不能直接删除 in_progress 的记录
+          # 这里使用 nohup 将删除指令挂入后台，延迟 3 秒执行
+          # 利用工作流判定为完成，到 Runner 虚拟机被彻底销毁之间的几秒时间差，完成自杀
+          nohup bash -c "sleep 3 && GH_TOKEN=${{ secrets.GITHUB_TOKEN }} gh api -X DELETE /repos/${{ github.repository }}/actions/runs/${{ github.run_id }} --silent" > /dev/null 2>&1 &
