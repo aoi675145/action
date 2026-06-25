@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
 
       - name: 安装依赖
-        run: pip install --quiet requests
+        run: pip install --quiet 'requests[socks]'
 
       - name: 安装并启动代理
         env:
@@ -154,7 +154,7 @@ jobs:
           for i in 1 2 3 4 5; do
             if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] 代理连接成功"
-              echo "http://127.0.0.1:1081" > /tmp/freemchost_proxy
+              echo "socks5h://127.0.0.1:1080" > /tmp/freemchost_proxy
               exit 0
             fi
             sleep 3
@@ -173,7 +173,7 @@ jobs:
         run: |
           if [ -f /tmp/freemchost_proxy ]; then
             export FREEMCHOST_PROXY_NODE=$(cat /tmp/freemchost_proxy)
-            echo "[INFO] 使用代理: $FREEMCHOST_PROXY_NODE"
+            echo "[INFO] 使用代理: 已启用"
           fi
           python3 scripts/freemchost/main.py
 
