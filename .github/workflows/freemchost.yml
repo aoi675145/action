@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
 
       - name: 安装依赖
-        run: pip install --quiet seleniumbase requests
+        run: pip install --quiet requests
 
       - name: 安装并启动代理
         env:
