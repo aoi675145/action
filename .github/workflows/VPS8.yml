@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "10 0 * * *"
+    - cron: "50 0 * * *"
 
 jobs:
   sign:
@@ -56,7 +56,7 @@ jobs:
 
       - name: 安装 Playwright 及 Python 库
         run: |
-          pip install -q playwright requests[socks]
+          pip install -q playwright requests
           playwright install chromium
 
       - name: 下载并解压扩展
