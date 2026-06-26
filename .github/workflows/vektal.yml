@@ -105,12 +105,13 @@ jobs:
 
           if (!entry) process.exit(0);
 
+          const separator = '                    ';
           let accounts = [];
           if (fs.existsSync(logFile)) {
             const current = fs.readFileSync(logFile, 'utf8').trim();
             if (current) {
               accounts = current
-                .split(/[\n,]+/)
+                .split(/\n| {20}|,/)
                 .map((item) => item.trim())
                 .filter(Boolean);
             }
@@ -119,8 +120,8 @@ jobs:
           accounts.push(entry);
 
           const lines = [];
-          for (let i = 0; i < accounts.length; i += 5) {
-            lines.push(accounts.slice(i, i + 5).join(','));
+          for (let i = 0; i < accounts.length; i += 2) {
+            lines.push(accounts.slice(i, i + 2).join(separator));
           }
 
           fs.writeFileSync(logFile, `${lines.join('\n')}\n`);
