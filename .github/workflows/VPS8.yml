@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "3 2 * * *"
+    - cron: "50 0 * * *"
 
 jobs:
   sign:
@@ -361,19 +361,21 @@ jobs:
 
           elif protocol == "ss":
               try:
-                  if "@" in content:
-                      encoded, server_part = content.split("@", 1)
-                      decoded = base64.b64decode(encoded + "==").decode("utf-8")
-                      method, password = decoded.split(":", 1)
-                      address, port = server_part.split(":", 1)
-                  else:
-                      decoded = base64.b64decode(content + "==").decode("utf-8")
-                      if "@" in decoded:
-                          user_part, server_part = decoded.split("@", 1)
-                          method, password = user_part.split(":", 1)
-                          address, port = server_part.split(":", 1)
-                      else:
-                          raise ValueError("无法解析")
+                   if "@" in content:
+                       encoded, server_part = content.split("@", 1)
+                       server_part = server_part.split("?")[0]
+                       decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                       method, password = decoded.split(":", 1)
+                       address, port = server_part.split(":", 1)
+                   else:
+                       decoded = base64.b64decode(content + "==").decode("utf-8")
+                       if "@" in decoded:
+                           user_part, server_part = decoded.split("@", 1)
+                           server_part = server_part.split("?")[0]
+                           method, password = user_part.split(":", 1)
+                           address, port = server_part.split(":", 1)
+                       else:
+                           raise ValueError("无法解析")
               except Exception as e:
                   print(f"[ERROR] Shadowsocks 解析失败: {e}")
                   sys.exit(1)
