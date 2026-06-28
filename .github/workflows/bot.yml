@@ -100,7 +100,7 @@ jobs:
 
             echo "[INFO] 测试 Hysteria2 代理连接..."
             for i in 1 2 3 4 5; do
-              if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
                 echo "[INFO] ✅ Hysteria2 代理连接成功"
                 echo "Bot_PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
                 exit 0
@@ -346,21 +346,27 @@ jobs:
 
           elif protocol == "ss":
               try:
-                   if "@" in content:
-                       encoded, server_part = content.split("@", 1)
-                       server_part = server_part.split("?")[0]
-                       decoded = base64.b64decode(encoded + "==").decode("utf-8")
-                       method, password = decoded.split(":", 1)
-                       address, port = server_part.split(":", 1)
-                   else:
-                       decoded = base64.b64decode(content + "==").decode("utf-8")
-                       if "@" in decoded:
-                           user_part, server_part = decoded.split("@", 1)
-                           server_part = server_part.split("?")[0]
-                           method, password = user_part.split(":", 1)
-                           address, port = server_part.split(":", 1)
-                       else:
-                           raise ValueError("无法解析")
+                  ss_url = urlparse(url)
+                  userinfo = ss_url.username or ""
+                  address = ss_url.hostname or ""
+                  port = ss_url.port
+
+                  if userinfo and address and port:
+                      decoded_userinfo = unquote(userinfo)
+                      if ":" not in decoded_userinfo:
+                          padding = "=" * (-len(decoded_userinfo) % 4)
+                          decoded_userinfo = base64.urlsafe_b64decode(decoded_userinfo + padding).decode("utf-8")
+                      method, password = decoded_userinfo.split(":", 1)
+                  else:
+                      raw = content.split("#", 1)[0].split("?", 1)[0]
+                      padding = "=" * (-len(raw) % 4)
+                      decoded = base64.urlsafe_b64decode(raw + padding).decode("utf-8")
+                      user_part, server_part = decoded.rsplit("@", 1)
+                      method, password = user_part.split(":", 1)
+                      address, port = server_part.rsplit(":", 1)
+
+                  if not address or not port:
+                      raise ValueError("缺少服务器或端口")
               except Exception as e:
                   print(f"[ERROR] Shadowsocks 解析失败: {e}")
                   sys.exit(1)
@@ -399,7 +405,7 @@ jobs:
 
           echo "[INFO] 测试代理连接..."
           for i in 1 2 3 4 5; do
-            if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+            if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] ✅ 代理连接成功"
               echo "Bot_PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
               exit 0
