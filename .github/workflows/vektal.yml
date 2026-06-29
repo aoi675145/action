@@ -1,0 +1,137 @@
+name: Vektal Register
+
+on:
+  workflow_dispatch:
+
+  schedule:
+    - cron: '23 */18 * * *'
+
+jobs:
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # =========================
+      # 🟡 1️⃣ 安装系统依赖
+      # =========================
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+
+      # =========================
+      # 🟡 2️⃣ 安装 Playwright
+      # =========================
+      - name: 安装 Playwright
+        run: |
+          npm init -y
+          npm install playwright
+          npx playwright install --with-deps chromium
+
+      # =========================
+      # 🟡 3️⃣ 拉取私库脚本
+      # =========================
+      - name: 拉取私库脚本
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -L \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            -o vektal.js \
+            "https://api.github.com/repos/aoi675145/scripts/contents/scripts/vektal/vektal.js?ref=main"
+
+      # =========================
+      # 🟡 4️⃣ 克隆私库（logs / 截图用）
+      # =========================
+      - name: 克隆私库
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
+
+      # =========================
+      # 🟡 5️⃣ 安装 sing-box 代理
+      # =========================
+      - name: 安装 sing-box
+        run: |
+          bash <(curl -fsSL https://sing-box.app/deb.sh)
+          sudo apt-get install -y sing-box
+
+      - name: 配置并启动代理
+        env:
+          SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
+        run: |
+          curl -sL -o /tmp/singbox-config.json \
+            "${SINGBOX_SUB_URL}"
+          SING_PORT=$(grep -oP '"listen_port":\s*\K\d+' /tmp/singbox-config.json | head -1)
+          echo "PROXY=http://127.0.0.1:${SING_PORT:-2080}" >> $GITHUB_ENV
+          sudo sing-box run -c /tmp/singbox-config.json >/dev/null 2>&1 &
+          sleep 5
+
+      # =========================
+      # 🟡 6️⃣ 查看当前 IP
+      # =========================
+      - name: 查看当前 IP
+        run: |
+          echo "🌍 当前 IP:"
+          curl -sx "$PROXY" https://api.ipify.org
+          echo
+          curl -sx "$PROXY" https://ipinfo.io
+
+      # =========================
+      # 🟡 7️⃣ 运行注册脚本
+      # =========================
+      - name: 清理旧截图
+        run: |
+          rm -f "$SCREENSHOT_DIR"/*.png 2>/dev/null || true
+
+      - name: 运行注册脚本
+        env:
+          TARGET_URL: ${{ vars.vektal_TARGET_URL }}
+          REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
+          MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
+          LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
+          SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
+        run: |
+          mkdir -p screenshots "$SCREENSHOT_DIR"
+          xvfb-run -a node vektal.js
+
+      # =========================
+      # 🟡 8️⃣ 提交并推送截图 + logs
+      # =========================
+      - name: 提交并推送
+        if: always()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          cd /tmp/scripts-repo
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add scripts/vektal/
+          if git diff --cached --quiet; then
+            echo "No changes to push"
+          else
+            git commit -m "Update $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            git push https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git main
+          fi
+
+      # =========================
+      # 🟡 9️⃣ 清理运行记录
+      # =========================
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 6
