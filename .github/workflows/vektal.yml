@@ -90,80 +90,7 @@ jobs:
           sleep 2
 
       # =========================
-      # 🟡 8️⃣ 配置并启动 sing-box 代理（127.0.0.1:8080）
-      # =========================
-      - name: 启动代理
-        env:
-          SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
-        run: |
-          if [ -z "${SINGBOX_SUB_URL}" ]; then
-            echo "❌ SINGBOX_SUB_URL 未配置"
-            exit 1
-          fi
-          echo "🔍 下载订阅..."
-          curl -sL "$SINGBOX_SUB_URL" > /tmp/subscription.b64
-          if [ ! -s /tmp/subscription.b64 ]; then
-            echo "❌ 下载失败"
-            echo "PROXY=" >> $GITHUB_ENV
-          else
-            echo "✅ 下载成功（$(wc -c < /tmp/subscription.b64) bytes）"
-            echo "🔍 转换订阅..."
-            node -e '
-const fs = require("fs");
-const { URL } = require("url");
-const raw = fs.readFileSync("/tmp/subscription.b64", "utf8");
-const decoded = Buffer.from(raw, "base64").toString("utf8");
-const lines = decoded.split("\n").map(l=>l.trim()).filter(Boolean);
-const target = lines.find(u=>u.startsWith("vless://")) || lines[0];
-console.log("使用:", target.split("?")[0].slice(0,70)+"...");
-const p = new URL(target), q = Object.fromEntries(p.searchParams.entries());
-const o = {type:"vless", server:p.hostname, server_port:parseInt(p.port||443), uuid:p.username, flow:q.flow||"", packet_encoding:"xudp"};
-if (q.security==="tls"||q.sni) {
-  o.tls = {enabled:true, server_name:q.sni||q.host||p.hostname};
-  if (q.fp) o.tls.utls = {enabled:true, fingerprint:q.fp};
-  if (q.insecure==="1"||q.allowInsecure==="1") o.tls.insecure = true;
-}
-if (q.type==="ws"||q.path) {
-  o.transport = {type:"ws", path:q.path||"/"};
-  if (q.host) o.transport.headers = {Host: q.host};
-}
-fs.writeFileSync("/tmp/singbox-config.json", JSON.stringify({log:{level:"error"},inbounds:[{type:"socks",listen:"127.0.0.1",listen_port:8080}],outbounds:[o]}, null, 2));
-console.log("生成完毕 ->", o.type, o.server+":"+o.server_port);
-'
-          fi
-          if [ ! -s /tmp/singbox-config.json ]; then
-            echo "❌ 配置生成失败"
-            echo "⚠️ 回退到 WARP 兜底（无代理）"
-            echo "PROXY=" >> $GITHUB_ENV
-          else
-            echo "✅ 配置生成成功（$(wc -c < /tmp/singbox-config.json) bytes）"
-            echo "PROXY=http://127.0.0.1:8080" >> $GITHUB_ENV
-            sing-box run -c /tmp/singbox-config.json >/dev/null 2>&1 &
-            sleep 5
-            if pgrep -x "sing-box" > /dev/null; then
-              echo "✅ sing-box 已运行"
-            else
-              echo "❌ sing-box 启动失败"
-              sing-box check -c /tmp/singbox-config.json 2>&1 || echo "配置校验失败"
-              echo "⚠️ 回退到 WARP 兜底（无代理）"
-              echo "PROXY=" >> $GITHUB_ENV
-            fi
-          fi
-
-      # =========================
-      # 🟡 9️⃣ 查看当前 IP
-      # =========================
-      - name: 查看当前 IP
-        run: |
-          echo "🌍 当前 IP (通过代理):"
-          curl -sx "$PROXY" https://api.ipify.org
-          echo
-          echo "🌍 当前 IP (直接):"
-          curl -s https://api.ipify.org
-          echo
-
-      # =========================
-      # 🟡 🔟 运行注册脚本
+      # 🟡 8️⃣ 运行注册脚本
       # =========================
       - name: 清理旧截图
         run: |
@@ -174,6 +101,7 @@ console.log("生成完毕 ->", o.type, o.server+":"+o.server_port);
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
           MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
+          SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
           LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
           SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
         run: |
