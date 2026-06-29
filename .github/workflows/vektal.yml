@@ -62,8 +62,9 @@ jobs:
       # =========================
       - name: 安装 sing-box
         run: |
-          bash <(curl -fsSL https://sing-box.app/deb.sh)
-          sudo apt-get install -y sing-box
+          SING_BOX_VER=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep -oP '"tag_name":\s*"v\K[^"]+')
+          wget -q "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VER}/sing-box_${SING_BOX_VER}_linux_amd64.deb" -O /tmp/sing-box.deb
+          sudo dpkg -i /tmp/sing-box.deb
 
       - name: 配置并启动代理
         env:
