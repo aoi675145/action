@@ -70,6 +70,10 @@ jobs:
       # =========================
       # 🟡 6️⃣ 运行注册脚本
       # =========================
+      - name: 清理旧截图
+        run: |
+          rm -f "$SCREENSHOT_DIR"/*.png 2>/dev/null || true
+
       - name: 运行注册脚本
         env:
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
@@ -84,11 +88,6 @@ jobs:
       # =========================
       # 🟡 7️⃣ 提交并推送截图 + logs
       # =========================
-      - name: 复制截图
-        if: always()
-        run: |
-          cp -r screenshots/* "$SCREENSHOT_DIR/" 2>/dev/null || true
-
       - name: 提交并推送
         if: always()
         env:
