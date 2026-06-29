@@ -27,16 +27,7 @@ jobs:
           sudo apt-get install -y xvfb
 
       # =========================
-      # 🟡 2️⃣ 启用 WARP
-      # =========================
-      - name: 创建 WARP 网络
-        uses: fscarmen/warp-on-actions@v1.3
-        with:
-          stack: dual
-          mode: client
-
-      # =========================
-      # 🟡 3️⃣ 安装 Playwright
+      # 🟡 2️⃣ 安装 Playwright
       # =========================
       - name: 安装 Playwright
         run: |
@@ -45,7 +36,7 @@ jobs:
           npx playwright install --with-deps chromium
 
       # =========================
-      # 🟡 4️⃣ 拉取私库脚本
+      # 🟡 3️⃣ 拉取私库脚本
       # =========================
       - name: 拉取私库脚本
         env:
@@ -58,7 +49,7 @@ jobs:
             "https://api.github.com/repos/aoi675145/scripts/contents/scripts/vektal/vektal.js?ref=main"
 
       # =========================
-      # 🟡 5️⃣ 克隆私库（logs / 截图用）
+      # 🟡 4️⃣ 克隆私库（logs / 截图用）
       # =========================
       - name: 克隆私库
         env:
@@ -67,7 +58,7 @@ jobs:
           git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
 
       # =========================
-      # 🟡 6️⃣ 查看当前 IP
+      # 🟡 5️⃣ 查看当前 IP
       # =========================
       - name: 查看当前 IP
         run: |
@@ -77,7 +68,7 @@ jobs:
           curl -s https://ipinfo.io
 
       # =========================
-      # 🟡 7️⃣ 运行注册脚本
+      # 🟡 6️⃣ 运行注册脚本
       # =========================
       - name: 运行注册脚本
         env:
@@ -91,7 +82,7 @@ jobs:
           xvfb-run -a node vektal.js
 
       # =========================
-      # 🟡 8️⃣ 提交并推送截图 + logs
+      # 🟡 7️⃣ 提交并推送截图 + logs
       # =========================
       - name: 复制截图
         if: always()
@@ -115,7 +106,7 @@ jobs:
           fi
 
       # =========================
-      # 🟡 9️⃣ 清理运行记录
+      # 🟡 8️⃣ 清理运行记录
       # =========================
       - name: 清理运行记录
         if: always()
