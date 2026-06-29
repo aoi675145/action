@@ -58,17 +58,36 @@ jobs:
           git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
 
       # =========================
-      # 🟡 5️⃣ 查看当前 IP
+      # 🟡 5️⃣ 安装 sing-box 代理
+      # =========================
+      - name: 安装 sing-box
+        run: |
+          bash <(curl -fsSL https://sing-box.app/deb.sh)
+          sudo apt-get install -y sing-box
+
+      - name: 配置并启动代理
+        run: |
+          curl -L -o /tmp/singbox-config.json \
+            "https://xm.aoi5.dpdns.org/sub?token=f09d3b0977a545f65c6f4ed2bc151d52"
+          SING_PORT=$(grep -oP '"listen_port":\s*\K\d+' /tmp/singbox-config.json | head -1)
+          echo "SING_PORT=$SING_PORT"
+          echo "PROXY=http://127.0.0.1:${SING_PORT:-2080}" >> $GITHUB_ENV
+          sudo sing-box run -c /tmp/singbox-config.json &
+          sleep 5
+          echo "✅ 代理已启动"
+
+      # =========================
+      # 🟡 6️⃣ 查看当前 IP
       # =========================
       - name: 查看当前 IP
         run: |
           echo "🌍 当前 IP:"
-          curl -s https://api.ipify.org
+          curl -sx "$PROXY" https://api.ipify.org
           echo
-          curl -s https://ipinfo.io
+          curl -sx "$PROXY" https://ipinfo.io
 
       # =========================
-      # 🟡 6️⃣ 运行注册脚本
+      # 🟡 7️⃣ 运行注册脚本
       # =========================
       - name: 清理旧截图
         run: |
@@ -86,7 +105,7 @@ jobs:
           xvfb-run -a node vektal.js
 
       # =========================
-      # 🟡 7️⃣ 提交并推送截图 + logs
+      # 🟡 8️⃣ 提交并推送截图 + logs
       # =========================
       - name: 提交并推送
         if: always()
@@ -105,7 +124,7 @@ jobs:
           fi
 
       # =========================
-      # 🟡 8️⃣ 清理运行记录
+      # 🟡 9️⃣ 清理运行记录
       # =========================
       - name: 清理运行记录
         if: always()
