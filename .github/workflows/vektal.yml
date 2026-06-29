@@ -1,4 +1,4 @@
-name: Vektal Register 
+name: Vektal Register
 
 on:
   workflow_dispatch:
@@ -58,7 +58,16 @@ jobs:
             "https://api.github.com/repos/aoi675145/scripts/contents/scripts/vektal/vektal.js?ref=main"
 
       # =========================
-      # 🟡 5️⃣ 查看当前 IP
+      # 🟡 5️⃣ 克隆私库（logs / 截图用）
+      # =========================
+      - name: 克隆私库
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
+
+      # =========================
+      # 🟡 6️⃣ 查看当前 IP
       # =========================
       - name: 查看当前 IP
         run: |
@@ -68,70 +77,28 @@ jobs:
           curl -s https://ipinfo.io
 
       # =========================
-      # 🟡 6️⃣ 运行注册脚本
+      # 🟡 7️⃣ 运行注册脚本
       # =========================
       - name: 运行注册脚本
         env:
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
           MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
+          LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
+          SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
         run: |
-          mkdir -p screenshots
+          mkdir -p screenshots "$SCREENSHOT_DIR"
           xvfb-run -a node vektal.js
 
       # =========================
-      # 🟡 7️⃣ 上传截图到私库
+      # 🟡 8️⃣ 提交并推送截图 + logs
       # =========================
-      - name: 克隆私库
-        if: always()
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
-
       - name: 复制截图
         if: always()
         run: |
-          mkdir -p /tmp/scripts-repo/scripts/vektal/screenshot
-          rm -f /tmp/scripts-repo/scripts/vektal/screenshot/*.png
-          cp -r screenshots/* /tmp/scripts-repo/scripts/vektal/screenshot/
+          cp -r screenshots/* "$SCREENSHOT_DIR/" 2>/dev/null || true
 
-      - name: 追加账号日志
-        if: always()
-        run: |
-          if [ -s account-log-entry.txt ]; then
-            mkdir -p /tmp/scripts-repo/scripts/vektal
-            node <<'NODE'
-          const fs = require('fs');
-          const logFile = '/tmp/scripts-repo/scripts/vektal/logs.txt';
-          const entry = fs.readFileSync('account-log-entry.txt', 'utf8').trim();
-
-          if (!entry) process.exit(0);
-
-          const separator = '                    ';
-          let accounts = [];
-          if (fs.existsSync(logFile)) {
-            const current = fs.readFileSync(logFile, 'utf8').trim();
-            if (current) {
-              accounts = current
-                .split(/\n| {20}|,/)
-                .map((item) => item.trim())
-                .filter(Boolean);
-            }
-          }
-
-          accounts.push(entry);
-
-          const lines = [];
-          for (let i = 0; i < accounts.length; i += 2) {
-            lines.push(accounts.slice(i, i + 2).join(separator));
-          }
-
-          fs.writeFileSync(logFile, `${lines.join('\n')}\n`);
-          NODE
-          fi
-
-      - name: 提交并推送截图
+      - name: 提交并推送
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -141,14 +108,14 @@ jobs:
           git config user.email "github-actions@github.com"
           git add scripts/vektal/
           if git diff --cached --quiet; then
-            echo "No new screenshots to push"
+            echo "No changes to push"
           else
-            git commit -m "Update screenshots $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+            git commit -m "Update $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
             git push https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git main
           fi
 
       # =========================
-      # 🟡 8️⃣ 清理运行记录
+      # 🟡 9️⃣ 清理运行记录
       # =========================
       - name: 清理运行记录
         if: always()
