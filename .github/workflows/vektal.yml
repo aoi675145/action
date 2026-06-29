@@ -101,7 +101,6 @@ jobs:
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
           MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
-          SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
           LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
           SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
         run: |
