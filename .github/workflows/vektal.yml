@@ -24,7 +24,7 @@ jobs:
       - name: 安装系统依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb
+          sudo apt-get install -y xvfb ffmpeg unzip curl
 
       # =========================
       # 🟡 2️⃣ 安装 Playwright
@@ -58,37 +58,78 @@ jobs:
           git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
 
       # =========================
-      # 🟡 5️⃣ 安装 sing-box 代理
+      # 🟡 5️⃣ 安装 sing-box 代理 (1.13.14)
       # =========================
       - name: 安装 sing-box
         run: |
-          SING_BOX_VER=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep -oP '"tag_name":\s*"v\K[^"]+')
-          wget -q "https://github.com/SagerNet/sing-box/releases/download/v${SING_BOX_VER}/sing-box_${SING_BOX_VER}_linux_amd64.deb" -O /tmp/sing-box.deb
-          sudo dpkg -i /tmp/sing-box.deb
+          SINGBOX_VER="1.13.14"
+          curl -Lo /tmp/sing-box.tar.gz "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VER}/sing-box-${SINGBOX_VER}-linux-amd64.tar.gz"
+          tar -xzf /tmp/sing-box.tar.gz -C /tmp
+          sudo mv /tmp/sing-box-*/sing-box /usr/local/bin/
+          sudo chmod +x /usr/local/bin/sing-box
+          sing-box version
 
-      - name: 配置并启动代理
+      # =========================
+      # 🟡 6️⃣ 启用 WARP 网络 (兜底)
+      # =========================
+      - name: 启用 WARP
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: client
+
+      # =========================
+      # 🟡 7️⃣ 配置 DNS
+      # =========================
+      - name: 配置 DNS
+        run: |
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
+          sleep 2
+
+      # =========================
+      # 🟡 8️⃣ 配置并启动 sing-box 代理（127.0.0.1:8080）
+      # =========================
+      - name: 启动代理
         env:
           SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
         run: |
-          curl -sL -o /tmp/singbox-config.json \
-            "${SINGBOX_SUB_URL}"
-          SING_PORT=$(grep -oP '"listen_port":\s*\K\d+' /tmp/singbox-config.json | head -1)
-          echo "PROXY=http://127.0.0.1:${SING_PORT:-2080}" >> $GITHUB_ENV
-          sudo sing-box run -c /tmp/singbox-config.json >/dev/null 2>&1 &
+          if [ -z "${SINGBOX_SUB_URL}" ]; then
+            echo "❌ SINGBOX_SUB_URL 未配置"
+            exit 1
+          fi
+          curl -sL -o /tmp/singbox-config.json "${SINGBOX_SUB_URL}"
+          if [ ! -s /tmp/singbox-config.json ]; then
+            echo "❌ 订阅配置下载失败"
+            exit 1
+          fi
+          echo "✅ 订阅配置下载成功（$(wc -c < /tmp/singbox-config.json) bytes）"
+          echo "PROXY=http://127.0.0.1:8080" >> $GITHUB_ENV
+          sing-box run -c /tmp/singbox-config.json >/dev/null 2>&1 &
           sleep 5
+          if pgrep -x "sing-box" > /dev/null; then
+            echo "✅ sing-box 已运行"
+          else
+            echo "❌ sing-box 启动失败，尝试前台运行查看错误..."
+            sing-box check -c /tmp/singbox-config.json || echo "配置校验失败"
+          fi
 
       # =========================
-      # 🟡 6️⃣ 查看当前 IP
+      # 🟡 9️⃣ 查看当前 IP
       # =========================
       - name: 查看当前 IP
         run: |
-          echo "🌍 当前 IP:"
+          echo "🌍 当前 IP (通过代理):"
           curl -sx "$PROXY" https://api.ipify.org
           echo
-          curl -sx "$PROXY" https://ipinfo.io
+          echo "🌍 当前 IP (直接):"
+          curl -s https://api.ipify.org
+          echo
 
       # =========================
-      # 🟡 7️⃣ 运行注册脚本
+      # 🟡 🔟 运行注册脚本
       # =========================
       - name: 清理旧截图
         run: |
@@ -106,7 +147,7 @@ jobs:
           xvfb-run -a node vektal.js
 
       # =========================
-      # 🟡 8️⃣ 提交并推送截图 + logs
+      # 🟡 1️⃣1️⃣ 提交并推送截图 + logs
       # =========================
       - name: 提交并推送
         if: always()
@@ -125,7 +166,7 @@ jobs:
           fi
 
       # =========================
-      # 🟡 9️⃣ 清理运行记录
+      # 🟡 1️⃣2️⃣ 清理运行记录
       # =========================
       - name: 清理运行记录
         if: always()
