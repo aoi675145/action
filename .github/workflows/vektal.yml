@@ -101,9 +101,13 @@ jobs:
             exit 1
           fi
           echo "🔍 转换订阅为 sing-box 配置..."
-          node -e "
+          node << 'NODE_SCRIPT'
 const { URL } = require('url');
-const raw = require('child_process').execSync('curl -sL \"$SINGBOX_SUB_URL\"', {encoding:'utf8', timeout:30000});
+const { execSync } = require('child_process');
+const fs = require('fs');
+const subUrl = process.env.SINGBOX_SUB_URL;
+if (!subUrl) { console.error("SINGBOX_SUB_URL not set"); process.exit(1); }
+const raw = execSync(`curl -sL "${subUrl}"`, { encoding: 'utf8', timeout: 30000 });
 const decoded = Buffer.from(raw, 'base64').toString('utf8');
 const urls = decoded.split('\n').map(l=>l.trim()).filter(Boolean);
 const target = urls.find(u=>u.startsWith('vless://')) || urls[0];
@@ -122,9 +126,9 @@ if (q.type==='ws'||q.path) {
   o.transport = {type:'ws', path:q.path||'/'};
   if (q.host) o.transport.headers = {Host: q.host};
 }
-require('fs').writeFileSync('/tmp/singbox-config.json', JSON.stringify({log:{level:'error'},inbounds:[{type:'socks',listen:'127.0.0.1',listen_port:8080}],outbounds:[o]}, null, 2));
+fs.writeFileSync('/tmp/singbox-config.json', JSON.stringify({log:{level:'error'},inbounds:[{type:'socks',listen:'127.0.0.1',listen_port:8080}],outbounds:[o]}, null, 2));
 console.log('生成完毕 ->', o.type, o.server+':'+o.server_port);
-"
+NODE_SCRIPT
           if [ ! -s /tmp/singbox-config.json ]; then
             echo "❌ 配置生成失败"
             echo "⚠️ 回退到 WARP 兜底（无代理）"
