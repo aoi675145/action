@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "1 3 * * *"
+    - cron: "50 0 * * *"
 
 jobs:
   sign:
@@ -210,11 +210,14 @@ jobs:
 
               print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
 
+              # 使用 SNI 域名作为 address 以便 DNS 换 IP（CF 节点）
+              connect_addr = sni if sni and sni != address else address
+
               outbound = {
                   "protocol": "vless",
                   "settings": {
                       "vnext": [{
-                          "address": address,
+                          "address": connect_addr,
                           "port": int(port),
                           "users": [{"id": uuid, "encryption": "none"}]
                       }]
