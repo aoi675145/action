@@ -83,18 +83,21 @@ jobs:
       # 🟡 7️⃣ 上传截图到私库
       # =========================
       - name: 克隆私库
+        if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
 
       - name: 复制截图
+        if: always()
         run: |
           mkdir -p /tmp/scripts-repo/scripts/vektal/screenshot
           rm -f /tmp/scripts-repo/scripts/vektal/screenshot/*.png
           cp -r screenshots/* /tmp/scripts-repo/scripts/vektal/screenshot/
 
       - name: 追加账号日志
+        if: always()
         run: |
           if [ -s account-log-entry.txt ]; then
             mkdir -p /tmp/scripts-repo/scripts/vektal
@@ -129,6 +132,7 @@ jobs:
           fi
 
       - name: 提交并推送截图
+        if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
