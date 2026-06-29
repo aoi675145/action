@@ -1,4 +1,4 @@
-name: Packetlabs 续期
+name: Packetlabs 自动续期
 
 on:
   schedule:
@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: Interval Check (Strict 5-day cycle)
+      - name: 检查运行周期
         id: check
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -31,14 +31,14 @@ jobs:
             echo "run=false" >> $GITHUB_OUTPUT
           fi
 
-      - name: 📥 检出私有仓库代码
+      - name: 拉取私有仓库代码
         if: steps.check.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           repository: 'aoi675145/scripts'
           token: ${{ secrets.REPO_TOKEN }}
 
-      - name: 🛡️ 启动万能代理转换网关
+      - name: 启动代理转换网关
         if: steps.check.outputs.run == 'true'
         env:
           MY_PROXY_NODE: ${{ secrets.Packetlabs_PROXY }}
@@ -248,11 +248,21 @@ jobs:
             exit 1
           fi
 
-      - name: 🔧 执行续期
+      - name: 执行续期
         if: steps.check.outputs.run == 'true'
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
           TG_BOT: ${{ secrets.TG_BOT }}
         run: bash scripts/packetlabs/packetlabs.sh
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 6
 
