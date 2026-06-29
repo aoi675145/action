@@ -100,12 +100,19 @@ jobs:
             echo "❌ SINGBOX_SUB_URL 未配置"
             exit 1
           fi
-          curl -sL -o /tmp/singbox-config.json "${SINGBOX_SUB_URL}"
+          echo "🔍 下载订阅内容..."
+          STATUS_CODE=$(curl -sL -w "%{http_code}" -o /tmp/singbox-config.json "${SINGBOX_SUB_URL}")
+          echo "HTTP 状态码: ${STATUS_CODE}"
           if [ ! -s /tmp/singbox-config.json ]; then
-            echo "❌ 订阅配置下载失败"
+            echo "❌ 订阅配置下载失败（空文件）"
             exit 1
           fi
-          echo "✅ 订阅配置下载成功（$(wc -c < /tmp/singbox-config.json) bytes）"
+          echo "文件大小: $(wc -c < /tmp/singbox-config.json) bytes"
+          echo "内容预览前 200 字符:"
+          head -c 200 /tmp/singbox-config.json
+          echo
+          echo "内容类型检测:"
+          file /tmp/singbox-config.json
           echo "PROXY=http://127.0.0.1:8080" >> $GITHUB_ENV
           sing-box run -c /tmp/singbox-config.json >/dev/null 2>&1 &
           sleep 5
@@ -113,7 +120,9 @@ jobs:
             echo "✅ sing-box 已运行"
           else
             echo "❌ sing-box 启动失败，尝试前台运行查看错误..."
-            sing-box check -c /tmp/singbox-config.json || echo "配置校验失败"
+            sing-box check -c /tmp/singbox-config.json 2>&1 || echo "配置校验失败"
+            echo "⚠️ 回退到 WARP 兜底（无代理）"
+            echo "PROXY=" >> $GITHUB_ENV
           fi
 
       # =========================
