@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "34 1 * * *"
+    - cron: "50 0 * * *"
 
 jobs:
   sign:
@@ -118,6 +118,7 @@ jobs:
               if curl -x http://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
                 echo "[INFO] ✅ Hysteria2 代理连接成功"
                 echo "PROXY_SOCKS5=http://127.0.0.1:1080" >> $GITHUB_ENV
+                echo "./hysteria client -c hy2.yaml" > proxy_restart_cmd.txt
                 exit 0
               fi
               echo "[WARN] Hysteria2 尝试 $i/5..."
@@ -406,6 +407,7 @@ jobs:
             EXTERNAL_SOCKS=$(cat use_external_socks.txt)
             echo "PROXY_SOCKS5=$EXTERNAL_SOCKS" >> $GITHUB_ENV
             echo "[INFO] ✅ 使用外部 SOCKS5 代理"
+            echo "external" > proxy_restart_cmd.txt
             exit 0
           fi
 
@@ -417,6 +419,7 @@ jobs:
             if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] ✅ 代理连接成功"
               echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+              echo "./xray/xray run -c xray_config.json" > proxy_restart_cmd.txt
               exit 0
             fi
             echo "[WARN] 尝试 $i/5..."
