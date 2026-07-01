@@ -69,14 +69,14 @@ jobs:
           sudo chmod +x /usr/local/bin/sing-box
           sing-box version
 
-      # =========================
-      # 🟡 6️⃣ 启用 WARP 网络 (兜底)
-      # =========================
-      - name: 启用 WARP
-        uses: fscarmen/warp-on-actions@v1.3
-        with:
-          stack: dual
-          mode: client
+      # # =========================
+      # # 🟡 6️⃣ 启用 WARP 网络 (兜底)
+      # # =========================
+      # - name: 启用 WARP
+      #   uses: fscarmen/warp-on-actions@v1.3
+      #   with:
+      #     stack: dual
+      #     mode: client
 
       # =========================
       # 🟡 7️⃣ 配置 DNS
@@ -101,6 +101,7 @@ jobs:
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
           MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
+          SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
           LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
           SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
         run: |
