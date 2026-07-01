@@ -65,15 +65,18 @@ jobs:
           import os, json, base64, subprocess, time, sys
           from urllib.parse import unquote
 
+          def b64(s):
+              s = s.replace("-", "+").replace("_", "/")
+              pad = 4 - len(s) % 4
+              return base64.b64decode(s + ("=" * pad if pad != 4 else "")).decode()
+
           nodes_dir = os.environ["NODES_DIR"]
           nodes_file = os.path.join(nodes_dir, "SS_NODES.txt")
           skip_file = os.path.join(nodes_dir, "SS_NODES_skip.txt")
 
-          # read all nodes
           with open(nodes_file) as f:
               all_nodes = [l.strip() for l in f if l.strip() and not l.startswith("#")]
 
-          # read skip list
           skip = set()
           if os.path.exists(skip_file):
               with open(skip_file) as f:
@@ -94,28 +97,23 @@ jobs:
                           continue
                       server = server_info[:lc]
                       port = int(server_info[lc + 1:])
-                      pad = 4 - len(user_info) % 4
-                      if pad != 4:
-                          user_info += "=" * pad
                       try:
-                          decoded = base64.urlsafe_b64decode(user_info).decode()
+                          decoded = b64(user_info)
                       except:
                           decoded = unquote(user_info)
                       if ":" not in decoded:
                           continue
                       method, password = decoded.split(":", 1)
                   else:
-                      pad = 4 - len(raw) % 4
-                      if pad != 4:
-                          raw += "=" * pad
-                      decoded = base64.urlsafe_b64decode(raw).decode()
+                      decoded = b64(raw)
                       if "@" not in decoded or ":" not in decoded.split("@")[0]:
                           continue
                       user_part, server_part = decoded.rsplit("@", 1)
                       method, password = user_part.split(":", 1)
                       server, port_str = server_part.rsplit(":", 1)
                       port = int(port_str)
-              except:
+              except Exception as e:
+                  print(f"  parse error: {e}")
                   continue
 
               if not server or server == "127.0.0.1":
