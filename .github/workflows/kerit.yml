@@ -3,7 +3,7 @@ name: Kerit 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 1 */5 * *'
+    - cron: '33 1 * * *'  # 每天 01:33 UTC 触发，由步骤内控制4天一次
 
 permissions:
   contents: write
@@ -20,12 +20,31 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
+      - name: Interval Check (Strict 4-day cycle)
+        id: check
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          DAYS=$(( $(date -u +%s) / 86400 ))
+          REMAINDER=$(( $DAYS % 4 ))
+          if [ $REMAINDER -eq 1 ]; then
+            echo "Today is the scheduled day. Starting workflow..."
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
+            echo "Not today. Skipping (Current remainder: $REMAINDER, Target: 1)."
+            echo "run=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: 设置 Python 环境
+        if: steps.check.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: 安装系统依赖
+        if: steps.check.outputs.run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -36,14 +55,16 @@ jobs:
             scrot
 
       - name: 安装 Python 依赖
+        if: steps.check.outputs.run == 'true'
         run: |
           pip install --quiet seleniumbase requests
 
       - name: 安装并启动 Xray 代理
+        if: steps.check.outputs.run == 'true'
         env:
-          BILLING_KERIT_PROXY_NODE: ${{ secrets.BILLING_KERIT_PROXY_NODE }}
+          KERIT_PROXY: ${{ secrets.KERIT_PROXY }}
         run: |
-          if [ -z "$BILLING_KERIT_PROXY_NODE" ]; then
+          if [ -z "$KERIT_PROXY" ]; then
             echo "[INFO] 未配置代理，直连模式"
             exit 0
           fi
@@ -58,9 +79,9 @@ jobs:
           def mask(s):
               return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
 
-          url = os.environ.get("BILLING_KERIT_PROXY_NODE", "").strip()
+          url = os.environ.get("KERIT_PROXY", "").strip()
           if not url:
-              print("[ERROR] BILLING_KERIT_PROXY_NODE 为空")
+              print("[ERROR] KERIT_PROXY 为空")
               sys.exit(1)
 
           if url.startswith("vless://"):
@@ -228,7 +249,7 @@ jobs:
 
           if [ -f "use_external_socks.txt" ]; then
             EXTERNAL_SOCKS=$(cat use_external_socks.txt)
-            echo "BILLING_KERIT_PROXY_NODE=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "KERIT_PROXY=$EXTERNAL_SOCKS" >> $GITHUB_ENV
             echo "[INFO] ✅ 使用外部 SOCKS5 代理"
             exit 0
           fi
@@ -240,7 +261,7 @@ jobs:
           for i in 1 2 3 4 5; do
             if curl -x http://127.0.0.1:1081 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] ✅ 代理连接成功"
-              echo "BILLING_KERIT_PROXY_NODE=http://127.0.0.1:1081" >> $GITHUB_ENV
+              echo "KERIT_PROXY=http://127.0.0.1:1081" >> $GITHUB_ENV
               exit 0
             fi
             echo "[WARN] 尝试 $i/5..."
@@ -252,11 +273,12 @@ jobs:
           exit 1
 
       - name: 运行续期脚本
+        if: steps.check.outputs.run == 'true'
         id: run_renew
         env:
-          BILLING_KERIT_MAIL: ${{ secrets.BILLING_KERIT_MAIL }}
+          KERITCLOUD: ${{ secrets.KERITCLOUD }}
           TG_BOT: ${{ secrets.TG_BOT }}
-          BILLING_KERIT_PROXY_NODE: ${{ env.BILLING_KERIT_PROXY_NODE }}
+          KERIT_PROXY: ${{ env.KERIT_PROXY }}
         run: |
           python3 scripts/kerit/kerit.py 2>&1 | tee renew.log
 
