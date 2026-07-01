@@ -92,6 +92,8 @@ jobs:
               try:
                   if "@" in raw:
                       user_info, server_info = raw.split("@", 1)
+                      if "?" in server_info:
+                          server_info = server_info.split("?")[0]
                       lc = server_info.rfind(":")
                       if lc < 0:
                           continue
