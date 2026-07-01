@@ -11,6 +11,10 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
 
+    env:
+      SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
+      LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
+
     steps:
       - uses: actions/checkout@v4
 
@@ -93,6 +97,8 @@ jobs:
       # 🟡 8️⃣ 运行注册脚本
       # =========================
       - name: 清理旧截图
+        env:
+          SCREENSHOT_DIR: ${{ env.SCREENSHOT_DIR }}
         run: |
           rm -f "$SCREENSHOT_DIR"/*.png 2>/dev/null || true
 
@@ -102,8 +108,10 @@ jobs:
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
           MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
           SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
+          SCREENSHOT_DIR: ${{ env.SCREENSHOT_DIR }}
+          LOGS_PATH: ${{ env.LOGS_PATH }}
         run: |
-          mkdir -p screenshots "$SCREENSHOT_DIR"
+          mkdir -p "$SCREENSHOT_DIR"
           xvfb-run -a node vektal.js
 
       # =========================
