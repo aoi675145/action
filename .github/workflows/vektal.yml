@@ -69,14 +69,14 @@ jobs:
           sudo chmod +x /usr/local/bin/sing-box
           sing-box version
 
-      # # =========================
-      # # 🟡 6️⃣ 启用 WARP 网络 (兜底)
-      # # =========================
-      # - name: 启用 WARP
-      #   uses: fscarmen/warp-on-actions@v1.3
-      #   with:
-      #     stack: dual
-      #     mode: client
+      # =========================
+      # 🟡 6️⃣ 启用 WARP 网络 (底层隧道)
+      # =========================
+      - name: 启用 WARP
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: client
 
       # =========================
       # 🟡 7️⃣ 配置 DNS
