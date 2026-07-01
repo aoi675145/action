@@ -62,16 +62,13 @@ jobs:
           git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
 
       # =========================
-      # 🟡 5️⃣ 安装 sing-box 代理 (1.13.14)
+      # 🟡 5️⃣ 安装 Xray 代理
       # =========================
-      - name: 安装 sing-box
+      - name: 安装 Xray
         run: |
-          SINGBOX_VER="1.13.14"
-          curl -Lo /tmp/sing-box.tar.gz "https://github.com/SagerNet/sing-box/releases/download/v${SINGBOX_VER}/sing-box-${SINGBOX_VER}-linux-amd64.tar.gz"
-          tar -xzf /tmp/sing-box.tar.gz -C /tmp
-          sudo mv /tmp/sing-box-*/sing-box /usr/local/bin/
-          sudo chmod +x /usr/local/bin/sing-box
-          sing-box version
+          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
+          xray/xray version
 
       # =========================
       # 🟡 6️⃣ 配置 DNS
@@ -101,7 +98,6 @@ jobs:
           SCREENSHOT_DIR: ${{ env.SCREENSHOT_DIR }}
           LOGS_PATH: ${{ env.LOGS_PATH }}
           NODES_DIR: /tmp/scripts-repo/scripts/vektal
-          ENABLE_DEPRECATED_LEGACY_DOMAIN_STRATEGY_OPTIONS: "true"
         run: |
           mkdir -p "$SCREENSHOT_DIR"
           xvfb-run -a node vektal.js
