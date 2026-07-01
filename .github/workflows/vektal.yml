@@ -98,9 +98,10 @@ jobs:
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
           MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
-          SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
           SCREENSHOT_DIR: ${{ env.SCREENSHOT_DIR }}
           LOGS_PATH: ${{ env.LOGS_PATH }}
+          NODES_DIR: /tmp/scripts-repo/scripts/vektal
+          ENABLE_DEPRECATED_LEGACY_DOMAIN_STRATEGY_OPTIONS: "true"
         run: |
           mkdir -p "$SCREENSHOT_DIR"
           xvfb-run -a node vektal.js
