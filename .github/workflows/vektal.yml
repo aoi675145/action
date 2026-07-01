@@ -2,7 +2,6 @@ name: Vektal Register
 
 on:
   workflow_dispatch:
-
   schedule:
     - cron: '23 */18 * * *'
 
@@ -10,10 +9,9 @@ jobs:
   run:
     runs-on: ubuntu-22.04
     timeout-minutes: 30
-
-    env:
-      SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
-      LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
+    permissions:
+      contents: write
+      actions: write
 
     steps:
       - uses: actions/checkout@v4
@@ -22,27 +20,22 @@ jobs:
         with:
           node-version: 20
 
-      # =========================
-      # 🟡 1️⃣ 安装系统依赖
-      # =========================
-      - name: 安装系统依赖
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg unzip curl dnsutils
+          sudo apt-get install -y xvfb curl unzip
 
-      # =========================
-      # 🟡 2️⃣ 安装 Playwright
-      # =========================
-      - name: 安装 Playwright
+      - name: Install Playwright
         run: |
           npm init -y
           npm install playwright
           npx playwright install --with-deps chromium
 
-      # =========================
-      # 🟡 3️⃣ 拉取私库脚本
-      # =========================
-      - name: 拉取私库脚本
+      - name: Download script from private repo
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -52,67 +45,161 @@ jobs:
             -o vektal.js \
             "https://api.github.com/repos/aoi675145/scripts/contents/scripts/vektal/vektal.js?ref=main"
 
-      # =========================
-      # 🟡 4️⃣ 克隆私库（logs / 截图用）
-      # =========================
-      - name: 克隆私库
+      - name: Clone private repo
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
 
-      # =========================
-      # 🟡 5️⃣ 安装 Xray 代理
-      # =========================
-      - name: 安装 Xray
+      - name: Download Xray
         run: |
           wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
           unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
           xray/xray version
 
-      # =========================
-      # 🟡 6️⃣ 配置 DNS
-      # =========================
-      - name: 配置 DNS
-        run: |
-          sudo systemctl stop systemd-resolved 2>/dev/null || true
-          sudo systemctl disable systemd-resolved 2>/dev/null || true
-          sudo rm -f /etc/resolv.conf
-          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
-          sleep 2
-
-      # =========================
-      # 🟡 6️⃣ 运行注册脚本
-      # =========================
-      - name: 清理旧截图
+      - name: Setup proxy with node rotation
         env:
-          SCREENSHOT_DIR: ${{ env.SCREENSHOT_DIR }}
+          NODES_DIR: /tmp/scripts-repo/scripts/vektal
         run: |
-          rm -f "$SCREENSHOT_DIR"/*.png 2>/dev/null || true
+          python3 << 'PYEOF'
+          import os, json, base64, subprocess, time, sys
+          from urllib.parse import unquote
 
-      - name: 运行注册脚本
+          nodes_dir = os.environ["NODES_DIR"]
+          nodes_file = os.path.join(nodes_dir, "SS_NODES.txt")
+          skip_file = os.path.join(nodes_dir, "SS_NODES_skip.txt")
+
+          # read all nodes
+          with open(nodes_file) as f:
+              all_nodes = [l.strip() for l in f if l.strip() and not l.startswith("#")]
+
+          # read skip list
+          skip = set()
+          if os.path.exists(skip_file):
+              with open(skip_file) as f:
+                  skip = set(l.strip() for l in f if l.strip() and not l.startswith("#"))
+
+          nodes = [n for n in all_nodes if n not in skip]
+          print(f"📡 {len(nodes)}/{len(all_nodes)} nodes available")
+
+          for node in nodes:
+              if not node.startswith("ss://"):
+                  continue
+              raw = node[5:].split("#")[0]
+              try:
+                  if "@" in raw:
+                      user_info, server_info = raw.split("@", 1)
+                      lc = server_info.rfind(":")
+                      if lc < 0:
+                          continue
+                      server = server_info[:lc]
+                      port = int(server_info[lc + 1:])
+                      pad = 4 - len(user_info) % 4
+                      if pad != 4:
+                          user_info += "=" * pad
+                      try:
+                          decoded = base64.urlsafe_b64decode(user_info).decode()
+                      except:
+                          decoded = unquote(user_info)
+                      if ":" not in decoded:
+                          continue
+                      method, password = decoded.split(":", 1)
+                  else:
+                      pad = 4 - len(raw) % 4
+                      if pad != 4:
+                          raw += "=" * pad
+                      decoded = base64.urlsafe_b64decode(raw).decode()
+                      if "@" not in decoded or ":" not in decoded.split("@")[0]:
+                          continue
+                      user_part, server_part = decoded.rsplit("@", 1)
+                      method, password = user_part.split(":", 1)
+                      server, port_str = server_part.rsplit(":", 1)
+                      port = int(port_str)
+              except:
+                  continue
+
+              if not server or server == "127.0.0.1":
+                  continue
+
+              config = {
+                  "log": {"loglevel": "warning"},
+                  "inbounds": [
+                      {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                      {"port": 10809, "listen": "127.0.0.1", "protocol": "http"}
+                  ],
+                  "outbounds": [{
+                      "protocol": "shadowsocks",
+                      "settings": {
+                          "servers": [{"address": server, "port": port, "method": method, "password": password}]
+                      }
+                  }]
+              }
+
+              with open("xray_config.json", "w") as f:
+                  json.dump(config, f, indent=2)
+
+              subprocess.run("pkill -f 'xray run' 2>/dev/null; sleep 1", shell=True)
+              proc = subprocess.Popen(
+                  "./xray/xray run -c xray_config.json >/tmp/xray.log 2>&1",
+                  shell=True
+              )
+              time.sleep(4)
+
+              ok = False
+              for _ in range(3):
+                  try:
+                      r = subprocess.run(
+                          ["curl", "-sx", "socks5h://127.0.0.1:10808", "--max-time", "8", "https://api.ipify.org"],
+                          capture_output=True, text=True, timeout=10
+                      )
+                      if r.returncode == 0 and r.stdout.strip():
+                          ok = True
+                          break
+                  except:
+                      pass
+                  time.sleep(3)
+
+              if ok:
+                  ip = r.stdout.strip()
+                  print(f"✅ Proxy OK, IP: {ip}")
+                  with open(os.environ.get("GITHUB_ENV"), "a") as f:
+                      f.write("PROXY=socks5://127.0.0.1:10808\n")
+                  with open("/tmp/active_node.txt", "w") as f:
+                      f.write(node + "\n")
+                  sys.exit(0)
+              else:
+                  print(f"⚠️ Node failed, skipping")
+                  with open(skip_file, "a") as f:
+                      f.write(node + "\n")
+
+          print("❌ All nodes failed")
+          sys.exit(1)
+          PYEOF
+
+      - name: Clean old screenshots
+        env:
+          SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
+        run: rm -f "$SCREENSHOT_DIR"/*.png 2>/dev/null || true
+
+      - name: Run registration
         env:
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
-          MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
-          SCREENSHOT_DIR: ${{ env.SCREENSHOT_DIR }}
-          LOGS_PATH: ${{ env.LOGS_PATH }}
+          SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
+          LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
           NODES_DIR: /tmp/scripts-repo/scripts/vektal
         run: |
           mkdir -p "$SCREENSHOT_DIR"
           xvfb-run -a node vektal.js
 
-      # =========================
-      # 🟡 1️⃣1️⃣ 提交并推送截图 + logs
-      # =========================
-      - name: 提交并推送
+      - name: Push logs and screenshots
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           cd /tmp/scripts-repo
           git config user.name "github-actions"
-          git config user.email "github-actions@github.com"
+          git config user.email "actions@github.com"
           git add scripts/vektal/
           if git diff --cached --quiet; then
             echo "No changes to push"
@@ -121,10 +208,7 @@ jobs:
             git push https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git main
           fi
 
-      # =========================
-      # 🟡 1️⃣2️⃣ 清理运行记录
-      # =========================
-      - name: 清理运行记录
+      - name: Clean old runs
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
