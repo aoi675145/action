@@ -76,7 +76,6 @@ jobs:
         uses: fscarmen/warp-on-actions@v1.3
         with:
           stack: dual
-          mode: client
 
       # =========================
       # 🟡 7️⃣ 配置 DNS
@@ -102,8 +101,6 @@ jobs:
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
           MAX_RETRY: ${{ vars.vektal_MAX_RETRY }}
           SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
-          LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
-          SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
         run: |
           mkdir -p screenshots "$SCREENSHOT_DIR"
           xvfb-run -a node vektal.js
