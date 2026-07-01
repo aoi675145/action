@@ -24,7 +24,7 @@ jobs:
       - name: 安装系统依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb ffmpeg unzip curl
+          sudo apt-get install -y xvfb ffmpeg unzip curl dnsutils
 
       # =========================
       # 🟡 2️⃣ 安装 Playwright
@@ -76,6 +76,7 @@ jobs:
         uses: fscarmen/warp-on-actions@v1.3
         with:
           stack: dual
+          mode: client
 
       # =========================
       # 🟡 7️⃣ 配置 DNS
