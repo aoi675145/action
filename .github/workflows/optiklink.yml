@@ -352,8 +352,7 @@ jobs:
         id: keepalive
         working-directory: scripts/OptikLink
         env:
-          DISCORD_ACCOUNT_1: ${{ secrets.DISCORD_ACCOUNT_1 }}
-          DISCORD_TOKEN_1:   ${{ secrets.DISCORD_TOKEN_1 }}
+          DISCORD_TOKEN_K:   ${{ secrets.DISCORD_TOKEN_K }}
           PANEL_ACCOUNT:     ${{ secrets.PANEL_ACCOUNT }}
           TG_BOT:            ${{ secrets.TG_BOT }}
           GOST_PROXY:        ${{ env.LOCAL_PROXY }}
