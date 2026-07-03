@@ -353,7 +353,7 @@ jobs:
         working-directory: scripts/OptikLink
         env:
           DISCORD_TOKEN_K:   ${{ secrets.DISCORD_TOKEN_K }}
-          PANEL_ACCOUNT:     ${{ secrets.PANEL_ACCOUNT }}
+          OPTIKLINK:     ${{ secrets.OPTIKLINK }}
           TG_BOT:            ${{ secrets.TG_BOT }}
           GOST_PROXY:        ${{ env.LOCAL_PROXY }}
         run: npx playwright test
