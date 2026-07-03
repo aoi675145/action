@@ -252,7 +252,7 @@ jobs:
           PYEOF
 
           echo "[INFO] 检查 Bot-Hosting 可访问..."
-curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://bot-hosting.net/ | sed -n '1,8p'
+          curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://bot-hosting.net/ | sed -n '1,8p'
 
       - name: 🚀 运行续期脚本
         env:
