@@ -1,0 +1,351 @@
+name: Bot-Hosting 自动续期
+
+on:
+  schedule:
+    - cron: '18 15 21 4 *' # 下一个: 2026-04-21 15:18 UTC (到期前2天自动执行)
+  workflow_dispatch:
+
+jobs:
+  renew:
+    name: 执行续期
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: 📥 拉取当前配置仓库
+        uses: actions/checkout@v4
+        with:
+          # 使用你截图中的 REPO_TOKEN
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - name: 📥 拉取私有脚本库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: scripts_repo
+          sparse-checkout: scripts/bot-new/bot-new.py
+
+      - name: 🐍 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 📦 安装依赖
+        run: |
+          pip install seleniumbase Pillow
+          sudo apt-get install -y xvfb
+
+      - name: 🔧 修复 DNS
+        run: |
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
+
+      - name: 安装并启动代理
+        env:
+          BOTNEW_PROXY: ${{ secrets.PROXY_URL }}
+        run: |
+          if [ -z "${PROXY_URL}" ]; then
+            echo "[ERROR] PROXY_URL 未配置，禁止直连"
+            exit 1
+          fi
+
+          wget -q https://github.com/XTLS/Xray-core/releases/download/v1.8.24/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+
+          python3 << 'PYEOF'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          proxy_url = os.environ["PROXY_URL"].strip()
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def truthy(value):
+              return str(value).lower() in {"1", "true", "yes"}
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
+
+              if stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "allowInsecure": truthy(query.get("allowInsecure", query.get("insecure", "0"))),
+                  }
+
+              if transport_type == "tcp":
+                  stream_settings["tcpSettings"] = {
+                      "header": {"type": query.get("headerType", "none")}
+                  }
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {
+                      "path": query.get("path", "/"),
+                      "headers": headers,
+                  }
+              elif transport_type == "http":
+                  stream_settings["httpSettings"] = {
+                      "host": [h for h in query.get("host", "").split(",") if h],
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "encryption": qs.get("encryption", "none"),
+                              "flow": qs.get("flow", ""),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(qs, host),
+              }
+          else:
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+              }
+
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "alterId": int(vmess.get("aid", 0) or 0),
+                              "security": vmess.get("scy", "auto"),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(query, host),
+              }
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{
+                  "listen": "127.0.0.1",
+                  "port": 8080,
+                  "protocol": "http",
+              }],
+              "outbounds": [outbound],
+          }
+
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PYEOF
+
+          ./xray-bin/xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 2
+          ./xray-bin/xray version
+          sed -n '1,20p' xray.log || true
+
+          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/bothost_proxy_ip; then
+          python3 - <<'PYEOF'
+          ip = open("/tmp/botost_proxy_ip", encoding="utf-8").read().strip()
+          parts = ip.split(".")
+          if len(parts) == 4:
+              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
+          elif len(ip) > 8:
+              ip = f"{ip[:4]}***{ip[-4:]}"
+          else:
+              ip = "***"
+          print(f"[INFO] ✅ 代理可用，出口 IP: {ip}")
+          PYEOF
+            echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+          else
+            echo "[ERROR] ❌ 代理不可用，禁止直连"
+            cat xray.log
+            exit 1
+          fi
+
+      - name: 检查脚本代理出口
+        run: |
+          if [ -z "${PROXY_SERVER}" ]; then
+            echo "[ERROR] PROXY_SERVER 为空，禁止直连"
+            exit 1
+          fi
+
+          echo "[INFO] 检查代理出口 IP..."
+          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org >/tmp/freeze_check_ip
+          python3 - <<'PYEOF'
+          ip = open("/tmp/freeze_check_ip", encoding="utf-8").read().strip()
+          parts = ip.split(".")
+          if len(parts) == 4:
+              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
+          elif len(ip) > 8:
+              ip = f"{ip[:4]}***{ip[-4:]}"
+          else:
+              ip = "***"
+          print(f"[INFO] 代理出口 IP: {ip}")
+          PYEOF
+
+          echo "[INFO] 检查 Bot-Hosting 可访问..."
+curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://bot-hosting.net/ | sed -n '1,8p'
+
+      - name: 🚀 运行续期脚本
+        env:
+          DISCORD_TOKEN_1: ${{ secrets.DISCORD_TOKEN }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          BOTNEW_PROXY: ${{ env.PROXY_SERVER }}
+        run: xvfb-run python scripts_repo/scripts/bot-new/bot-new.py
+
+      - name: ⚙️ 自动修改下一次运行时间
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          WORKFLOW_FILE: .github/workflows/BotHost_Renew.yml
+        run: |
+          set -e
+
+          python3 << 'EOF'
+          import os
+          import re
+          import sys
+          from datetime import datetime, timedelta, timezone
+
+          workflow_file = os.environ.get("WORKFLOW_FILE")
+          date_file = 'next_time.txt'
+          now_utc = datetime.now(timezone.utc)
+          target_date = None
+
+          if os.path.exists(date_file):
+              with open(date_file, 'r', encoding='utf-8') as f:
+                  content = f.read().upper()
+
+              d_match = re.search(r'(\d+)\s*DAY', content)
+              h_match = re.search(r'(\d+\.?\d*)\s*HOUR', content)
+
+              days = int(d_match.group(1)) if d_match else 0
+              hours = float(h_match.group(1)) if h_match else 0
+
+              expire_time = now_utc + timedelta(days=days, hours=hours)
+              target_date = expire_time - timedelta(days=2)
+
+          if not target_date or target_date <= now_utc:
+              target_date = now_utc + timedelta(hours=12)
+              reason = "时间不足或解析失败，12h后重试"
+          else:
+              reason = "到期前2天自动执行"
+
+          new_cron = f"{target_date.minute} {target_date.hour} {target_date.day} {target_date.month} *"
+          next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC ({reason})"
+
+          if not os.path.exists(workflow_file):
+              print(f"❌ 找不到文件: {workflow_file}")
+              sys.exit(1)
+
+          with open(workflow_file, 'r', encoding='utf-8') as f:
+              workflow_content = f.read()
+
+          # 替换 schedule 里的 cron 行，并同步更新注释里的下次执行时间。
+          cron_pattern = r"(^\s*-\s+cron:\s*)'[^']+'(\s*#.*)?$"
+          cron_replacement = rf"\1'{new_cron}' # 下一个: {next_date_str}"
+          new_content, count = re.subn(
+              cron_pattern,
+              cron_replacement,
+              workflow_content,
+              count=1,
+              flags=re.MULTILINE,
+          )
+
+          if count == 0:
+              print("❌ 未找到可替换的 cron 行")
+              sys.exit(1)
+
+          with open(workflow_file, 'w', encoding='utf-8') as f:
+              f.write(new_content)
+
+          print(f"✅ 成功计算并更新计划: {new_cron}")
+          EOF
+
+          echo "[INFO] 检查 workflow 文件是否有变化..."
+          if git diff --quiet -- "$WORKFLOW_FILE"; then
+            echo "[INFO] 无变更"
+          else
+            echo "[INFO] 检测到变更，开始提交"
+            git add "$WORKFLOW_FILE"
+            git -c user.name="github-actions[bot]" -c user.email="github-actions[bot]@users.noreply.github.com" commit -m "auto: 调整下一次续期时间"
+            git push https://x-access-token:${GITHUB_TOKEN}@github.com/${{ github.repository }}.git HEAD:${{ github.ref_name }}
+            echo "[INFO] workflow 时间已自动更新"
+          fi
+
+      - name: 🧹 清理运行记录
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 5
