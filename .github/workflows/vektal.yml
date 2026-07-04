@@ -8,7 +8,6 @@ on:
 permissions:
   contents: write
   actions: write
-  workflows: write
 
 jobs:
   run:
@@ -286,12 +285,13 @@ jobs:
           fi
           next_cron=$(tr -d '\n\r' < next_run.txt)
           echo "cron: $next_cron"
+          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
+          cd cron_repo
           sed -i "s|- cron: '.*'|- cron: '$next_cron'|" .github/workflows/vektal.yml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git remote set-url origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
           git add .github/workflows/vektal.yml
-          git diff --cached --quiet || (git commit -m "auto: cron $next_cron" && git push origin HEAD:${{ github.ref_name }})
+          git diff --cached --quiet || (git commit -m "auto: cron $next_cron" && git push)
 
       - name: 清理运行记录
         if: always()
