@@ -30,27 +30,24 @@ jobs:
           npm install playwright
           npx playwright install --with-deps chromium
 
-      - name: Enable WARP
-        uses: fscarmen/warp-on-actions@v1.3
-        with:
-          stack: dual
-          mode: client
-
-      - name: Fix DNS
+      - name: Install sing-box
         run: |
-          sudo systemctl stop systemd-resolved 2>/dev/null || true
-          sudo systemctl disable systemd-resolved 2>/dev/null || true
-          sudo rm -f /etc/resolv.conf
-          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
-          sleep 2
+          VERSION=$(curl -s https://api.github.com/repos/SagerNet/sing-box/releases/latest | grep tag_name | cut -d'"' -f4 | sed 's/^v//')
+          curl -sL -o /tmp/sb.tgz "https://github.com/SagerNet/sing-box/releases/download/v${VERSION}/sing-box-${VERSION}-linux-amd64.tar.gz"
+          tar -xzf /tmp/sb.tgz -C /tmp/
+          sudo mv /tmp/sing-box-*/sing-box /usr/local/bin/
+          sing-box version
 
       - name: Run registration
         env:
+          SINGBOX_SUB_URL: ${{ secrets.SINGBOX_SUB_URL }}
+          SINGLE_PROXY: ${{ secrets.SINGLE_PROXY }}
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
+          MAX_RETRY: ${{ vars.vektal_MAX_RETRY || '10' }}
         run: |
           mkdir -p "scripts/vektal/screenshots"
-          xvfb-run -a node scripts/vektal/vektal.js
+          python3 scripts/vektal/proxy_setup.py
 
       - name: Push logs and screenshots
         if: always()
