@@ -1,4 +1,4 @@
-name: Ateex Daily Credits
+name: Ateex Coins
 
 on:
   workflow_dispatch:
