@@ -251,6 +251,16 @@ jobs:
             curl -s https://ipinfo.io | mask_ip
           fi
 
+      - name: API discovery (temp debug)
+        env:
+          Ateex_ACCOUNTS: ${{ secrets.Ateex_ACCOUNTS }}
+          Ateex_REMEMBER_COOKIE: ${{ secrets.Ateex_REMEMBER_COOKIE }}
+          Ateex_RUNTIME_PROXY: ${{ env.Ateex_RUNTIME_PROXY }}
+          Ateex_PROXY_STATUS: ${{ env.Ateex_PROXY_STATUS }}
+        run: |
+          mkdir -p Ateex/screenshots
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python Ateex/debug_api.py || true
+
       - name: Fetch private Ateex script
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
