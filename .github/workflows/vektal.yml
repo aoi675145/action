@@ -51,6 +51,7 @@ jobs:
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
           MAX_RETRY: ${{ vars.vektal_MAX_RETRY || '10' }}
         run: |
+          pip install pyyaml -q
           mkdir -p "scripts/vektal/screenshots"
           python3 scripts/vektal/proxy_setup.py
 
