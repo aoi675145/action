@@ -16,19 +16,26 @@ jobs:
 
     steps:
       - name: ⏰ Interval Check（每3天执行一次）
+        id: check
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
           BASE_TS=$(date -u -d "2026-07-03" +%s)
           NOW_TS=$(date -u +%s)
           DAYS=$(( (NOW_TS - BASE_TS) / 86400 ))
           REM=$(( DAYS % 3 ))
           echo "[INFO] 基准: 2026-07-03, 当前天数差: $DAYS, 余数: $REM"
-          if [ "$REM" -ne 0 ]; then
+          if [ "$REM" -eq 0 ]; then
+            echo "run=true" >> $GITHUB_OUTPUT
+          else
             echo "[INFO] ⏭️ 今天非执行日，跳过续期"
-            exit 0
+            echo "run=false" >> $GITHUB_OUTPUT
           fi
-          echo "[INFO] ✅ 今天为执行日，继续续期"
 
       - name: ☁️ 拉取私有脚本库
+        if: steps.check.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -37,16 +44,19 @@ jobs:
           sparse-checkout: scripts/bot-new/bot-new.py
 
       - name: 🐍 安装 Python
+        if: steps.check.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
       - name: 📦 安装依赖
+        if: steps.check.outputs.run == 'true'
         run: |
           pip install seleniumbase Pillow
           sudo apt-get install -y xvfb
 
       - name: 🔧 修复 DNS
+        if: steps.check.outputs.run == 'true'
         run: |
           sudo systemctl stop systemd-resolved 2>/dev/null || true
           sudo systemctl disable systemd-resolved 2>/dev/null || true
@@ -238,6 +248,7 @@ jobs:
           fi
 
       - name: 检查脚本代理出口
+        if: steps.check.outputs.run == 'true'
         run: |
           if [ -z "${PROXY_SERVER}" ]; then
             echo "[ERROR] PROXY_SERVER 为空，禁止直连"
@@ -262,6 +273,7 @@ jobs:
           curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://bot-hosting.net/ | sed -n '1,8p'
 
       - name: 🚀 运行续期脚本
+        if: steps.check.outputs.run == 'true'
         env:
           DISCORD_TOKEN_1: ${{ secrets.DISCORD_TOKEN_1 }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
