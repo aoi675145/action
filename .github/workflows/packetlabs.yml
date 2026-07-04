@@ -57,7 +57,7 @@ jobs:
             chmod +x xray-bin/xray
             sudo mv xray-bin/xray /usr/local/bin/xray
 
-            cat > /tmp/gen_proxy.py << 'PYEOF'
+            python3 << 'PYEOF'
           import os, sys, json, base64
           from urllib.parse import parse_qs, unquote, urlparse
           url = os.environ.get("MY_PROXY_NODE", "").strip()
@@ -109,10 +109,12 @@ jobs:
                   c = url[5:].split("#")[0]
                   if "@" in c:
                       e, s = c.split("@", 1); d = base64.b64decode(e + "==").decode(); m, pw = d.split(":", 1); a, po = s.split(":", 1)
+                      po = po.split("?")[0]
                   else:
                       d = base64.b64decode(c + "==").decode()
                       if "@" in d:
                           u, s = d.split("@", 1); m, pw = u.split(":", 1); a, po = s.split(":", 1)
+                          po = po.split("?")[0]
                       else:
                           raise ValueError("ss parse error")
                   config["outbounds"].append({"protocol": "shadowsocks", "settings": {"servers": [{"address": a, "port": int(po), "method": m, "password": pw}]}})
@@ -122,7 +124,6 @@ jobs:
               print("解析失败")
               sys.exit(1)
           PYEOF
-          python3 /tmp/gen_proxy.py
 
             if [ -f "external_socks.txt" ]; then
               EXT_PROXY=$(cat external_socks.txt)
