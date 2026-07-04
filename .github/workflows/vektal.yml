@@ -1,0 +1,283 @@
+name: Vektal Coins
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 */7 * *'
+
+jobs:
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Xray
+        run: |
+          if [ -z "${{ secrets.Vektal__ROXY }}" ]; then
+            echo "[proxy] Vektal__ROXY 未配置，使用直连"
+            echo "Vektal_PROXY_STATUS=网络模式：直连 ⚠️" >> $GITHUB_ENV
+            exit 0
+          fi
+          if ! wget -q https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip; then
+            echo "[proxy] Xray 下载失败，回退直连"
+            echo "Vektal_PROXY_STATUS=网络模式：直连 ⚠️" >> $GITHUB_ENV
+            exit 0
+          fi
+          mkdir -p xray-bin
+          if ! unzip -oq Xray-linux-64.zip -d xray-bin; then
+            echo "[proxy] Xray 解压失败，回退直连"
+            echo "Vektal_PROXY_STATUS=网络模式：直连 ⚠️" >> $GITHUB_ENV
+            exit 0
+          fi
+          chmod +x xray-bin/xray
+          if ! sudo mv xray-bin/xray /usr/local/bin/xray; then
+            echo "[proxy] Xray 安装失败，回退直连"
+            echo "Vektal_PROXY_STATUS=网络模式：直连 ⚠️" >> $GITHUB_ENV
+            exit 0
+          fi
+
+      - name: Build Xray config
+        env:
+          PROXY_URL: ${{ secrets.Vektal__ROXY }}
+        run: |
+          if [ -z "$PROXY_URL" ]; then
+            echo "[proxy] Vektal__ROXY 未配置，跳过代理配置"
+            exit 0
+          fi
+          if ! python - <<'PY'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          proxy_url = os.environ["PROXY_URL"]
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
+
+              if stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                  }
+
+              if transport_type == "tcp":
+                  header_type = query.get("headerType", "none")
+                  stream_settings["tcpSettings"] = {
+                      "header": {"type": header_type}
+                  }
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {
+                      "path": query.get("path", "/"),
+                      "headers": headers,
+                  }
+              elif transport_type == "http":
+                  host_list = [h for h in query.get("host", "").split(",") if h]
+                  stream_settings["httpSettings"] = {
+                      "host": host_list,
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "encryption": qs.get("encryption", "none"),
+                              "flow": qs.get("flow", ""),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(qs, host),
+              }
+          else:
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+              }
+
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "alterId": int(vmess.get("aid", 0) or 0),
+                              "security": vmess.get("scy", "auto"),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(query, host),
+              }
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{
+                  "listen": "127.0.0.1",
+                  "port": 8080,
+                  "protocol": "http",
+              }],
+              "outbounds": [outbound],
+          }
+
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PY
+          then
+            echo "[proxy] 代理配置不可用，回退直连"
+            echo "Vektal_PROXY_STATUS=网络模式：直连 ⚠️" >> $GITHUB_ENV
+            rm -f xray-config.json
+          fi
+
+      - name: Start Xray proxy
+        run: |
+          if [ ! -s xray-config.json ]; then
+            echo "[proxy] 未生成 Xray 配置，使用直连"
+            echo "Vektal_PROXY_STATUS=网络模式：直连 ⚠️" >> $GITHUB_ENV
+            exit 0
+          fi
+          nohup xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 2
+          if ! pgrep -x xray >/dev/null; then
+            echo "[proxy] Xray 启动失败，回退直连"
+            sed -n '1,20p' xray.log || true
+            echo "Vektal_PROXY_STATUS=网络模式：直连 ⚠️" >> $GITHUB_ENV
+            exit 0
+          fi
+          xray version
+          sed -n '1,20p' xray.log || true
+
+      - name: Setup environment
+        env:
+          DEBIAN_FRONTEND: noninteractive
+          NEEDRESTART_MODE: a
+        run: |
+          if ! command -v xvfb-run >/dev/null; then
+            sudo -E apt-get update -qq
+            sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb
+          fi
+          pip install --quiet seleniumbase requests
+
+      - name: Check IP
+        run: |
+          mask_ip() {
+            python -c 'import re,sys; print(re.sub(r"\b(\d{1,3})\.\d{1,3}\.\d{1,3}\.(\d{1,3})\b", r"\1.xxx.xxx.\2", sys.stdin.read()))'
+          }
+          if [ ! -s xray-config.json ] || ! pgrep -x xray >/dev/null; then
+            echo "[proxy] 使用直连"
+            echo "Vektal_PROXY_STATUS=网络模式：直连 ⚠️" >> $GITHUB_ENV
+            curl -s https://api.ipify.org | mask_ip && echo
+            curl -s https://ipinfo.io | mask_ip
+            exit 0
+          fi
+          if curl -fsS --max-time 15 --proxy http://127.0.0.1:8080 https://api.ipify.org >/tmp/vektal_proxy_ip; then
+            echo "[proxy] 代理可用，出口 IP: $(cat /tmp/vektal_proxy_ip | mask_ip)"
+            echo "Vektal_RUNTIME_PROXY=127.0.0.1:8080" >> $GITHUB_ENV
+            echo "Vektal_PROXY_STATUS=网络模式：代理" >> $GITHUB_ENV
+            curl -s --proxy http://127.0.0.1:8080 https://ipinfo.io | mask_ip
+          else
+            echo "[proxy] 代理不可用，回退直连"
+            echo "Vektal_PROXY_STATUS=网络模式：直连 ⚠️" >> $GITHUB_ENV
+            curl -s https://api.ipify.org | mask_ip && echo
+            curl -s https://ipinfo.io | mask_ip
+          fi
+
+      - name: Fetch private script
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -sL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.raw" \
+            -o vektal.py \
+            "https://api.github.com/repos/aoi675145/scripts/contents/scripts/vektal/vektal.py?ref=main"
+
+      - name: Run full flow
+        env:
+          Vektal: ${{ secrets.Vektal }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          Vektal_RUNTIME_PROXY: ${{ env.Vektal_RUNTIME_PROXY }}
+          Vektal_PROXY_STATUS: ${{ env.Vektal_PROXY_STATUS }}
+        run: |
+          mkdir -p screenshots
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python vektal.py
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
