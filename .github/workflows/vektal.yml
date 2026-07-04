@@ -7,27 +7,22 @@ on:
 
 jobs:
   run:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
       contents: write
       actions: write
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout private repo
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
 
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install system deps
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb curl unzip
 
       - name: Install Playwright
         run: |
@@ -35,169 +30,33 @@ jobs:
           npm install playwright
           npx playwright install --with-deps chromium
 
-      - name: Download script from private repo
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      - name: Enable WARP
+        uses: fscarmen/warp-on-actions@v1.3
+        with:
+          stack: dual
+          mode: client
+
+      - name: Fix DNS
         run: |
-          curl -L \
-            -H "Authorization: Bearer ${REPO_TOKEN}" \
-            -H "Accept: application/vnd.github.raw" \
-            -o vektal.js \
-            "https://api.github.com/repos/aoi675145/scripts/contents/scripts/vektal/vektal.js?ref=main"
-
-      - name: Clone private repo
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          git clone https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git /tmp/scripts-repo
-
-      - name: Download Xray
-        run: |
-          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
-          xray/xray version
-
-      - name: Setup proxy with node rotation
-        env:
-          NODES_DIR: /tmp/scripts-repo/scripts/vektal
-        run: |
-          python3 << 'PYEOF'
-          import os, json, base64, subprocess, time, sys
-          from urllib.parse import unquote
-
-          def b64(s):
-              s = s.replace("-", "+").replace("_", "/")
-              pad = 4 - len(s) % 4
-              return base64.b64decode(s + ("=" * pad if pad != 4 else "")).decode()
-
-          nodes_dir = os.environ["NODES_DIR"]
-          nodes_file = os.path.join(nodes_dir, "SS_NODES.txt")
-          skip_file = os.path.join(nodes_dir, "SS_NODES_skip.txt")
-
-          with open(nodes_file) as f:
-              all_nodes = [l.strip() for l in f if l.strip() and not l.startswith("#")]
-
-          skip = set()
-          if os.path.exists(skip_file):
-              with open(skip_file) as f:
-                  skip = set(l.strip() for l in f if l.strip() and not l.startswith("#"))
-
-          nodes = [n for n in all_nodes if n not in skip]
-          print(f"📡 {len(nodes)}/{len(all_nodes)} nodes available")
-
-          for node in nodes:
-              if not node.startswith("ss://"):
-                  continue
-              raw = node[5:].split("#")[0]
-              try:
-                  if "@" in raw:
-                      user_info, server_info = raw.split("@", 1)
-                      if "?" in server_info:
-                          server_info = server_info.split("?")[0]
-                      lc = server_info.rfind(":")
-                      if lc < 0:
-                          continue
-                      server = server_info[:lc]
-                      port = int(server_info[lc + 1:])
-                      try:
-                          decoded = b64(user_info)
-                      except:
-                          decoded = unquote(user_info)
-                      if ":" not in decoded:
-                          continue
-                      method, password = decoded.split(":", 1)
-                  else:
-                      decoded = b64(raw)
-                      if "@" not in decoded or ":" not in decoded.split("@")[0]:
-                          continue
-                      user_part, server_part = decoded.rsplit("@", 1)
-                      method, password = user_part.split(":", 1)
-                      server, port_str = server_part.rsplit(":", 1)
-                      port = int(port_str)
-              except Exception as e:
-                  print(f"  parse error: {e}")
-                  continue
-
-              if not server or server == "127.0.0.1":
-                  continue
-
-              config = {
-                  "log": {"loglevel": "warning"},
-                  "inbounds": [
-                      {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
-                      {"port": 10809, "listen": "127.0.0.1", "protocol": "http"}
-                  ],
-                  "outbounds": [{
-                      "protocol": "shadowsocks",
-                      "settings": {
-                          "servers": [{"address": server, "port": port, "method": method, "password": password}]
-                      }
-                  }]
-              }
-
-              with open("xray_config.json", "w") as f:
-                  json.dump(config, f, indent=2)
-
-              subprocess.run("pkill -f 'xray run' 2>/dev/null; sleep 1", shell=True)
-              proc = subprocess.Popen(
-                  "./xray/xray run -c xray_config.json >/tmp/xray.log 2>&1",
-                  shell=True
-              )
-              time.sleep(4)
-
-              ok = False
-              for _ in range(3):
-                  try:
-                      r = subprocess.run(
-                          ["curl", "-sx", "socks5h://127.0.0.1:10808", "--max-time", "8", "https://api.ipify.org"],
-                          capture_output=True, text=True, timeout=10
-                      )
-                      if r.returncode == 0 and r.stdout.strip():
-                          ok = True
-                          break
-                  except:
-                      pass
-                  time.sleep(3)
-
-              if ok:
-                  ip = r.stdout.strip()
-                  print(f"✅ Proxy OK, IP: {ip}")
-                  with open(os.environ.get("GITHUB_ENV"), "a") as f:
-                      f.write("PROXY=socks5://127.0.0.1:10808\n")
-                  with open("/tmp/active_node.txt", "w") as f:
-                      f.write(node + "\n")
-                  sys.exit(0)
-              else:
-                  print(f"⚠️ Node failed, skipping")
-                  with open(skip_file, "a") as f:
-                      f.write(node + "\n")
-
-          print("❌ All nodes failed")
-          sys.exit(1)
-          PYEOF
-
-      - name: Clean old screenshots
-        env:
-          SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
-        run: rm -f "$SCREENSHOT_DIR"/*.png 2>/dev/null || true
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
+          sleep 2
 
       - name: Run registration
         env:
           TARGET_URL: ${{ vars.vektal_TARGET_URL }}
           REFERRAL_CODE: ${{ vars.vektal_REFERRAL_CODE }}
-          SCREENSHOT_DIR: /tmp/scripts-repo/scripts/vektal/screenshot
-          LOGS_PATH: /tmp/scripts-repo/scripts/vektal/logs.txt
-          NODES_DIR: /tmp/scripts-repo/scripts/vektal
         run: |
-          mkdir -p "$SCREENSHOT_DIR"
-          xvfb-run -a node vektal.js
+          mkdir -p "scripts/vektal/screenshots"
+          xvfb-run -a node scripts/vektal/vektal.js
 
       - name: Push logs and screenshots
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          cd /tmp/scripts-repo
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add scripts/vektal/
@@ -205,7 +64,7 @@ jobs:
             echo "No changes to push"
           else
             git commit -m "Update $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-            git push https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git main
+            git push
           fi
 
       - name: Clean old runs
