@@ -122,7 +122,7 @@ jobs:
               print("解析失败")
               sys.exit(1)
           PYEOF
-python3 /tmp/gen_proxy.py
+          python3 /tmp/gen_proxy.py
 
             if [ -f "external_socks.txt" ]; then
               EXT_PROXY=$(cat external_socks.txt)
