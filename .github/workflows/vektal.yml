@@ -30,18 +30,14 @@ jobs:
           npm install playwright
           npx playwright install --with-deps chromium
 
-      - name: Install sing-box
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Download proxy tools
         run: |
-          VERSION=$(curl -sH "Authorization: Bearer $GH_TOKEN" \
-            "https://api.github.com/repos/SagerNet/sing-box/releases/latest" \
-            | python3 -c "import sys,json; print(json.load(sys.stdin).get('tag_name','v1.13.13')[1:])" 2>/dev/null || echo "1.13.13")
-          echo "Sing-box version: $VERSION"
-          curl -sL -o /tmp/sb.tgz "https://github.com/SagerNet/sing-box/releases/download/v${VERSION}/sing-box-${VERSION}-linux-amd64.tar.gz"
-          tar -xzf /tmp/sb.tgz -C /tmp/
-          sudo mv /tmp/sing-box-*/sing-box /usr/local/bin/
-          sing-box version
+          # Xray for VLESS
+          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip -O /tmp/xray.zip
+          unzip -q /tmp/xray.zip -d xray && chmod +x xray/xray
+          # Hysteria2 for hysteria2 nodes
+          wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+          chmod +x hysteria
 
       - name: Run registration
         env:
