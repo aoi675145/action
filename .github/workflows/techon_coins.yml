@@ -47,7 +47,7 @@ jobs:
           parsed = urlparse(proxy_url)
           scheme = parsed.scheme
 
-          if scheme not in {"vless", "vmess"}:
+          if scheme not in {"vless", "vmess", "ss", "trojan"}:
               raise SystemExit(f"Unsupported proxy scheme: {scheme}")
 
           def truthy(value):
@@ -130,7 +130,7 @@ jobs:
                   },
                   "streamSettings": build_stream_settings(qs, host),
               }
-          else:
+          elif scheme == "vmess":
               payload = parsed.netloc + parsed.path
               padded = payload + "=" * (-len(payload) % 4)
               vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
@@ -168,6 +168,70 @@ jobs:
                   },
                   "streamSettings": build_stream_settings(query, host),
               }
+          elif scheme == "ss":
+              content = (parsed.netloc + parsed.path).lstrip("/")
+              if "@" in content:
+                  encoded, server_part = content.split("@", 1)
+                  decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                  method, password = decoded.split(":", 1)
+                  address, port_str = server_part.split(":", 1)
+              else:
+                  decoded = base64.b64decode(content + "==").decode("utf-8")
+                  if "@" in decoded:
+                      user_part, server_part = decoded.split("@", 1)
+                      method, password = user_part.split(":", 1)
+                      address, port_str = server_part.split(":", 1)
+                  else:
+                      raise SystemExit("Invalid Shadowsocks URL")
+              port = int(port_str.split("#")[0].split("?")[0])
+
+              outbound = {
+                  "protocol": "shadowsocks",
+                  "settings": {
+                      "servers": [{
+                          "address": address,
+                          "port": port,
+                          "method": method,
+                          "password": password
+                      }]
+                  }
+              }
+          elif scheme == "trojan":
+              content = parsed.netloc + parsed.path
+              password = unquote(parsed.username or "")
+              host = parsed.hostname
+              port = parsed.port or 443
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              sni = qs.get("sni", host)
+              network = qs.get("type", "tcp")
+              host_hdr = qs.get("host", sni)
+              path = qs.get("path", "/")
+              fp = qs.get("fp", "chrome")
+
+              outbound = {
+                  "protocol": "trojan",
+                  "settings": {
+                      "servers": [{
+                          "address": host,
+                          "port": port,
+                          "password": password
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": "tls",
+                      "tlsSettings": {
+                          "serverName": sni,
+                          "fingerprint": fp,
+                          "allowInsecure": False
+                      }
+                  }
+              }
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host_hdr}
+                  }
 
           config = {
               "log": {"loglevel": "warning"},
