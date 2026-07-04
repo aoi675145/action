@@ -191,6 +191,7 @@ jobs:
               try:
                   if "@" in content:
                       encoded, server_part = content.split("@", 1)
+                      server_part = server_part.split("?")[0]
                       decoded = base64.b64decode(encoded + "==").decode("utf-8")
                       method, password = decoded.split(":", 1)
                       address, port = server_part.split(":", 1)
@@ -198,6 +199,7 @@ jobs:
                       decoded = base64.b64decode(content + "==").decode("utf-8")
                       if "@" in decoded:
                           user_part, server_part = decoded.split("@", 1)
+                          server_part = server_part.split("?")[0]
                           method, password = user_part.split(":", 1)
                           address, port = server_part.split(":", 1)
                       else:
