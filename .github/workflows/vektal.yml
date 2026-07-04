@@ -3,7 +3,7 @@ name: Vektal Coins
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *'
+    - cron: '40 16 5 7 *'
 
 jobs:
   run:
@@ -278,7 +278,7 @@ jobs:
           git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/aoi675145/action.git action_repo
           if [ -f next_run.txt ]; then
             next_cron=$(cat next_run.txt)
-            sed -i "s|- cron: '.*'|- cron: '$next_cron'|" action_repo/.github/workflows/vektal.yml
+            sed -i "s|- cron: '40 16 5 7 *'|" action_repo/.github/workflows/vektal.yml
             cd action_repo
             git config user.name "github-actions[bot]"
             git config user.email "github-actions[bot]@users.noreply.github.com"
