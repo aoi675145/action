@@ -15,6 +15,19 @@ jobs:
       actions: write
 
     steps:
+      - name: ⏰ Interval Check（每3天执行一次）
+        run: |
+          BASE_TS=$(date -u -d "2026-07-03" +%s)
+          NOW_TS=$(date -u +%s)
+          DAYS=$(( (NOW_TS - BASE_TS) / 86400 ))
+          REM=$(( DAYS % 3 ))
+          echo "[INFO] 基准: 2026-07-03, 当前天数差: $DAYS, 余数: $REM"
+          if [ "$REM" -ne 0 ]; then
+            echo "[INFO] ⏭️ 今天非执行日，跳过续期"
+            exit 0
+          fi
+          echo "[INFO] ✅ 今天为执行日，继续续期"
+
       - name: ☁️ 拉取私有脚本库
         uses: actions/checkout@v4
         with:
@@ -247,19 +260,6 @@ jobs:
 
           echo "[INFO] 检查 Bot-Hosting 可访问..."
           curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://bot-hosting.net/ | sed -n '1,8p'
-
-      - name: ⏰ Interval Check（每3天执行一次）
-        run: |
-          BASE_TS=$(date -u -d "2026-07-03" +%s)
-          NOW_TS=$(date -u +%s)
-          DAYS=$(( (NOW_TS - BASE_TS) / 86400 ))
-          REM=$(( DAYS % 3 ))
-          echo "[INFO] 基准: 2026-07-03, 当前天数差: $DAYS, 余数: $REM"
-          if [ "$REM" -ne 0 ]; then
-            echo "[INFO] ⏭️ 今天非执行日，跳过续期"
-            exit 0
-          fi
-          echo "[INFO] ✅ 今天为执行日，继续续期"
 
       - name: 🚀 运行续期脚本
         env:
