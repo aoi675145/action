@@ -3,7 +3,7 @@ name: Vektal Coins
 on:
   workflow_dispatch:
   schedule:
-    - cron: '40 16 5 7 *'
+    - cron: '0 0 * * *'
 
 jobs:
   run:
@@ -272,22 +272,21 @@ jobs:
           mkdir -p screenshots
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python vektal.py
 
-      - name: 拉取 action 仓库并修改 cron
+      - name: 修改 cron
         if: always()
         run: |
-          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/aoi675145/action.git action_repo
-          if [ -f next_run.txt ]; then
-            next_cron=$(cat next_run.txt)
-            sed -i "s|- cron: '40 16 5 7 *'|" action_repo/.github/workflows/vektal.yml
-            cd action_repo
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add .github/workflows/vektal.yml
-            git commit -m "🔄 auto: 更新下次运行时间为 $next_cron" || echo "无需更新"
-            git push
-          else
+          if [ ! -f next_run.txt ]; then
             echo "next_run.txt 不存在，跳过 cron 更新"
+            exit 0
           fi
+          next_cron=$(tr -d '\n\r' < next_run.txt)
+          echo "cron: $next_cron"
+          sed -i "s|- cron: '.*'|- cron: '$next_cron'|" .github/workflows/vektal.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git
+          git add .github/workflows/vektal.yml
+          git diff --cached --quiet || (git commit -m "auto: cron $next_cron" && git push origin HEAD:${{ github.ref_name }})
 
       - name: 清理运行记录
         if: always()
