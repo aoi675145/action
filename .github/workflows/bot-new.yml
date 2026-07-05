@@ -61,8 +61,8 @@ jobs:
         env:
           BOTNEW_PROXY: ${{ secrets.PROXY_URL }}
         run: |
-          if [ -z "${NODE_LINK}" ]; then
-            echo "[ERROR] NODE_LINK 未配置，禁止直连"
+          if [ -z "${BOTNEW_PROXY}" ]; then
+            echo "[ERROR] BOTNEW_PROXY 未配置，禁止直连"
             exit 1
           fi
 
@@ -140,8 +140,7 @@ jobs:
           if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/proxy_ip; then
             IP=$(cat /tmp/proxy_ip | tr -d '[:space:]')
             echo "[INFO] ✅ 代理可用，出口 IP: $(echo $IP | sed 's/\.[0-9]*$/.***/')"
-            echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
-            echo "IS_PROXY=true" >> "$GITHUB_ENV"
+            echo "BOTNEW_PROXY=http://127.0.0.1:8080" >> "$GITHUB_ENV"
           else
             echo "[ERROR] ❌ 代理不可用，禁止直连"
             cat xray.log
@@ -152,11 +151,10 @@ jobs:
         if: steps.check.outputs.run == 'true'
         env:
           BOTNEW_SESSION_TOKEN: ${{ secrets.BOTNEW_SESSION_TOKEN }}
-          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PROXY_SERVER: ${{ env.PROXY_SERVER }}
-          IS_PROXY: ${{ env.IS_PROXY }}
+          BOTNEW_PROXY: ${{ env.BOTNEW_PROXY }}
         run: xvfb-run python scripts_repo/scripts/bot-new/bot-new.py
 
       - name: 🧽 清理进程
