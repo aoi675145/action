@@ -59,7 +59,7 @@ jobs:
       - name: 🌐 安装并启动代理
         if: steps.check.outputs.run == 'true'
         env:
-          BOTNEW_PROXY: ${{ secrets.PROXY_URL }}
+          BOTNEW_PROXY: ${{ secrets.BOTNEW_PROXY }}
         run: |
           if [ -z "${BOTNEW_PROXY}" ]; then
             echo "[ERROR] BOTNEW_PROXY 未配置，禁止直连"
