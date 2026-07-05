@@ -1,0 +1,357 @@
+name: TechnoHeberg-Coins
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "45 0 * * *"
+  
+jobs:
+  run_techno_coins:
+    runs-on: ubuntu-latest
+    steps:
+
+      - name: 下载私库脚本
+        run: |
+          curl -L -o techon_coins.py \
+            -H "Authorization: token ${{ secrets.REPO_TOKEN }}" \
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/techon/techon_coins.py"
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 安装 Xray
+        env:
+          TECHNO_PROXY: ${{ secrets.TECHNO_PROXY }}
+        run: |
+          if [[ "$TECHNO_PROXY" == hysteria2://* || "$TECHNO_PROXY" == hy2://* ]]; then
+            echo "[INFO] 配置 Hysteria2 代理"
+            wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+            chmod +x hysteria
+
+            python3 << 'PYEOF'
+          import json, os, sys
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          url = os.environ.get("TECHNO_PROXY", "").strip()
+          parsed = urlparse(url)
+          auth = unquote(parsed.username or "")
+          if not auth or not parsed.hostname or not parsed.port:
+              print("[ERROR] Hysteria2 节点解析失败")
+              sys.exit(1)
+          params = parse_qs(parsed.query)
+          sni = params.get("sni", [parsed.hostname])[0]
+          insecure = params.get("insecure", params.get("allowInsecure", ["0"]))[0].lower() in {"1", "true", "yes", "on"}
+          server = f"{parsed.hostname}:{parsed.port}"
+          with open("hy2.yaml", "w", encoding="utf-8") as f:
+              f.write(f"server: {json.dumps(server)}\n")
+              f.write(f"auth: {json.dumps(auth)}\n")
+              f.write("tls:\n")
+              f.write(f"  sni: {json.dumps(sni)}\n")
+              f.write(f"  insecure: {'true' if insecure else 'false'}\n")
+              f.write("socks5:\n")
+              f.write("  listen: 127.0.0.1:10808\n")
+          print(f"[INFO] Hysteria2 -> {parsed.hostname[:2]}***{parsed.hostname[-2:]}:{parsed.port}")
+          PYEOF
+
+            ./hysteria client -c hy2.yaml > hysteria.log 2>&1 &
+            sleep 5
+
+            echo "[INFO] 测试 Hysteria2 代理连接..."
+            for i in 1 2 3 4 5; do
+              if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+                echo "[INFO] ✅ Hysteria2 代理连接成功"
+                echo "TECHNO_IS_HY2=true" >> $GITHUB_ENV
+                echo "LOCAL_PROXY=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+                exit 0
+              fi
+              echo "[WARN] Hysteria2 尝试 $i/5..."
+              sleep 3
+            done
+
+            echo "[ERROR] ❌ Hysteria2 代理连接失败"
+            cat hysteria.log
+            exit 1
+          fi
+
+          wget -q https://github.com/aoi675145/akina/releases/download/proxy/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+
+      - name: 构建 Xray 配置
+        env:
+          TECHNO_PROXY: ${{ secrets.TECHNO_PROXY }}
+        run: |
+          if [ "${TECHNO_IS_HY2}" = "true" ]; then
+            echo "[INFO] Hysteria2 代理已就绪，跳过 Xray 配置"
+            exit 0
+          fi
+          if [ -z "${TECHNO_PROXY}" ]; then
+            echo "[ERROR] TECHNO_PROXY 未配置，禁止直连"
+            exit 1
+          fi
+          python3 << 'PYEOF'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          proxy_url = os.environ["TECHNO_PROXY"].strip()
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess", "ss", "trojan"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def truthy(value):
+              return str(value).lower() in {"1", "true", "yes"}
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
+
+              if stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "allowInsecure": truthy(query.get("allowInsecure", query.get("insecure", "0"))),
+                  }
+
+              if transport_type == "tcp":
+                  stream_settings["tcpSettings"] = {
+                      "header": {"type": query.get("headerType", "none")}
+                  }
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {
+                      "path": query.get("path", "/"),
+                      "headers": headers,
+                  }
+              elif transport_type == "http":
+                  stream_settings["httpSettings"] = {
+                      "host": [h for h in query.get("host", "").split(",") if h],
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "encryption": qs.get("encryption", "none"),
+                              "flow": qs.get("flow", ""),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(qs, host),
+              }
+          elif scheme == "vmess":
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+              }
+
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "alterId": int(vmess.get("aid", 0) or 0),
+                              "security": vmess.get("scy", "auto"),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(query, host),
+              }
+          elif scheme == "ss":
+              content = (parsed.netloc + parsed.path).lstrip("/")
+              if "@" in content:
+                  encoded, server_part = content.split("@", 1)
+                  decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                  method, password = decoded.split(":", 1)
+                  address, port_str = server_part.split(":", 1)
+              else:
+                  decoded = base64.b64decode(content + "==").decode("utf-8")
+                  if "@" in decoded:
+                      user_part, server_part = decoded.split("@", 1)
+                      method, password = user_part.split(":", 1)
+                      address, port_str = server_part.split(":", 1)
+                  else:
+                      raise SystemExit("Invalid Shadowsocks URL")
+              port = int(port_str.split("#")[0].split("?")[0])
+
+              outbound = {
+                  "protocol": "shadowsocks",
+                  "settings": {
+                      "servers": [{
+                          "address": address,
+                          "port": port,
+                          "method": method,
+                          "password": password
+                      }]
+                  }
+              }
+          elif scheme == "trojan":
+              content = parsed.netloc + parsed.path
+              password = unquote(parsed.username or "")
+              host = parsed.hostname
+              port = parsed.port or 443
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              sni = qs.get("sni", host)
+              network = qs.get("type", "tcp")
+              host_hdr = qs.get("host", sni)
+              path = qs.get("path", "/")
+              fp = qs.get("fp", "chrome")
+
+              outbound = {
+                  "protocol": "trojan",
+                  "settings": {
+                      "servers": [{
+                          "address": host,
+                          "port": port,
+                          "password": password
+                      }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": "tls",
+                      "tlsSettings": {
+                          "serverName": sni,
+                          "fingerprint": fp,
+                          "allowInsecure": False
+                      }
+                  }
+              }
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host_hdr}
+                  }
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{
+                  "listen": "127.0.0.1",
+                  "port": 8080,
+                  "protocol": "http",
+              }],
+              "outbounds": [outbound],
+          }
+
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PYEOF
+
+      - name: 启动代理
+        env:
+          TECHNO_PROXY: ${{ secrets.TECHNO_PROXY }}
+        run: |
+          if [ "${TECHNO_IS_HY2}" = "true" ]; then
+            echo "[INFO] Hysteria2 代理已就绪，跳过 Xray 启动"
+            echo "✅ Hysteria2 代理已启动，测试连通性..."
+            curl -s -x socks5h://127.0.0.1:10808 https://api.ipify.org \
+              | sed 's/\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)/\1.xxx.xxx.\4/g'
+            exit 0
+          fi
+          nohup xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 3
+          echo "✅ Xray 已启动，测试连通性..."
+          curl -s -x http://127.0.0.1:8080 https://api.ipify.org \
+            | sed 's/\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)/\1.xxx.xxx.\4/g'
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            google-chrome-stable \
+            xvfb \
+            x11-utils \
+            xdotool \
+            scrot
+
+      - name: 安装 Python 依赖
+        run: |
+          pip install seleniumbase
+          seleniumbase install chromedriver
+
+      - name: 运行脚本
+        env:
+          PYTHONIOENCODING: utf-8
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          TECHNO_PROXY: ${{ secrets.TECHNO_PROXY }}
+          LOCAL_PROXY: ${{ env.LOCAL_PROXY }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python techon_coins.py
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 6
+
