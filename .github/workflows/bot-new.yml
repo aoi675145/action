@@ -52,26 +52,36 @@ jobs:
       - name: 📦 安装依赖
         if: steps.check.outputs.run == 'true'
         run: |
-          sudo apt-get update
+          pip install seleniumbase Pillow
           sudo apt-get install -y xvfb
-          pip install seleniumbase requests
+
+      - name: 🔧 修复 DNS
+        if: steps.check.outputs.run == 'true'
+        run: |
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
 
       - name: 🌐 安装并启动代理
         if: steps.check.outputs.run == 'true'
         env:
-          BOTNEW_PROXY: ${{ secrets.BOTNEW_PROXY }}
+          BOTNEW_PROXY: ${{ secrets.PROXY_URL }}
         run: |
           if [ -z "${BOTNEW_PROXY}" ]; then
             echo "[ERROR] BOTNEW_PROXY 未配置，禁止直连"
             exit 1
           fi
 
-          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          wget -q https://github.com/XTLS/Xray-core/releases/download/v1.8.24/Xray-linux-64.zip
+          mkdir -p xray-bin
           unzip -oq Xray-linux-64.zip -d xray-bin
-          sudo mv xray-bin/xray /usr/local/bin/xray
+          chmod +x xray-bin/xray
 
           python3 << 'PYEOF'
-          import base64, json, os
+          import base64
+          import json
+          import os
           from urllib.parse import parse_qs, unquote, urlparse
 
           proxy_url = os.environ["BOTNEW_PROXY"].strip()
@@ -90,17 +100,12 @@ jobs:
                   transport_type = "http"
               stream_settings = {"network": transport_type, "security": query.get("security", "none")}
               if stream_settings["security"] == "reality":
-                  stream_settings["realitySettings"] = {
-                      "serverName": query.get("sni", host), "fingerprint": query.get("fp", "chrome"),
-                      "publicKey": query.get("pbk", ""),
-                  }
-                  if query.get("sid"): stream_settings["realitySettings"]["shortId"] = query["sid"]
-                  if query.get("spx"): stream_settings["realitySettings"]["spiderX"] = query["spx"]
+                  reality = {"serverName": query.get("sni", host), "fingerprint": query.get("fp", "chrome"), "publicKey": query.get("pbk", "")}
+                  if query.get("sid"): reality["shortId"] = query["sid"]
+                  if query.get("spx"): reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
               elif stream_settings["security"] == "tls":
-                  stream_settings["tlsSettings"] = {
-                      "serverName": query.get("sni", host), "fingerprint": query.get("fp", "chrome"),
-                      "allowInsecure": truthy(query.get("allowInsecure", query.get("insecure", "0"))),
-                  }
+                  stream_settings["tlsSettings"] = {"serverName": query.get("sni", host), "fingerprint": query.get("fp", "chrome"), "allowInsecure": truthy(query.get("allowInsecure", query.get("insecure", "0")))}
               if transport_type == "tcp":
                   stream_settings["tcpSettings"] = {"header": {"type": query.get("headerType", "none")}}
               elif transport_type == "ws":
@@ -162,38 +167,63 @@ jobs:
 
           xray run -c xray-config.json > xray.log 2>&1 &
           sleep 2
-          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/proxy_ip; then
-            IP=$(cat /tmp/proxy_ip | tr -d '[:space:]')
-            echo "[INFO] ✅ 代理可用，出口 IP: $(echo $IP | sed 's/\.[0-9]*$/.***/')"
-            echo "BOTNEW_PROXY=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+          xray version
+          sed -n '1,20p' xray.log || true
+
+          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/bothost_proxy_ip; then
+          python3 - <<'PYEOF'
+          ip = open("/tmp/bothost_proxy_ip", encoding="utf-8").read().strip()
+          parts = ip.split(".")
+          if len(parts) == 4:
+              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
+          elif len(ip) > 8:
+              ip = f"{ip[:4]}***{ip[-4:]}"
+          else:
+              ip = "***"
+          print(f"[INFO] ✅ 代理可用，出口 IP: {ip}")
+          PYEOF
+            echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
           else
             echo "[ERROR] ❌ 代理不可用，禁止直连"
             cat xray.log
             exit 1
           fi
 
+      - name: 检查脚本代理出口
+        if: steps.check.outputs.run == 'true'
+        run: |
+          if [ -z "${PROXY_SERVER}" ]; then
+            echo "[ERROR] PROXY_SERVER 为空，禁止直连"
+            exit 1
+          fi
+
+          echo "[INFO] 检查代理出口 IP..."
+          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org >/tmp/freeze_check_ip
+          python3 - <<'PYEOF'
+          ip = open("/tmp/freeze_check_ip", encoding="utf-8").read().strip()
+          parts = ip.split(".")
+          if len(parts) == 4:
+              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
+          elif len(ip) > 8:
+              ip = f"{ip[:4]}***{ip[-4:]}"
+          else:
+              ip = "***"
+          print(f"[INFO] 代理出口 IP: {ip}")
+          PYEOF
+
+          echo "[INFO] 检查 Bot-Hosting 可访问..."
+          curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://bot-hosting.net/ | sed -n '1,8p'
+
       - name: 🚀 运行续期脚本
         if: steps.check.outputs.run == 'true'
         env:
-          BOTNEW_SESSION_TOKEN: ${{ secrets.BOTNEW_SESSION_TOKEN }}
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          DISCORD_TOKEN_1: ${{ secrets.DISCORD_TOKEN_1 }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          BOTNEW_PROXY: ${{ env.BOTNEW_PROXY }}
+          BOTNEW_PROXY: ${{ env.PROXY_SERVER }}
         run: xvfb-run python scripts_repo/scripts/bot-new/bot-new.py
 
-      - name: 🧽 清理进程
-        if: always()
-        run: |
-          pkill -f xray || true
-          pkill -f chromedriver || true
-          pkill -f chrome || true
-          pkill -f Xvfb || true
-          rm -f xray-config.json xray.log Xray-linux-64.zip
-          rm -rf xray-bin
-
       - name: 🧹 清理运行记录
-        if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ secrets.REPO_TOKEN }}
