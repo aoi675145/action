@@ -176,7 +176,7 @@ jobs:
           ip = open("/tmp/bothost_proxy_ip", encoding="utf-8").read().strip()
           parts = ip.split(".")
           if len(parts) == 4:
-              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
+              ip = f"{parts[0]}.xxx.xxx.{parts[3]}"
           elif len(ip) > 8:
               ip = f"{ip[:4]}***{ip[-4:]}"
           else:
@@ -204,7 +204,7 @@ jobs:
           ip = open("/tmp/freeze_check_ip", encoding="utf-8").read().strip()
           parts = ip.split(".")
           if len(parts) == 4:
-              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
+              ip = f"{parts[0]}.xxx.xxx.{parts[3]}"
           elif len(ip) > 8:
               ip = f"{ip[:4]}***{ip[-4:]}"
           else:
