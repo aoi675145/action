@@ -73,10 +73,11 @@ jobs:
             exit 1
           fi
 
-          wget -q https://github.com/XTLS/Xray-core/releases/download/v1.8.24/Xray-linux-64.zip
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
           mkdir -p xray-bin
           unzip -oq Xray-linux-64.zip -d xray-bin
           chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
 
           python3 << 'PYEOF'
           import base64
@@ -165,9 +166,9 @@ jobs:
               json.dump(config, f, indent=2)
           PYEOF
 
-          ./xray-bin/xray run -c xray-config.json > xray.log 2>&1 &
+          xray run -c xray-config.json > xray.log 2>&1 &
           sleep 2
-          ./xray-bin/xray version
+          xray version
           sed -n '1,20p' xray.log || true
 
           if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/bothost_proxy_ip; then
