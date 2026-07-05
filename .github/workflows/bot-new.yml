@@ -1,4 +1,4 @@
-name: Bot-Hosting 续期
+name: Bot-New 续期
 
 on:
   schedule:
@@ -79,7 +79,7 @@ jobs:
           parsed = urlparse(proxy_url)
           scheme = parsed.scheme
 
-          if scheme not in {"vless", "vmess", "ss"}:
+           if scheme not in {"vless", "vmess", "ss", "hysteria2", "h2"}:
               raise SystemExit(f"Unsupported proxy scheme: {scheme}")
 
           def truthy(value):
@@ -114,37 +114,47 @@ jobs:
                   stream_settings["grpcSettings"] = {"serviceName": query.get("serviceName", ""), "authority": query.get("authority", "")}
               return stream_settings
 
-          if scheme == "vless":
-              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
-              host, port, user_id = parsed.hostname, parsed.port, unquote(parsed.username or "")
-              if not host or not port or not user_id:
-                  raise SystemExit("Invalid VLESS URL")
-              outbound = {"protocol": "vless", "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": user_id, "encryption": qs.get("encryption", "none"), "flow": qs.get("flow", "")}]}]}, "streamSettings": build_stream_settings(qs, host)}
-          elif scheme == "vmess":
-              payload = parsed.netloc + parsed.path
-              padded = payload + "=" * (-len(payload) % 4)
-              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-              host, port, user_id = vmess.get("add"), int(vmess.get("port", 0)), vmess.get("id", "")
-              if not host or not port or not user_id:
-                  raise SystemExit("Invalid VMess URL")
-              query = {"type": vmess.get("net", "tcp"), "security": vmess.get("tls", "none"), "path": vmess.get("path", "/") or "/", "host": vmess.get("host", ""), "sni": vmess.get("sni", "") or host, "fp": vmess.get("fp", "chrome"), "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")), "serviceName": vmess.get("path", ""), "authority": vmess.get("host", ""), "headerType": vmess.get("type", "none") or "none"}
-              outbound = {"protocol": "vmess", "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": user_id, "alterId": int(vmess.get("aid", 0) or 0), "security": vmess.get("scy", "auto")}]}]}, "streamSettings": build_stream_settings(query, host)}
-          else:
-              content = parsed.netloc + parsed.path
-              if "@" in content:
-                  encoded, server_part = content.split("@", 1)
-                  decoded = base64.b64decode(encoded + "==").decode("utf-8")
-                  method, password = decoded.split(":", 1)
-                  address, port = server_part.split(":", 1)
-              else:
-                  decoded = base64.b64decode(content + "==").decode("utf-8")
-                  if "@" in decoded:
-                      user_part, server_part = decoded.split("@", 1)
-                      method, password = user_part.split(":", 1)
-                      address, port = server_part.split(":", 1)
-                  else:
-                      raise SystemExit("Invalid SS URL")
-              outbound = {"protocol": "shadowsocks", "settings": {"servers": [{"address": address, "port": int(port), "method": method, "password": password}]}}
+           if scheme == "vless":
+               qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+               host, port, user_id = parsed.hostname, parsed.port, unquote(parsed.username or "")
+               if not host or not port or not user_id:
+                   raise SystemExit("Invalid VLESS URL")
+               outbound = {"protocol": "vless", "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": user_id, "encryption": qs.get("encryption", "none"), "flow": qs.get("flow", "")}]}]}, "streamSettings": build_stream_settings(qs, host)}
+           elif scheme == "vmess":
+               payload = parsed.netloc + parsed.path
+               padded = payload + "=" * (-len(payload) % 4)
+               vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+               host, port, user_id = vmess.get("add"), int(vmess.get("port", 0)), vmess.get("id", "")
+               if not host or not port or not user_id:
+                   raise SystemExit("Invalid VMess URL")
+               query = {"type": vmess.get("net", "tcp"), "security": vmess.get("tls", "none"), "path": vmess.get("path", "/") or "/", "host": vmess.get("host", ""), "sni": vmess.get("sni", "") or host, "fp": vmess.get("fp", "chrome"), "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")), "serviceName": vmess.get("path", ""), "authority": vmess.get("host", ""), "headerType": vmess.get("type", "none") or "none"}
+               outbound = {"protocol": "vmess", "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": user_id, "alterId": int(vmess.get("aid", 0) or 0), "security": vmess.get("scy", "auto")}]}]}, "streamSettings": build_stream_settings(query, host)}
+           elif scheme in {"hysteria2", "h2"}:
+               qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+               host = parsed.hostname
+               port = parsed.port or 443
+               password = unquote(parsed.password or parsed.username or "")
+               sni = qs.get("sni", host)
+               insecure = qs.get("insecure", "0") in {"1", "true", "yes"}
+               outbound = {"protocol": "hysteria2", "settings": {"servers": [{"address": host, "port": port, "password": password}]}, "streamSettings": {"security": "tls", "tlsSettings": {"serverName": sni, "allowInsecure": insecure}}}
+           elif scheme == "ss":
+               content = parsed.netloc + parsed.path
+               if "@" in content:
+                   encoded, server_part = content.split("@", 1)
+                   decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                   method, password = decoded.split(":", 1)
+                   address, port = server_part.split(":", 1)
+               else:
+                   decoded = base64.b64decode(content + "==").decode("utf-8")
+                   if "@" in decoded:
+                       user_part, server_part = decoded.split("@", 1)
+                       method, password = user_part.split(":", 1)
+                       address, port = server_part.split(":", 1)
+                   else:
+                       raise SystemExit("Invalid SS URL")
+               outbound = {"protocol": "shadowsocks", "settings": {"servers": [{"address": address, "port": int(port), "method": method, "password": password}]}}
+           else:
+               raise SystemExit(f"Unsupported proxy scheme: {scheme}")
 
           config = {"log": {"loglevel": "warning"}, "inbounds": [{"listen": "127.0.0.1", "port": 8080, "protocol": "http"}], "outbounds": [outbound]}
           with open("xray-config.json", "w", encoding="ascii") as f:
