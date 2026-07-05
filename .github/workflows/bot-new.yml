@@ -59,7 +59,7 @@ jobs:
       - name: 🌐 安装并启动代理
         if: steps.check.outputs.run == 'true'
         env:
-          NODE_LINK: ${{ secrets.NODE_LINK }}
+          BOTNEW_PROXY: ${{ secrets.PROXY_URL }}
         run: |
           if [ -z "${NODE_LINK}" ]; then
             echo "[ERROR] NODE_LINK 未配置，禁止直连"
@@ -75,7 +75,7 @@ jobs:
           import base64, json, os
           from urllib.parse import parse_qs, unquote, urlparse
 
-          proxy_url = os.environ["NODE_LINK"].strip()
+          proxy_url = os.environ["BOTNEW_PROXY"].strip()
           parsed = urlparse(proxy_url)
           scheme = parsed.scheme
 
@@ -153,7 +153,6 @@ jobs:
         env:
           BOTNEW_SESSION_TOKEN: ${{ secrets.BOTNEW_SESSION_TOKEN }}
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
-          EMAIL: ${{ secrets.EMAIL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
