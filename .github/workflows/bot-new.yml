@@ -22,7 +22,7 @@ jobs:
             echo "run=true" >> $GITHUB_OUTPUT
             exit 0
           fi
-          BASE_TS=$(date -u -d "2026-07-03" +%s)
+          BASE_TS=$(date -u -d "2026-07-05" +%s)
           NOW_TS=$(date -u +%s)
           DAYS=$(( (NOW_TS - BASE_TS) / 86400 ))
           REM=$(( DAYS % 3 ))
