@@ -22,6 +22,8 @@ jobs:
           python-version: '3.10'
 
       - name: 安装 Xray
+        env:
+          TECHNO_PROXY: ${{ secrets.TECHNO_PROXY }}
         run: |
           if [[ "$TECHNO_PROXY" == hysteria2://* || "$TECHNO_PROXY" == hy2://* ]]; then
             echo "[INFO] 配置 Hysteria2 代理"
