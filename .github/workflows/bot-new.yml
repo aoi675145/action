@@ -1,8 +1,8 @@
-name: Bot-New 续期
+name: Bot-Hosting 续期
 
 on:
   schedule:
-    - cron: '17 1 * * *'  # 每天触发，Interval Check 控制实际执行
+    - cron: '17 1 * * *'
   workflow_dispatch:
 
 jobs:
@@ -52,23 +52,17 @@ jobs:
       - name: 📦 安装依赖
         if: steps.check.outputs.run == 'true'
         run: |
-          pip install seleniumbase Pillow
+          sudo apt-get update
           sudo apt-get install -y xvfb
+          pip install seleniumbase requests
 
-      - name: 🔧 修复 DNS
+      - name: 🌐 安装并启动代理
         if: steps.check.outputs.run == 'true'
-        run: |
-          sudo systemctl stop systemd-resolved 2>/dev/null || true
-          sudo systemctl disable systemd-resolved 2>/dev/null || true
-          sudo rm -f /etc/resolv.conf
-          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
-
-      - name: 安装并启动代理
         env:
-          BOTNEW_PROXY: ${{ secrets.PROXY_URL }}
+          NODE_LINK: ${{ secrets.NODE_LINK }}
         run: |
-          if [ -z "${BOTNEW_PROXY}" ]; then
-            echo "[ERROR] BOTNEW_PROXY 未配置，禁止直连"
+          if [ -z "${NODE_LINK}" ]; then
+            echo "[ERROR] NODE_LINK 未配置，禁止直连"
             exit 1
           fi
 
@@ -78,12 +72,10 @@ jobs:
           chmod +x xray-bin/xray
 
           python3 << 'PYEOF'
-          import base64
-          import json
-          import os
+          import base64, json, os
           from urllib.parse import parse_qs, unquote, urlparse
 
-          proxy_url = os.environ["BOTNEW_PROXY"].strip()
+          proxy_url = os.environ["NODE_LINK"].strip()
           parsed = urlparse(proxy_url)
           scheme = parsed.scheme
 
@@ -97,191 +89,88 @@ jobs:
               transport_type = query.get("type", "tcp")
               if transport_type == "h2":
                   transport_type = "http"
-
-              stream_settings = {
-                  "network": transport_type,
-                  "security": query.get("security", "none"),
-              }
-
+              stream_settings = {"network": transport_type, "security": query.get("security", "none")}
               if stream_settings["security"] == "reality":
-                  reality = {
-                      "serverName": query.get("sni", host),
-                      "fingerprint": query.get("fp", "chrome"),
+                  stream_settings["realitySettings"] = {
+                      "serverName": query.get("sni", host), "fingerprint": query.get("fp", "chrome"),
                       "publicKey": query.get("pbk", ""),
                   }
-                  if query.get("sid"):
-                      reality["shortId"] = query["sid"]
-                  if query.get("spx"):
-                      reality["spiderX"] = query["spx"]
-                  stream_settings["realitySettings"] = reality
+                  if query.get("sid"): stream_settings["realitySettings"]["shortId"] = query["sid"]
+                  if query.get("spx"): stream_settings["realitySettings"]["spiderX"] = query["spx"]
               elif stream_settings["security"] == "tls":
                   stream_settings["tlsSettings"] = {
-                      "serverName": query.get("sni", host),
-                      "fingerprint": query.get("fp", "chrome"),
+                      "serverName": query.get("sni", host), "fingerprint": query.get("fp", "chrome"),
                       "allowInsecure": truthy(query.get("allowInsecure", query.get("insecure", "0"))),
                   }
-
               if transport_type == "tcp":
-                  stream_settings["tcpSettings"] = {
-                      "header": {"type": query.get("headerType", "none")}
-                  }
+                  stream_settings["tcpSettings"] = {"header": {"type": query.get("headerType", "none")}}
               elif transport_type == "ws":
                   headers = {}
-                  if query.get("host"):
-                      headers["Host"] = query["host"]
-                  stream_settings["wsSettings"] = {
-                      "path": query.get("path", "/"),
-                      "headers": headers,
-                  }
+                  if query.get("host"): headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {"path": query.get("path", "/"), "headers": headers}
               elif transport_type == "http":
-                  stream_settings["httpSettings"] = {
-                      "host": [h for h in query.get("host", "").split(",") if h],
-                      "path": query.get("path", "/"),
-                  }
+                  stream_settings["httpSettings"] = {"host": [h for h in query.get("host", "").split(",") if h], "path": query.get("path", "/")}
               elif transport_type == "grpc":
-                  stream_settings["grpcSettings"] = {
-                      "serviceName": query.get("serviceName", ""),
-                      "authority": query.get("authority", ""),
-                  }
-
+                  stream_settings["grpcSettings"] = {"serviceName": query.get("serviceName", ""), "authority": query.get("authority", "")}
               return stream_settings
 
           if scheme == "vless":
               qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
-              host = parsed.hostname
-              port = parsed.port
-              user_id = unquote(parsed.username or "")
-
+              host, port, user_id = parsed.hostname, parsed.port, unquote(parsed.username or "")
               if not host or not port or not user_id:
-                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
-
-              outbound = {
-                  "protocol": "vless",
-                  "settings": {
-                      "vnext": [{
-                          "address": host,
-                          "port": port,
-                          "users": [{
-                              "id": user_id,
-                              "encryption": qs.get("encryption", "none"),
-                              "flow": qs.get("flow", ""),
-                          }],
-                      }]
-                  },
-                  "streamSettings": build_stream_settings(qs, host),
-              }
+                  raise SystemExit("Invalid VLESS URL")
+              outbound = {"protocol": "vless", "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": user_id, "encryption": qs.get("encryption", "none"), "flow": qs.get("flow", "")}]}]}, "streamSettings": build_stream_settings(qs, host)}
           else:
               payload = parsed.netloc + parsed.path
               padded = payload + "=" * (-len(payload) % 4)
               vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-              host = vmess.get("add")
-              port = int(vmess.get("port", 0))
-              user_id = vmess.get("id", "")
+              host, port, user_id = vmess.get("add"), int(vmess.get("port", 0)), vmess.get("id", "")
               if not host or not port or not user_id:
-                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+                  raise SystemExit("Invalid VMess URL")
+              query = {"type": vmess.get("net", "tcp"), "security": vmess.get("tls", "none"), "path": vmess.get("path", "/") or "/", "host": vmess.get("host", ""), "sni": vmess.get("sni", "") or host, "fp": vmess.get("fp", "chrome"), "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")), "serviceName": vmess.get("path", ""), "authority": vmess.get("host", ""), "headerType": vmess.get("type", "none") or "none"}
+              outbound = {"protocol": "vmess", "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": user_id, "alterId": int(vmess.get("aid", 0) or 0), "security": vmess.get("scy", "auto")}]}]}, "streamSettings": build_stream_settings(query, host)}
 
-              query = {
-                  "type": vmess.get("net", "tcp"),
-                  "security": vmess.get("tls", "none"),
-                  "path": vmess.get("path", "/") or "/",
-                  "host": vmess.get("host", ""),
-                  "sni": vmess.get("sni", "") or host,
-                  "fp": vmess.get("fp", "chrome"),
-                  "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")),
-                  "serviceName": vmess.get("path", ""),
-                  "authority": vmess.get("host", ""),
-                  "headerType": vmess.get("type", "none") or "none",
-              }
-
-              outbound = {
-                  "protocol": "vmess",
-                  "settings": {
-                      "vnext": [{
-                          "address": host,
-                          "port": port,
-                          "users": [{
-                              "id": user_id,
-                              "alterId": int(vmess.get("aid", 0) or 0),
-                              "security": vmess.get("scy", "auto"),
-                          }],
-                      }]
-                  },
-                  "streamSettings": build_stream_settings(query, host),
-              }
-
-          config = {
-              "log": {"loglevel": "warning"},
-              "inbounds": [{
-                  "listen": "127.0.0.1",
-                  "port": 8080,
-                  "protocol": "http",
-              }],
-              "outbounds": [outbound],
-          }
-
+          config = {"log": {"loglevel": "warning"}, "inbounds": [{"listen": "127.0.0.1", "port": 8080, "protocol": "http"}], "outbounds": [outbound]}
           with open("xray-config.json", "w", encoding="ascii") as f:
               json.dump(config, f, indent=2)
           PYEOF
 
           ./xray-bin/xray run -c xray-config.json > xray.log 2>&1 &
           sleep 2
-          ./xray-bin/xray version
-          sed -n '1,20p' xray.log || true
-
-          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/bothost_proxy_ip; then
-          python3 - <<'PYEOF'
-          ip = open("/tmp/bothost_proxy_ip", encoding="utf-8").read().strip()
-          parts = ip.split(".")
-          if len(parts) == 4:
-              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
-          elif len(ip) > 8:
-              ip = f"{ip[:4]}***{ip[-4:]}"
-          else:
-              ip = "***"
-          print(f"[INFO] ✅ 代理可用，出口 IP: {ip}")
-          PYEOF
+          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/proxy_ip; then
+            IP=$(cat /tmp/proxy_ip | tr -d '[:space:]')
+            echo "[INFO] ✅ 代理可用，出口 IP: $(echo $IP | sed 's/\.[0-9]*$/.***/')"
             echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+            echo "IS_PROXY=true" >> "$GITHUB_ENV"
           else
             echo "[ERROR] ❌ 代理不可用，禁止直连"
             cat xray.log
             exit 1
           fi
 
-      - name: 检查脚本代理出口
-        if: steps.check.outputs.run == 'true'
-        run: |
-          if [ -z "${PROXY_SERVER}" ]; then
-            echo "[ERROR] PROXY_SERVER 为空，禁止直连"
-            exit 1
-          fi
-
-          echo "[INFO] 检查代理出口 IP..."
-          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org >/tmp/freeze_check_ip
-          python3 - <<'PYEOF'
-          ip = open("/tmp/freeze_check_ip", encoding="utf-8").read().strip()
-          parts = ip.split(".")
-          if len(parts) == 4:
-              ip = f"{parts[0]}.{parts[1]}.***.{parts[3]}"
-          elif len(ip) > 8:
-              ip = f"{ip[:4]}***{ip[-4:]}"
-          else:
-              ip = "***"
-          print(f"[INFO] 代理出口 IP: {ip}")
-          PYEOF
-
-          echo "[INFO] 检查 Bot-Hosting 可访问..."
-          curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://bot-hosting.net/ | sed -n '1,8p'
-
       - name: 🚀 运行续期脚本
         if: steps.check.outputs.run == 'true'
         env:
-          DISCORD_TOKEN_1: ${{ secrets.DISCORD_TOKEN_1 }}
+          BOTNEW_SESSION_TOKEN: ${{ secrets.BOTNEW_SESSION_TOKEN }}
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          EMAIL: ${{ secrets.EMAIL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          BOTNEW_PROXY: ${{ env.PROXY_SERVER }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+          IS_PROXY: ${{ env.IS_PROXY }}
         run: xvfb-run python scripts_repo/scripts/bot-new/bot-new.py
 
+      - name: 🧽 清理进程
+        if: always()
+        run: |
+          pkill -f xray || true
+          pkill -f chromedriver || true
+          pkill -f chrome || true
+          pkill -f Xvfb || true
+          rm -f xray-config.json xray.log
+
       - name: 🧹 清理运行记录
+        if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ secrets.REPO_TOKEN }}
