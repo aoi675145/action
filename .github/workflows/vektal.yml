@@ -3,7 +3,7 @@ name: Vektal Coins
 on:
   workflow_dispatch:
   schedule:
-    - cron: '23 11 7 7 *'
+    - cron: '0 0 * * *'
 
 permissions:
   contents: write
@@ -287,14 +287,7 @@ jobs:
           echo "cron: $next_cron"
           git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
           cd cron_repo
-          NEXT_CRON="$next_cron" python3 -c "
-          import re, os
-          cron = os.environ['NEXT_CRON']
-          p = '.github/workflows/vektal.yml'
-          d = open(p).read()
-          d = re.sub(r\"- cron: '23 11 7 7 *'\", d)
-          open(p, 'w').write(d)
-          "
+          sed -i -E "s|- cron: '.*'|- cron: '$next_cron'|" .github/workflows/vektal.yml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/workflows/vektal.yml
