@@ -29,7 +29,7 @@ jobs:
           fi
           DAYS=$(( $(date -u +%s) / 86400 ))
           REMAINDER=$(( $DAYS % 4 ))
-          if [ $REMAINDER -eq 1 ]; then
+          if [ $REMAINDER -eq 2 ]; then
             echo "Today is the scheduled day. Starting workflow..."
             echo "run=true" >> $GITHUB_OUTPUT
           else
