@@ -51,13 +51,66 @@ jobs:
           fi
 
           if [ -z "$FAILED" ]; then
-            wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
-            mkdir -p xray-bin
-            unzip -oq Xray-linux-64.zip -d xray-bin
-            chmod +x xray-bin/xray
-            sudo mv xray-bin/xray /usr/local/bin/xray
+            # Hysteria2 support
+            if [[ "$MY_PROXY_NODE" == hysteria2://* || "$MY_PROXY_NODE" == hy2://* ]]; then
+              echo "[INFO] 检测到 Hysteria2 代理..."
+              wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+              chmod +x hysteria
 
-            python3 << 'PYEOF'
+              python3 << 'PYEOF'
+          import json, os, sys
+          from urllib.parse import parse_qs, unquote, urlparse
+          url = os.environ.get("MY_PROXY_NODE", "").strip()
+          parsed = urlparse(url)
+          auth = unquote(parsed.username or "")
+          if not auth or not parsed.hostname or not parsed.port:
+              print("[ERROR] Hysteria2 节点解析失败")
+              sys.exit(1)
+          params = parse_qs(parsed.query)
+          sni = params.get("sni", [parsed.hostname])[0]
+          insecure = params.get("insecure", params.get("allowInsecure", ["0"]))[0].lower() in {"1", "true", "yes", "on"}
+          server = f"{parsed.hostname}:{parsed.port}"
+          with open("hy2.yaml", "w", encoding="utf-8") as f:
+              f.write(f"server: {json.dumps(server)}\n")
+              f.write(f"auth: {json.dumps(auth)}\n")
+              f.write("tls:\n")
+              f.write(f"  sni: {json.dumps(sni)}\n")
+              f.write(f"  insecure: {'true' if insecure else 'false'}\n")
+              f.write("socks5:\n")
+              f.write("  listen: 127.0.0.1:10808\n")
+          print(f"[INFO] Hysteria2 -> {parsed.hostname}")
+          PYEOF
+
+              if [ $? -ne 0 ]; then
+                echo "[ERROR] Hysteria2 配置生成失败"
+                FAILED="Hysteria2 配置失败"
+              else
+                ./hysteria client -c hy2.yaml > hysteria.log 2>&1 &
+                sleep 5
+
+                for i in 1 2 3 4 5; do
+                  if curl -x socks5h://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null 2>&1; then
+                    echo "[INFO] ✅ Hysteria2 代理连接成功"
+                    echo "GLOBAL_PROXY=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+                    break
+                  fi
+                  echo "[WARN] Hysteria2 尝试 $((i+1))/5..."
+                  sleep 3
+                done
+
+                if ! grep -q "GLOBAL_PROXY" "$GITHUB_ENV" 2>/dev/null; then
+                  echo "[ERROR] Hysteria2 代理连接失败"
+                  FAILED="Hysteria2 节点不通"
+                fi
+              fi
+            else
+              wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+              mkdir -p xray-bin
+              unzip -oq Xray-linux-64.zip -d xray-bin
+              chmod +x xray-bin/xray
+              sudo mv xray-bin/xray /usr/local/bin/xray
+
+              python3 << 'PYEOF'
           import os, sys, json, base64
           from urllib.parse import parse_qs, unquote, urlparse
           url = os.environ.get("MY_PROXY_NODE", "").strip()
@@ -125,18 +178,19 @@ jobs:
               sys.exit(1)
           PYEOF
 
-            if [ -f "external_socks.txt" ]; then
-              EXT_PROXY=$(cat external_socks.txt)
-              echo "::add-mask::$EXT_PROXY"
-              echo "GLOBAL_PROXY=$EXT_PROXY" >> $GITHUB_ENV
-            else
-              xray run -c xray_config.json > xray.log 2>&1 &
-              sleep 8
-              if curl -x socks5://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null; then
-                echo "GLOBAL_PROXY=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+              if [ -f "external_socks.txt" ]; then
+                EXT_PROXY=$(cat external_socks.txt)
+                echo "::add-mask::$EXT_PROXY"
+                echo "GLOBAL_PROXY=$EXT_PROXY" >> $GITHUB_ENV
               else
-                echo "[ERROR] Xray 启动失败或节点不连通"
-                FAILED="代理节点不通"
+                xray run -c xray_config.json > xray.log 2>&1 &
+                sleep 8
+                if curl -x socks5://127.0.0.1:10808 -sI --max-time 15 https://www.google.com > /dev/null; then
+                  echo "GLOBAL_PROXY=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+                else
+                  echo "[ERROR] Xray 启动失败或节点不连通"
+                  FAILED="代理节点不通"
+                fi
               fi
             fi
           fi
