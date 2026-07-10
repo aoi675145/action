@@ -1,4 +1,4 @@
-﻿name: Bot-Hosting 閲戝竵棰嗗彇
+name: Bot-Hosting 金币领取
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   earn:
-    name: Bot-Hosting 閲戝竵棰嗗彇
+    name: Bot-Hosting 金币领取
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     permissions:
@@ -23,26 +23,29 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 浠庣搴撴媺鍙栬剼鏈?        env:
+      - name: 从私库拉取脚本
+        env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          echo "[INFO] 浠庣搴撴媺鍙?bot.py..."
+          echo "[INFO] 从私库拉取 bot.py..."
           curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -o bot.py \
             "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/bot/bot.py"
-          echo "[INFO] 鉁?bot.py 宸蹭笅杞?($(wc -l < bot.py) 琛?"
+          echo "[INFO] ✅ bot.py 已下载 ($(wc -l < bot.py) 行)"
 
-      - name: 瀹夎绯荤粺渚濊禆
+      - name: 安装系统依赖
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
 
-      - name: 瀹夎 Playwright 鍙?Python 搴?        run: |
+      - name: 安装 Playwright 及 Python 库
+        run: |
           pip install -q playwright requests[socks]
           playwright install chromium
 
-      - name: 涓嬭浇骞惰В鍘嬫墿灞?        run: |
+      - name: 下载并解压扩展
+        run: |
           mkdir -p scripts/extensions/nopecha scripts/extensions/buster
 
           wget -q -O scripts/extensions/nopecha/chromium.zip \
@@ -53,16 +56,17 @@ jobs:
             https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
           7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
 
-      - name: 瀹夎骞跺惎鍔ㄤ唬鐞?        env:
+      - name: 安装并启动代理
+        env:
           Bot_PROXY: ${{ secrets.Bot_PROXY }}
         run: |
           if [ -z "$Bot_PROXY" ]; then
-            echo "[INFO] 鏈厤缃唬鐞嗭紝鐩磋繛妯″紡"
+            echo "[INFO] 未配置代理，直连模式"
             exit 0
           fi
 
           if [[ "$Bot_PROXY" == hysteria2://* || "$Bot_PROXY" == hy2://* ]]; then
-            echo "[INFO] 閰嶇疆 Hysteria2 浠ｇ悊"
+            echo "[INFO] 配置 Hysteria2 代理"
             wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
             chmod +x hysteria
 
@@ -74,7 +78,7 @@ jobs:
           parsed = urlparse(url)
           auth = unquote(parsed.username or "")
           if not auth or not parsed.hostname or not parsed.port:
-              print("[ERROR] Hysteria2 鑺傜偣瑙ｆ瀽澶辫触")
+              print("[ERROR] Hysteria2 节点解析失败")
               sys.exit(1)
           params = parse_qs(parsed.query)
           sni = params.get("sni", [parsed.hostname])[0]
@@ -94,19 +98,19 @@ jobs:
             ./hysteria client -c hy2.yaml > hysteria.log 2>&1 &
             sleep 5
 
-            echo "[INFO] 娴嬭瘯 Hysteria2 浠ｇ悊杩炴帴..."
+            echo "[INFO] 测试 Hysteria2 代理连接..."
             for i in 1 2 3 4 5; do
               if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
-                echo "[INFO] 鉁?Hysteria2 浠ｇ悊杩炴帴鎴愬姛"
+                echo "[INFO] ✅ Hysteria2 代理连接成功"
                 echo "Bot_PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
                 exit 0
               fi
-              echo "[WARN] Hysteria2 灏濊瘯 $i/5..."
+              echo "[WARN] Hysteria2 尝试 $i/5..."
               sleep 3
             done
 
-            echo "[ERROR] 鉂?Hysteria2 浠ｇ悊杩炴帴澶辫触"
-            echo "--- Hysteria2 鏃ュ織 ---"
+            echo "[ERROR] ❌ Hysteria2 代理连接失败"
+            echo "--- Hysteria2 日志 ---"
             cat hysteria.log
             exit 1
           fi
@@ -123,7 +127,7 @@ jobs:
 
           url = os.environ.get("Bot_PROXY", "").strip()
           if not url:
-              print("[ERROR] Bot_PROXY 涓虹┖")
+              print("[ERROR] Bot_PROXY 为空")
               sys.exit(1)
 
           if url.startswith("vless://"):
@@ -150,7 +154,7 @@ jobs:
                   f.write(url.split("#")[0])
               sys.exit(0)
           else:
-              print(f"[ERROR] 涓嶆敮鎸佺殑鍗忚: {url.split('://')[0]}")
+              print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
               sys.exit(1)
 
           if "#" in content:
@@ -245,7 +249,7 @@ jobs:
                   decoded = base64.b64decode(content).decode("utf-8")
                   vm = json.loads(decoded)
               except Exception as e:
-                  print(f"[ERROR] VMess 瑙ｆ瀽澶辫触: {e}")
+                  print(f"[ERROR] VMess 解析失败: {e}")
                   sys.exit(1)
 
               address = vm.get("add", "")
@@ -362,9 +366,9 @@ jobs:
                       address, port = server_part.rsplit(":", 1)
 
                   if not address or not port:
-                      raise ValueError("缂哄皯鏈嶅姟鍣ㄦ垨绔彛")
+                      raise ValueError("缺少服务器或端口")
               except Exception as e:
-                  print(f"[ERROR] Shadowsocks 瑙ｆ瀽澶辫触: {e}")
+                  print(f"[ERROR] Shadowsocks 解析失败: {e}")
                   sys.exit(1)
 
               print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
@@ -386,45 +390,45 @@ jobs:
           with open("xray_config.json", "w") as f:
               json.dump(config, f, indent=2)
 
-          print("[INFO] 鉁?浠ｇ悊閰嶇疆宸茬敓鎴?)
+          print("[INFO] ✅ 代理配置已生成")
           PYEOF
 
           if [ -f "use_external_socks.txt" ]; then
             EXTERNAL_SOCKS=$(cat use_external_socks.txt)
             echo "Bot_PROXY_SOCKS5=$EXTERNAL_SOCKS" >> $GITHUB_ENV
-            echo "[INFO] 鉁?浣跨敤澶栭儴 SOCKS5 浠ｇ悊"
+            echo "[INFO] ✅ 使用外部 SOCKS5 代理"
             exit 0
           fi
 
           ./xray/xray run -c xray_config.json > xray.log 2>&1 &
           sleep 5
 
-          echo "[INFO] 娴嬭瘯浠ｇ悊杩炴帴..."
+          echo "[INFO] 测试代理连接..."
           for i in 1 2 3 4 5; do
             if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
-              echo "[INFO] 鉁?浠ｇ悊杩炴帴鎴愬姛"
+              echo "[INFO] ✅ 代理连接成功"
               echo "Bot_PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
               exit 0
             fi
-            echo "[WARN] 灏濊瘯 $i/5..."
+            echo "[WARN] 尝试 $i/5..."
             sleep 3
           done
 
-          echo "[ERROR] 鉂?浠ｇ悊杩炴帴澶辫触"
-          echo "--- Xray 鏃ュ織 ---"
+          echo "[ERROR] ❌ 代理连接失败"
+          echo "--- Xray 日志 ---"
           cat xray.log
           exit 1
 
-      - name: 鎵ц Bot-Hosting 閲戝竵棰嗗彇
+      - name: 执行 Bot-Hosting 金币领取
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           NOPECHA_KEY: ${{ secrets.NOPECHA_KEY }}
           Bot_PROXY: ${{ env.Bot_PROXY_SOCKS5 }}
-        run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u bot.py
+        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" python -u bot.py
 
-      - name: 娓呯悊鍘嗗彶杩愯璁板綍
+      - name: 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
