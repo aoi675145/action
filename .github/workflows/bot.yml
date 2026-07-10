@@ -38,11 +38,11 @@ jobs:
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y xvfb xdotool p7zip-full fonts-noto-cjk fonts-wqy-zenhei
-          # 安装真实的 Google Chrome（替代 Playwright 内置 Chromium）
+          # 安装真实的 Google Chrome（Playwright channel=chrome 需要）
           wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo dpkg -i /tmp/chrome.deb || sudo apt-get install -fy
 
-      - name: 安装 Playwright 及 Python 库
+      - name: 安装 Playwright
         run: |
           pip install -q playwright requests PySocks
 
