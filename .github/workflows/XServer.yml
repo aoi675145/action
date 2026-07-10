@@ -10,15 +10,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 检查是否需要续期
-        id: check
-        run: |
-          echo "need_renew=true" >> $GITHUB_OUTPUT
-          echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
-
-      # ========== 以下所有步骤仅在需要续期时执行 ==========
       - name: 拉取私有仓库
-        if: steps.check.outputs.need_renew == 'true'
         uses: actions/checkout@v4
         with:
           repository: akina005/scripts
@@ -26,18 +18,15 @@ jobs:
           path: .
 
       - name: 设置 Python
-        if: steps.check.outputs.need_renew == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: 安装依赖
-        if: steps.check.outputs.need_renew == 'true'
         run: |
           pip install httpx
 
       - name: 配置代理节点
-        if: steps.check.outputs.need_renew == 'true'
         env:
           XSERVER_1_XARY: ${{ secrets.XSERVER_1_XARY }}
           XSERVER_2_XARY: ${{ secrets.XSERVER_2_XARY }}
@@ -203,7 +192,6 @@ jobs:
           done
 
       - name: 运行续期脚本
-        if: steps.check.outputs.need_renew == 'true'
         env:
           XSERVER_1: ${{ secrets.XSERVER_1 }}
           XSERVER_2: ${{ secrets.XSERVER_2 }}
@@ -227,9 +215,8 @@ jobs:
           XSERVER_10_XARY: ${{ secrets.XSERVER_10_XARY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          ACCOUNTS_TO_RENEW: ${{ steps.check.outputs.accounts_to_renew }}
+          ACCOUNTS_TO_RENEW: ALL
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-
         run: python scripts/XServer/main.py
 
       - name: 自动修改下次 Cron
