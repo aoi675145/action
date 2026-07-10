@@ -12,34 +12,9 @@ jobs:
     steps:
       - name: 检查是否需要续期
         id: check
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          echo "📋 读取 logs.txt..."
-
-          HTTP_CODE=$(curl -sL -o /tmp/logs_response.json -w "%{http_code}" \
-            -H "Authorization: token $REPO_TOKEN" \
-            -H "Accept: application/vnd.github.v3+json" \
-            "https://api.github.com/repos/akina005/scripts/contents/scripts/XServer/logs.txt")
-
-          if [ "$HTTP_CODE" = "404" ] || [ "$HTTP_CODE" = "301" ] || [ "$HTTP_CODE" = "302" ]; then
-            echo "📭 logs.txt 不存在，首次运行视为全部需要续期"
-            echo "need_renew=true" >> $GITHUB_OUTPUT
-            echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          if [ "$HTTP_CODE" != "200" ]; then
-            echo "⚠️ 读取 logs.txt 失败 (HTTP $HTTP_CODE)，视为全部需要续期"
-            echo "need_renew=true" >> $GITHUB_OUTPUT
-            echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-
-          LOG_SHA=$(python3 -c "import sys,json; print(json.load(open('/tmp/logs_response.json'))['sha'])")
-          echo "log_sha=$LOG_SHA" >> $GITHUB_OUTPUT
           echo "need_renew=true" >> $GITHUB_OUTPUT
           echo "accounts_to_renew=ALL" >> $GITHUB_OUTPUT
-          echo "✅ 每次 cron 都进入检查"
 
       # ========== 以下所有步骤仅在需要续期时执行 ==========
       - name: 拉取私有仓库
