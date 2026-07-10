@@ -9,7 +9,7 @@ jobs:
   earn:
     name: Bot-Hosting 金币领取
     runs-on: ubuntu-22.04
-    timeout-minutes: 20
+    timeout-minutes: 25
     permissions:
       contents: write
       actions: write
@@ -37,11 +37,11 @@ jobs:
       - name: 安装系统依赖
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
+          sudo apt-get install -y xvfb xdotool fonts-noto-cjk fonts-wqy-zenhei p7zip-full
 
-      - name: 安装 Playwright 及 Python 库
+      - name: 安装 Python 库
         run: |
-          pip install -q playwright requests[socks]
+          pip install -q seleniumbase playwright requests[socks]
           playwright install chromium
 
       - name: 下载并解压扩展
