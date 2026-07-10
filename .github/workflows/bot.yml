@@ -37,7 +37,7 @@ jobs:
       - name: 安装系统依赖
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
+          sudo apt-get install -y xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full xdotool
 
       - name: 安装 Playwright 及 Python 库
         run: |
@@ -99,15 +99,12 @@ jobs:
             sleep 5
 
             echo "[INFO] 测试 Hysteria2 代理连接..."
-            TEST_URLS=("https://api.nopecha.com/v1/status" "https://bot-hosting.net" "https://www.cloudflare.com/cdn-cgi/trace" "https://api.ipify.org")
             for i in 1 2 3 4 5; do
-              for test_url in "${TEST_URLS[@]}"; do
-                if curl -x socks5h://127.0.0.1:10808 -s --max-time 20 "$test_url" > /dev/null 2>&1; then
-                  echo "[INFO] ✅ Hysteria2 代理连接成功: $test_url"
-                  echo "Bot_PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
-                  exit 0
-                fi
-              done
+              if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+                echo "[INFO] ✅ Hysteria2 代理连接成功"
+                echo "Bot_PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+                exit 0
+              fi
               echo "[WARN] Hysteria2 尝试 $i/5..."
               sleep 3
             done
@@ -407,15 +404,12 @@ jobs:
           sleep 5
 
           echo "[INFO] 测试代理连接..."
-          TEST_URLS=("https://api.nopecha.com/v1/status" "https://bot-hosting.net" "https://www.cloudflare.com/cdn-cgi/trace" "https://api.ipify.org")
           for i in 1 2 3 4 5; do
-            for test_url in "${TEST_URLS[@]}"; do
-              if curl -x socks5h://127.0.0.1:10808 -s --max-time 20 "$test_url" > /dev/null 2>&1; then
-                echo "[INFO] ✅ 代理连接成功: $test_url"
-                echo "Bot_PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
-                exit 0
-              fi
-            done
+            if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "[INFO] ✅ 代理连接成功"
+              echo "Bot_PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+              exit 0
+            fi
             echo "[WARN] 尝试 $i/5..."
             sleep 3
           done
