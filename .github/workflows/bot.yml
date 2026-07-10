@@ -49,7 +49,7 @@ jobs:
           mkdir -p scripts/extensions/nopecha
 
           wget -q -O scripts/extensions/nopecha/chromium.zip \
-            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
+            https://github.com/NopeCHALLC/nopecha-extension/releases/latest/download/chromium.zip
           7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
 
       - name: 安装并启动代理
