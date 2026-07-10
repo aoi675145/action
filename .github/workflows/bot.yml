@@ -39,9 +39,9 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y xvfb xdotool p7zip-full fonts-noto-cjk fonts-wqy-zenhei
 
-      - name: 安装 seleniumbase
+      - name: 安装 Python 包
         run: |
-          pip install -q seleniumbase requests PySocks
+          pip install -q seleniumbase requests PySocks playwright
 
       - name: 安装并启动代理
         env:
@@ -405,6 +405,42 @@ jobs:
           echo "--- Xray 日志 ---"
           cat xray.log
           exit 1
+
+      - name: 下载 NopeCHA 扩展
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          echo "[INFO] 从私库下载 NopeCHA 扩展..."
+          mkdir -p scripts/extensions/nopecha/unpacked
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o /tmp/repo.zip \
+            "https://api.github.com/repos/aoi675145/scripts/zipball/main"
+          python3 << 'PYEOF'
+          import zipfile, os, sys
+          z = zipfile.ZipFile('/tmp/repo.zip')
+          prefix = None
+          for name in z.namelist():
+              if '/scripts/extensions/nopecha/unpacked/' in name:
+                  if prefix is None:
+                      prefix = name.split('/scripts/extensions/nopecha/unpacked/')[0] + '/scripts/extensions/nopecha/unpacked/'
+                  rel = name[len(prefix):]
+                  if not rel:
+                      continue
+                  dest = os.path.join('scripts/extensions/nopecha/unpacked', rel)
+                  os.makedirs(os.path.dirname(dest), exist_ok=True)
+                  with z.open(name) as src, open(dest, 'wb') as dst:
+                      dst.write(src.read())
+          if prefix is None:
+              print('[ERROR] NopeCHA 扩展未在私库中找到')
+              sys.exit(1)
+          print(f'[INFO] NopeCHA 扩展已下载 ({len([n for n in z.namelist() if "/scripts/extensions/nopecha/unpacked/" in n])} 文件)')
+          PYEOF
+
+      - name: 安装 Playwright 系统依赖
+        run: |
+          python -m playwright install-deps chromium
+          echo "[INFO] ✅ Playwright 系统依赖已安装"
 
       - name: 执行 Bot-Hosting 金币领取
         env:
