@@ -39,10 +39,10 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full xdotool
 
-      - name: 安装 Playwright 及 Python 库
+      - name: 安装 SeleniumBase 及 Python 库
         run: |
-          pip install -q playwright requests[socks]
-          playwright install chromium
+          pip install -q seleniumbase requests pyautogui python-xlib requests[socks]
+          seleniumbase install chromedriver
 
       - name: 下载并解压扩展
         run: |
