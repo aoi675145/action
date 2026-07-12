@@ -84,8 +84,8 @@ jobs:
 
             echo "[INFO] 测试 Hysteria2 代理连接..."
             for i in 1 2 3 4 5; do
-              if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
-                echo "[INFO] ✅ Hysteria2 代理连接成功"
+          if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+                echo "[INFO] Hysteria2 代理连接成功"
                 echo "PROXY_SERVER=socks5://127.0.0.1:10808" >> $GITHUB_ENV
                 exit 0
               fi
@@ -299,21 +299,20 @@ jobs:
           fi
 
           echo "[INFO] 检查代理出口 IP..."
-          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org >/tmp/freeze_check_ip
-          python3 - <<'PYEOF'
-          ip = open("/tmp/freeze_check_ip", encoding="utf-8").read().strip()
-          parts = ip.split(".")
+          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org 2>/dev/null | python3 -c "
+          import sys
+          ip = sys.stdin.read().strip()
+          parts = ip.split('.')
           if len(parts) == 4:
-              ip = f"{parts[0]}.xxx.xxx.{parts[3]}"
+              print(f'[INFO] 代理出口 IP: {parts[0]}.xxx.xxx.{parts[3]}')
           elif len(ip) > 8:
-              ip = f"{ip[:4]}***{ip[-4:]}"
+              print(f'[INFO] 代理出口 IP: {ip[:4]}***{ip[-4:]}')
           else:
-              ip = "***"
-          print(f"[INFO] 代理出口 IP: {ip}")
-          PYEOF
+              print('[INFO] 代理出口 IP: ***')
+          "
 
           echo "[INFO] 检查 Acore Hosting 可访问..."
-          curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://zero.acorehosting.com/ | sed -n '1,8p'
+          curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://zero.acorehosting.com/ | sed -n '1,8p' | sed 's|url=https://[^ ]*|url=https://***|g'
 
       - name: 🚀 运行续期脚本
         env:
