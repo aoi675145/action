@@ -2,7 +2,7 @@ name: Acore 续期
 
 on:
   schedule:
-    - cron: '39 23 12 7 *'   # 自动更新下次运行时间
+    - cron: '15 0 * * *'   # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
@@ -352,11 +352,11 @@ jobs:
           REMAINING_HOURS_INT=$((REMAINING_SECONDS / 3600))
           echo "⏳ 距离到期还有 ${REMAINING_HOURS} 小时"
 
-          # 续期条件: < 24h 可续，随机在 20~24h 之间运行
-          if [ "$REMAINING_HOURS_INT" -gt 24 ]; then
-            RANDOM_HOURS=$((RANDOM % 5 + 20))
+          # 续期条件: < 24h 可续，随机在剩余 21~23h 时运行
+          if [ "$REMAINING_HOURS_INT" -gt 23 ]; then
+            RANDOM_HOURS=$((RANDOM % 3 + 21))
             HOURS_UNTIL_NEXT=$((REMAINING_HOURS_INT - RANDOM_HOURS))
-            echo "🎯 随机提前 ${RANDOM_HOURS}h 运行"
+            echo "🎯 目标剩余 ${RANDOM_HOURS}h 时运行"
           elif [ "$REMAINING_HOURS_INT" -gt 1 ]; then
             HOURS_UNTIL_NEXT=1
             echo "::warning::剩余不足 24h，1 小时后重试"
