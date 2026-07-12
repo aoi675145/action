@@ -216,7 +216,6 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ACCOUNTS_TO_RENEW: ALL
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: python scripts/XServer/main.py
 
       - name: 自动修改下次 Cron
