@@ -32,14 +32,14 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: 📦 安装 Playwright 依赖与浏览器
+      - name: 📦 安装 SeleniumBase 依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y wget
 
           python -m pip install --upgrade pip
-          pip install playwright requests
-          python -m playwright install --with-deps chromium
+          pip install seleniumbase requests
+          python -m seleniumbase install
 
       - name: 🛡️ 安装并启动代理
         env:
