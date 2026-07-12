@@ -1,4 +1,4 @@
-name: Mochi Auto Renew
+name: Mochi 续期
 
 on:
   schedule:
