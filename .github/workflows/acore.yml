@@ -312,7 +312,8 @@ jobs:
           "
 
           echo "[INFO] 检查 Acore Hosting 可访问..."
-          curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://zero.acorehosting.com/ | sed -n '1,8p' | sed 's|url=https://[^ ]*|url=https://***|g'
+          STATUS=$(curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://zero.acorehosting.com/ 2>/dev/null | head -1)
+          echo "[INFO] $STATUS"
 
       - name: 🚀 运行续期脚本
         env:
