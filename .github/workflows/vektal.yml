@@ -3,7 +3,7 @@ name: Vektal Coins
 on:
   workflow_dispatch:
   schedule:
-    - cron: "38 16 13 7 *"
+    - cron: "24 18 14 7 *"
 
 permissions:
   contents: write
