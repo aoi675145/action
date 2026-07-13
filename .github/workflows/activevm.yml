@@ -58,7 +58,7 @@ jobs:
           import json, os, sys
           from urllib.parse import parse_qs, unquote, urlparse
 
-          url = os.environ.get("ACORE_PROXY", "").strip()
+          url = os.environ.get("ACTIVEVM_PROXY", "").strip()
           parsed = urlparse(url)
           auth = unquote(parsed.username or "")
           if not auth or not parsed.hostname or not parsed.port:
@@ -109,9 +109,9 @@ jobs:
           def mask(s):
               return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
 
-          url = os.environ.get("ACORE_PROXY", "").strip()
+          url = os.environ.get("ACTIVEVM_PROXY", "").strip()
           if not url:
-              print("[ERROR] ACORE_PROXY 为空")
+              print("[ERROR] ACTIVEVM_PROXY 为空")
               sys.exit(1)
 
           if url.startswith("vless://"):
@@ -320,7 +320,7 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          ACORE_PROXY: ${{ env.PROXY_SERVER }}
+          ACTIVEVM_PROXY: ${{ env.PROXY_SERVER }}
         run: xvfb-run python scripts_repo/scripts/activevm/activevm.py 2>&1 | tee renew.log
 
       - name: 提取下次签到时间
