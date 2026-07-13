@@ -5,7 +5,7 @@ on:
     - cron: '45 2 * * *'   # 每天 UTC 02:45 运行
   workflow_dispatch:
 
-  jobs:
+jobs:
   renew:
     name: 执行签到
     runs-on: ubuntu-latest
