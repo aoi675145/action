@@ -311,8 +311,8 @@ jobs:
               print('[INFO] 代理出口 IP: ***')
           "
 
-          echo "[INFO] 检查 Acore Hosting 可访问..."
-          STATUS=$(curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://zero.acorehosting.com/ 2>/dev/null | head -1)
+          echo "[INFO] 检查 ActiveVM 可访问..."
+          STATUS=$(curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://panel.activevm.net/ 2>/dev/null | head -1)
           echo "[INFO] $STATUS"
 
       - name: 🚀 运行续期脚本
