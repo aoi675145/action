@@ -37,12 +37,24 @@ jobs:
       - name: 安装系统依赖
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y xvfb xdotool p7zip-full fonts-noto-cjk fonts-wqy-zenhei
+          sudo apt-get install -y xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
 
-      - name: 安装 Playwright 及 Python 包
+      - name: 安装 Playwright 及 Python 库
         run: |
-          pip install -q seleniumbase requests[socks] playwright
+          pip install -q playwright requests[socks]
           playwright install chromium
+
+      - name: 下载并解压扩展
+        run: |
+          mkdir -p scripts/extensions/nopecha scripts/extensions/buster
+
+          wget -q -O scripts/extensions/nopecha/chromium.zip \
+            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
+          7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
+
+          wget -q -O scripts/extensions/buster/buster.zip \
+            https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
+          7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
 
       - name: 安装并启动代理
         env:
@@ -407,22 +419,6 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 下载并解压扩展
-        run: |
-          mkdir -p scripts/extensions/nopecha scripts/extensions/buster
-          wget -q -O scripts/extensions/nopecha/chromium.zip \
-            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
-          7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
-          wget -q -O scripts/extensions/buster/buster.zip \
-            https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
-          7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
-          echo "[INFO] ✅ NopeCHA + Buster 扩展已下载"
-
-      - name: 安装 Playwright 系统依赖
-        run: |
-          python -m playwright install-deps chromium
-          echo "[INFO] ✅ Playwright 系统依赖已安装"
-
       - name: 执行 Bot-Hosting 金币领取
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
@@ -430,7 +426,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           NOPECHA_KEY: ${{ secrets.NOPECHA_KEY }}
           Bot_PROXY: ${{ env.Bot_PROXY_SOCKS5 }}
-        run: xvfb-run -a --server-args="-screen 0 1920x1080x24" python -u bot.py
+        run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u bot.py
 
       - name: 清理历史运行记录
         if: always()
