@@ -1,4 +1,4 @@
-name: X Systems 签到
+name: X Systems 领取金币
 
 on:
   schedule:
@@ -7,7 +7,7 @@ on:
 
 jobs:
   renew:
-    name: 执行签到
+    name: 执行领取
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
