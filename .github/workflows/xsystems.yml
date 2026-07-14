@@ -2,7 +2,7 @@ name: X Systems 领取金币
 
 on:
   schedule:
-    - cron: '0 0 * * *'   # 首次运行后自动更新
+    - cron: '22 14 15 7 *'   # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
