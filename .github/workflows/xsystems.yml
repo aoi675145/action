@@ -2,7 +2,7 @@ name: X Systems 领取金币
 
 on:
   schedule:
-    - cron: '0 */6 * * *'   # 每6小时
+    - cron: '0 0 * * *'   # 首次运行后自动更新
   workflow_dispatch:
 
 jobs:
@@ -284,10 +284,78 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 🚀 运行签到脚本
+      - name: 🚀 运行领取脚本
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           XSYSTEMS_PROXY: ${{ env.PROXY_URL }}
         run: python scripts_repo/scripts/xsystems/xsystems.py 2>&1 | tee renew.log
+
+      - name: 提取下次领取时间
+        id: extract_next
+        if: success()
+        run: |
+          NEXT_CRON=$(grep -oP '\[CRON\] 下次领取时间: \K\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}' renew.log | tail -1 || echo "")
+          if [ -z "$NEXT_CRON" ]; then
+            echo "skip_update=true" >> $GITHUB_OUTPUT
+            echo "::warning::未能提取下次领取时间，跳过 Cron 更新"
+            exit 0
+          fi
+          echo "next_cron=$NEXT_CRON" >> $GITHUB_OUTPUT
+          echo "skip_update=false" >> $GITHUB_OUTPUT
+          echo "::notice::⏰ 下次领取时间: $NEXT_CRON"
+
+      - name: 修改下次 Cron 时间
+        if: success() && steps.extract_next.outputs.skip_update != 'true'
+        run: |
+          set -e
+          NEXT_CRON="${{ steps.extract_next.outputs.next_cron }}"
+          echo "⏰ 下次领取时间: $NEXT_CRON"
+
+          CURRENT_EPOCH=$(date -u +%s)
+          NEXT_EPOCH=$(date -u -d "$NEXT_CRON" +%s)
+          TARGET_EPOCH=$((NEXT_EPOCH))
+          REMAINING_SECONDS=$((TARGET_EPOCH - CURRENT_EPOCH))
+          REMAINING_MINUTES=$((REMAINING_SECONDS / 60))
+          echo "⏳ 距离下次运行还有 ${REMAINING_MINUTES} 分钟"
+
+          if [ "$REMAINING_SECONDS" -lt 60 ]; then
+            REMAINING_SECONDS=60
+            echo "::warning::时间太短，1分钟后重试"
+          fi
+
+          NEXT_MINUTE=$(date -u -d "@$TARGET_EPOCH" +"%-M")
+          NEXT_HOUR=$(date -u -d "@$TARGET_EPOCH" +"%-H")
+          NEXT_DAY=$(date -u -d "@$TARGET_EPOCH" +"%-d")
+          NEXT_MONTH=$(date -u -d "@$TARGET_EPOCH" +"%-m")
+          NEW_CRON="$NEXT_MINUTE $NEXT_HOUR $NEXT_DAY $NEXT_MONTH *"
+
+          echo "::notice::⏰ 下次运行: $(date -u -d "@$TARGET_EPOCH" +'%Y-%m-%d %H:%M') UTC"
+          echo "::notice::📟 新 Cron: $NEW_CRON"
+
+          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git workflow_repo
+          cd workflow_repo
+
+          WORKFLOW_FILE=".github/workflows/xsystems.yml"
+          LINE_NUM=$(grep -n "cron: '" "$WORKFLOW_FILE" | head -n1 | cut -d: -f1)
+          if [ -z "$LINE_NUM" ]; then
+            echo "::error::找不到 cron 行"
+            exit 1
+          fi
+
+          sed -i "${LINE_NUM}c\\    - cron: '$NEW_CRON'   # 自动更新下次运行时间" "$WORKFLOW_FILE"
+
+          if git diff --quiet "$WORKFLOW_FILE"; then
+            echo "::notice::没有变化需要提交"
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$WORKFLOW_FILE"
+          git commit -m "🔄 自动更新 X Systems 领取 Cron" \
+                     -m "下次运行: $(date -u -d '@$TARGET_EPOCH' +'%Y-%m-%d %H:%M') UTC" \
+                     -m "Cron: $NEW_CRON"
+          git push
+          echo "::notice::✅ Cron 更新成功"
