@@ -2,7 +2,7 @@ name: XServer 续期多账号版
 
 on:
   schedule:
-    - cron: '45 11 15 7 *'  # 自动更新下次运行时间
+    - cron: '45 12 15 7 *'  # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
