@@ -2,7 +2,7 @@ name: ActiveVM 签到
 
 on:
   schedule:
-    - cron: '30 7 15 7 *'   # 自动更新
+    - cron: '0 0 16 7 *'   # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
