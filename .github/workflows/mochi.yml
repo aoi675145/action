@@ -20,7 +20,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: pip install seleniumbase requests
+        run: pip install seleniumbase requests pyautogui
 
       - name: Install Chrome
         run: |
