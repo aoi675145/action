@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "9 3 * * *"
+    - cron: "4 1 * * *"
 
 jobs:
   sign:
@@ -68,7 +68,7 @@ jobs:
           7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
 
           wget -q -O scripts/extensions/buster/buster.zip \
-            https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
+            https://github.com/dessant/buster/releases/download/v3.4.0/buster_captcha_solver_for_humans-3.4.0-chrome.zip
           7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
 
       - name: 安装并启动代理
