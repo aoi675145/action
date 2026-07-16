@@ -9,7 +9,7 @@ on:
         default: false
         type: boolean
   schedule:
-    - cron: '11 3 16 7 *'   # 自动更新下次运行时间
+    - cron: '50 3 23 7 *'   # 自动更新下次运行时间
 
 permissions:
   contents: write
