@@ -64,7 +64,7 @@ jobs:
           mkdir -p scripts/extensions/nopecha scripts/extensions/buster
 
           wget -q -O scripts/extensions/nopecha/chromium.zip \
-            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
+            https://github.com/NopeCHALLC/nopecha-extension/releases/download/3.4.0/chromium.zip
           7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
 
           wget -q -O scripts/extensions/buster/buster.zip \
