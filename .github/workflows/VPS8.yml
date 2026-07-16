@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "50 1 * * *"
+    - cron: "4 1 * * *"
 
 jobs:
   sign:
@@ -452,8 +452,9 @@ jobs:
           fi
           echo "[截图] 克隆私库 aoi675145/scripts，保存截图..."
           git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
+          rm -rf scripts-cache/scripts/vps8/screenshots
           mkdir -p scripts-cache/scripts/vps8/screenshots
-          cp -f screenshots/*.png scripts-cache/scripts/vps8/screenshots/
+          cp screenshots/*.png scripts-cache/scripts/vps8/screenshots/
           cd scripts-cache
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
