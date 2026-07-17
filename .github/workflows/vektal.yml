@@ -172,19 +172,24 @@ jobs:
 
       - name: Update cron
         run: |
+          cron=$(date -u -d "+24 hours" +"%M %H %d %m *")
           if [ -f scripts-repo/scripts/vektal/next_run.txt ]; then
-            cron=$(cat scripts-repo/scripts/vektal/next_run.txt)
-            echo "cron: $cron"
-            git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/aoi675145/action.git cron_repo
-            cd cron_repo
-            echo "$cron" > cron.txt
-            git add cron.txt
-            git -c user.name="bot" -c user.email="bot@bot.com" \
-              commit -m "auto: cron $cron"
-            git push
-            cd ..
-            rm -rf cron_repo
+            file_cron=$(cat scripts-repo/scripts/vektal/next_run.txt)
+            m=$(echo "$file_cron" | cut -d' ' -f1); h=$(echo "$file_cron" | cut -d' ' -f2)
+            d=$(echo "$file_cron" | cut -d' ' -f3); mo=$(echo "$file_cron" | cut -d' ' -f4)
+            t=$(date -u -d "$(date +%Y)-$mo-$d $h:$m:00" +%s 2>/dev/null || echo 0)
+            [ "$t" -gt "$(date -u +%s)" ] && cron="$file_cron"
           fi
+          echo "cron: $cron"
+          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/aoi675145/action.git cron_repo
+          cd cron_repo
+          echo "$cron" > cron.txt
+          git add cron.txt
+          git -c user.name="bot" -c user.email="bot@bot.com" \
+            commit -m "auto: cron $cron"
+          git push
+          cd ..
+          rm -rf cron_repo
 
       - name: Cleanup old runs
         uses: Mattraks/delete-workflow-runs@v2
