@@ -268,7 +268,7 @@ jobs:
           curl -sL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -H "Accept: application/vnd.github.raw" \
-            -o main.py \
+            -o victus.py \
             "https://api.github.com/repos/aoi675145/scripts/contents/scripts/victus/victus.py?ref=main"
           curl -sL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
