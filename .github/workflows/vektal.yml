@@ -138,7 +138,7 @@ jobs:
           sleep 2
 
           if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/vektal_proxy_ip; then
-            echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+            echo "PROXY_SERVER=127.0.0.1:8080" >> "$GITHUB_ENV"
             ip=$(cat /tmp/vektal_proxy_ip)
             echo "[INFO] ✅ 代理可用，出口 IP: $(echo $ip | sed 's/\.[0-9]*$/.***/')"
           else
