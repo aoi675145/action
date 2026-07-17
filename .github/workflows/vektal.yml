@@ -21,6 +21,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Checkout scripts repo
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: scripts-repo
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -40,14 +47,14 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           Vektal_RUNTIME_PROXY: ${{ secrets.Vektal_RUNTIME_PROXY }}
         run: |
-          cd vektal
+          cd scripts-repo/scripts/vektal
           python vektal.py
 
       - name: Read next run time
         id: schedule
         run: |
-          if (Test-Path -LiteralPath "vektal/next_run.txt") {
-            $cron = (Get-Content -Path "vektal/next_run.txt" -Raw).Trim()
+          if (Test-Path -LiteralPath "scripts-repo/scripts/vektal/next_run.txt") {
+            $cron = (Get-Content -Path "scripts-repo/scripts/vektal/next_run.txt" -Raw).Trim()
             Write-Host "Next run: $cron"
             echo "cron=$cron" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
           } else {
@@ -60,5 +67,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
-          path: vektal/screenshots/
+          path: scripts-repo/scripts/vektal/screenshots/
           retention-days: 7
