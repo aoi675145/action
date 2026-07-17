@@ -1,0 +1,64 @@
+name: Vektal Coins
+
+on:
+  schedule:
+    - cron: "0 */4 * * *"
+  workflow_dispatch:
+    inputs:
+      debug:
+        description: Debug mode
+        type: boolean
+        default: false
+
+env:
+  TZ: Asia/Shanghai
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install seleniumbase requests
+
+      - name: Run vektal
+        id: run
+        continue-on-error: true
+        env:
+          Vektal: ${{ secrets.Vektal }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          Vektal_RUNTIME_PROXY: ${{ secrets.Vektal_RUNTIME_PROXY }}
+        run: |
+          cd vektal
+          python vektal.py
+
+      - name: Read next run time
+        id: schedule
+        run: |
+          if (Test-Path -LiteralPath "vektal/next_run.txt") {
+            $cron = (Get-Content -Path "vektal/next_run.txt" -Raw).Trim()
+            Write-Host "Next run: $cron"
+            echo "cron=$cron" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          } else {
+            echo "cron=" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+          }
+        shell: pwsh
+
+      - name: Upload screenshots
+        if: failure() || steps.run.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: vektal/screenshots/
+          retention-days: 7
