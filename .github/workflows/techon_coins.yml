@@ -225,21 +225,22 @@ jobs:
                   "streamSettings": build_stream_settings(query, host),
               }
           elif scheme == "ss":
-              content = (parsed.netloc + parsed.path).lstrip("/")
-              if "@" in content:
-                  encoded, server_part = content.split("@", 1)
-                  decoded = base64.b64decode(encoded + "==").decode("utf-8")
-                  method, password = decoded.split(":", 1)
-                  address, port_str = server_part.split(":", 1)
+              userinfo = unquote(parsed.username or "")
+              address = parsed.hostname or ""
+              port = parsed.port or 0
+              if userinfo and address and port:
+                  if ":" not in userinfo:
+                      pad = "=" * (-len(userinfo) % 4)
+                      userinfo = base64.urlsafe_b64decode(userinfo + pad).decode("utf-8")
+                  method, password = userinfo.split(":", 1)
               else:
-                  decoded = base64.b64decode(content + "==").decode("utf-8")
-                  if "@" in decoded:
-                      user_part, server_part = decoded.split("@", 1)
-                      method, password = user_part.split(":", 1)
-                      address, port_str = server_part.split(":", 1)
-                  else:
-                      raise SystemExit("Invalid Shadowsocks URL")
-              port = int(port_str.split("#")[0].split("?")[0])
+                  raw = (parsed.netloc + parsed.path).lstrip("/").split("#", 1)[0].split("?", 1)[0]
+                  pad = "=" * (-len(raw) % 4)
+                  decoded = base64.urlsafe_b64decode(raw + pad).decode("utf-8")
+                  user_part, server_part = decoded.rsplit("@", 1)
+                  method, password = user_part.split(":", 1)
+                  address, port = server_part.rsplit(":", 1)
+                  port = int(port)
 
               outbound = {
                   "protocol": "shadowsocks",
