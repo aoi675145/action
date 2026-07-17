@@ -37,6 +37,7 @@ jobs:
           pip install seleniumbase requests
 
       - name: Install and start proxy
+        id: proxy
         env:
           Vektal_ROXY: ${{ secrets.Vektal_ROXY }}
         run: |
@@ -138,10 +139,20 @@ jobs:
           sleep 2
 
           if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/vektal_proxy_ip; then
+            echo "proxy=127.0.0.1:8080" >> "$GITHUB_OUTPUT"
             echo "PROXY_SERVER=127.0.0.1:8080" >> "$GITHUB_ENV"
             ip=$(cat /tmp/vektal_proxy_ip)
-            echo "[INFO] ✅ 代理可用，出口 IP: $(echo $ip | sed 's/\.[0-9]*$/.***/')"
-          else
+            python3 -c "
+ip = open('/tmp/vektal_proxy_ip').read().strip()
+parts = ip.split('.')
+if len(parts) == 4:
+    masked = f'{parts[0]}.xxx.xxx.{parts[3]}'
+elif len(ip) > 8:
+    masked = f'{ip[:4]}***{ip[-4:]}'
+else:
+    masked = '***'
+print(f'[INFO] ✅ 代理可用，出口 IP: {masked}')
+"
             echo "[ERROR] ❌ 代理不可用，禁止直连"
             cat xray.log
             exit 1
@@ -154,7 +165,7 @@ jobs:
           Vektal: ${{ secrets.Vektal }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          Vektal_RUNTIME_PROXY: ${{ env.PROXY_SERVER }}
+          Vektal_RUNTIME_PROXY: ${{ steps.proxy.outputs.proxy }}
         run: |
           cd scripts-repo/scripts/vektal
           python vektal.py
