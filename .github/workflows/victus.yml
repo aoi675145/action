@@ -11,9 +11,11 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 拉取代码
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: 🐍 配置 Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -250,16 +252,6 @@ jobs:
             curl -s https://api.ipify.org | mask_ip && echo
             curl -s https://ipinfo.io | mask_ip
           fi
-
-      - name: 🔍 API 探测
-        env:
-          VICTUSCLOUD: ${{ secrets.VICTUSCLOUD }}
-          VICTUS_COOKIES: ${{ secrets.VICTUS_COOKIES }}
-          victus_RUNTIME_PROXY: ${{ env.victus_RUNTIME_PROXY }}
-          victus_PROXY_STATUS: ${{ env.victus_PROXY_STATUS }}
-        run: |
-          mkdir -p victus/screenshots
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python victus/debug_api.py || true
 
       - name: 📥 拉取私库脚本
         env:
