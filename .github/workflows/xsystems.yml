@@ -1,13 +1,13 @@
-name: X Systems 领取金币
+name: X Systems Coins
 
 on:
   schedule:
-    - cron: '57 17 18 7 *'   # 自动更新下次运行时间
+    - cron: '57 17 18 7 *'   # 首次运行后自动更新
   workflow_dispatch:
 
 jobs:
   renew:
-    name: 执行领取
+    name: X Systems Coins
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
