@@ -326,25 +326,37 @@ jobs:
 
           elif protocol == "ss":
               try:
-                  if "@" in content:
-                      encoded, server_part = content.split("@", 1)
-                      decoded = base64.b64decode(encoded + "==").decode("utf-8")
-                      method, password = decoded.split(":", 1)
-                      address, port = server_part.split(":", 1)
+                  ss_url = urlparse(url)
+                  userinfo = ss_url.username or ""
+                  address = ss_url.hostname or ""
+                  port = ss_url.port
+
+                  if userinfo and address and port:
+                      decoded_userinfo = unquote(userinfo)
+                      if ":" not in decoded_userinfo:
+                          padding = 4 - len(decoded_userinfo) % 4
+                          if padding != 4:
+                              decoded_userinfo += "=" * padding
+                          decoded_userinfo = base64.urlsafe_b64decode(decoded_userinfo).decode("utf-8")
+                      method, password = decoded_userinfo.split(":", 1)
                   else:
-                      decoded = base64.b64decode(content + "==").decode("utf-8")
-                      if "@" in decoded:
-                          user_part, server_part = decoded.split("@", 1)
-                          method, password = user_part.split(":", 1)
-                          address, port = server_part.split(":", 1)
-                      else:
-                          raise ValueError("无法解析")
+                      raw = content.split("#", 1)[0].split("?", 1)[0]
+                      padding = 4 - len(raw) % 4
+                      if padding != 4:
+                          raw += "=" * padding
+                      decoded = base64.urlsafe_b64decode(raw).decode("utf-8")
+                      user_part, server_part = decoded.rsplit("@", 1)
+                      method, password = user_part.split(":", 1)
+                      address, port = server_part.rsplit(":", 1)
+
+                  if not address or not port:
+                      raise ValueError("缺少服务器或端口")
               except Exception as e:
                   print(f"[ERROR] Shadowsocks 解析失败: {e}")
                   sys.exit(1)
-              
+
               print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
-              
+
               outbound = {
                   "protocol": "shadowsocks",
                   "settings": {
@@ -356,7 +368,7 @@ jobs:
                       }]
                   }
               }
-              
+
               config["outbounds"].append(outbound)
 
           with open("xray_config.json", "w") as f:
