@@ -75,11 +75,8 @@ jobs:
             exit 1
           fi
 
-          wget -q https://github.com/aoi675145/akina/releases/download/proxy/Xray-linux-64.zip
-          mkdir -p xray-bin
-          unzip -oq Xray-linux-64.zip -d xray-bin
-          chmod +x xray-bin/xray
-          sudo mv xray-bin/xray /usr/local/bin/xray
+          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
+          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
 
       - name: 构建 Xray 配置
         env:
@@ -94,183 +91,209 @@ jobs:
             exit 1
           fi
           python3 << 'PYEOF'
-          import base64
-          import json
-          import os
+          import os, sys, json, base64
           from urllib.parse import parse_qs, unquote, urlparse
 
-          proxy_url = os.environ["TECHNO_PROXY"].strip()
-          parsed = urlparse(proxy_url)
-          scheme = parsed.scheme
+          def mask(s):
+              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
 
-          if scheme not in {"vless", "vmess", "ss", "trojan"}:
-              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+          url = os.environ.get("TECHNO_PROXY", "").strip()
+          if not url:
+              print("[ERROR] TECHNO_PROXY 为空")
+              sys.exit(1)
 
-          def truthy(value):
-              return str(value).lower() in {"1", "true", "yes"}
+          if url.startswith("vless://"):
+              protocol = "vless"
+              content = url[8:]
+          elif url.startswith("vmess://"):
+              protocol = "vmess"
+              content = url[8:]
+          elif url.startswith("trojan://"):
+              protocol = "trojan"
+              content = url[9:]
+          elif url.startswith("ss://"):
+              protocol = "ss"
+              content = url[5:]
+          elif url.startswith("socks5://") or url.startswith("socks://"):
+              protocol = "socks5"
+              content = url.split("://")[1].split("#")[0]
+              if "@" in content:
+                  server = content.split("@")[1].split(":")[0]
+              else:
+                  server = content.split(":")[0]
+              print(f"[INFO] SOCKS5 -> {mask(server)}")
+              with open("use_external_socks.txt", "w") as f:
+                  f.write(url.split("#")[0])
+              sys.exit(0)
+          else:
+              print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
+              sys.exit(1)
 
-          def build_stream_settings(query, host):
-              transport_type = query.get("type", "tcp")
-              if transport_type == "h2":
-                  transport_type = "http"
+          if "#" in content:
+              content = content.rsplit("#", 1)[0]
 
-              stream_settings = {
-                  "network": transport_type,
-                  "security": query.get("security", "none"),
-              }
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [
+                  {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
+                  {"port": 10809, "listen": "127.0.0.1", "protocol": "http"}
+              ],
+              "outbounds": []
+          }
 
-              if stream_settings["security"] == "reality":
-                  reality = {
-                      "serverName": query.get("sni", host),
-                      "fingerprint": query.get("fp", "chrome"),
-                      "publicKey": query.get("pbk", ""),
-                  }
-                  if query.get("sid"):
-                      reality["shortId"] = query["sid"]
-                  if query.get("spx"):
-                      reality["spiderX"] = query["spx"]
-                  stream_settings["realitySettings"] = reality
-              elif stream_settings["security"] == "tls":
-                  stream_settings["tlsSettings"] = {
-                      "serverName": query.get("sni", host),
-                      "fingerprint": query.get("fp", "chrome"),
-                      "allowInsecure": truthy(query.get("allowInsecure", query.get("insecure", "0"))),
-                  }
+          if protocol == "vless":
+              uuid, rest = content.split("@", 1)
+              if "?" in rest:
+                  host_port, params_str = rest.split("?", 1)
+              else:
+                  host_port, params_str = rest, ""
 
-              if transport_type == "tcp":
-                  stream_settings["tcpSettings"] = {
-                      "header": {"type": query.get("headerType", "none")}
-                  }
-              elif transport_type == "ws":
-                  headers = {}
-                  if query.get("host"):
-                      headers["Host"] = query["host"]
-                  stream_settings["wsSettings"] = {
-                      "path": query.get("path", "/"),
-                      "headers": headers,
-                  }
-              elif transport_type == "http":
-                  stream_settings["httpSettings"] = {
-                      "host": [h for h in query.get("host", "").split(",") if h],
-                      "path": query.get("path", "/"),
-                  }
-              elif transport_type == "grpc":
-                  stream_settings["grpcSettings"] = {
-                      "serviceName": query.get("serviceName", ""),
-                      "authority": query.get("authority", ""),
-                  }
+              if ":" in host_port:
+                  address, port = host_port.rsplit(":", 1)
+              else:
+                  address, port = host_port, "443"
 
-              return stream_settings
+              params = parse_qs(params_str)
+              security = params.get("security", ["none"])[0]
+              network = params.get("type", ["tcp"])[0]
+              sni = params.get("sni", [address])[0]
+              fp = params.get("fp", ["chrome"])[0]
+              flow = params.get("flow", [""])[0]
+              pbk = params.get("pbk", [""])[0]
+              sid = params.get("sid", [""])[0]
+              host = params.get("host", [sni])[0]
+              path = unquote(params.get("path", ["/"])[0])
 
-          if scheme == "vless":
-              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
-              host = parsed.hostname
-              port = parsed.port
-              user_id = unquote(parsed.username or "")
-
-              if not host or not port or not user_id:
-                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
 
               outbound = {
                   "protocol": "vless",
                   "settings": {
                       "vnext": [{
-                          "address": host,
-                          "port": port,
-                          "users": [{
-                              "id": user_id,
-                              "encryption": qs.get("encryption", "none"),
-                              "flow": qs.get("flow", ""),
-                          }],
+                          "address": address,
+                          "port": int(port),
+                          "users": [{"id": uuid, "encryption": "none"}]
                       }]
                   },
-                  "streamSettings": build_stream_settings(qs, host),
+                  "streamSettings": {
+                      "network": network,
+                      "security": security
+                  }
               }
-          elif scheme == "vmess":
-              payload = parsed.netloc + parsed.path
-              padded = payload + "=" * (-len(payload) % 4)
-              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-              host = vmess.get("add")
-              port = int(vmess.get("port", 0))
-              user_id = vmess.get("id", "")
-              if not host or not port or not user_id:
-                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
 
-              query = {
-                  "type": vmess.get("net", "tcp"),
-                  "security": vmess.get("tls", "none"),
-                  "path": vmess.get("path", "/") or "/",
-                  "host": vmess.get("host", ""),
-                  "sni": vmess.get("sni", "") or host,
-                  "fp": vmess.get("fp", "chrome"),
-                  "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")),
-                  "serviceName": vmess.get("path", ""),
-                  "authority": vmess.get("host", ""),
-                  "headerType": vmess.get("type", "none") or "none",
-              }
+              if flow:
+                  outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
+
+              if security == "reality":
+                  reality = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "publicKey": pbk,
+                  }
+                  if sid:
+                      reality["shortId"] = sid
+                  outbound["streamSettings"]["realitySettings"] = reality
+              elif security == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "allowInsecure": False
+                  }
+
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+              elif network == "grpc":
+                  service_name = params.get("serviceName", [""])[0]
+                  outbound["streamSettings"]["grpcSettings"] = {
+                      "serviceName": service_name
+                  }
+
+              config["outbounds"].append(outbound)
+
+          elif protocol == "vmess":
+              try:
+                  padding = 4 - len(content) % 4
+                  if padding != 4:
+                      content += "=" * padding
+                  decoded = base64.b64decode(content).decode("utf-8")
+                  vm = json.loads(decoded)
+              except Exception as e:
+                  print(f"[ERROR] VMess 解析失败: {e}")
+                  sys.exit(1)
+
+              address = vm.get("add", "")
+              port = int(vm.get("port", 443))
+              uuid = vm.get("id", "")
+              aid = int(vm.get("aid", 0))
+              network = vm.get("net", "tcp")
+              tls = vm.get("tls", "")
+              sni = vm.get("sni", "") or vm.get("host", address)
+              host = vm.get("host", address)
+              path = vm.get("path", "/")
+              fp = vm.get("fp", "chrome")
+
+              print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
 
               outbound = {
                   "protocol": "vmess",
                   "settings": {
                       "vnext": [{
-                          "address": host,
-                          "port": port,
-                          "users": [{
-                              "id": user_id,
-                              "alterId": int(vmess.get("aid", 0) or 0),
-                              "security": vmess.get("scy", "auto"),
-                          }],
-                      }]
-                  },
-                  "streamSettings": build_stream_settings(query, host),
-              }
-          elif scheme == "ss":
-              userinfo = unquote(parsed.username or "")
-              address = parsed.hostname or ""
-              port = parsed.port or 0
-              if userinfo and address and port:
-                  if ":" not in userinfo:
-                      pad = "=" * (-len(userinfo) % 4)
-                      userinfo = base64.urlsafe_b64decode(userinfo + pad).decode("utf-8")
-                  method, password = userinfo.split(":", 1)
-              else:
-                  raw = (parsed.netloc + parsed.path).lstrip("/").split("#", 1)[0].split("?", 1)[0]
-                  pad = "=" * (-len(raw) % 4)
-                  decoded = base64.urlsafe_b64decode(raw + pad).decode("utf-8")
-                  user_part, server_part = decoded.rsplit("@", 1)
-                  method, password = user_part.split(":", 1)
-                  address, port = server_part.rsplit(":", 1)
-                  port = int(port)
-
-              outbound = {
-                  "protocol": "shadowsocks",
-                  "settings": {
-                      "servers": [{
                           "address": address,
                           "port": port,
-                          "method": method,
-                          "password": password
+                          "users": [{"id": uuid, "alterId": aid, "security": "auto"}]
                       }]
+                  },
+                  "streamSettings": {
+                      "network": network,
+                      "security": "tls" if tls == "tls" else "none"
                   }
               }
-          elif scheme == "trojan":
-              content = parsed.netloc + parsed.path
-              password = unquote(parsed.username or "")
-              host = parsed.hostname
-              port = parsed.port or 443
-              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
-              sni = qs.get("sni", host)
-              network = qs.get("type", "tcp")
-              host_hdr = qs.get("host", sni)
-              path = qs.get("path", "/")
-              fp = qs.get("fp", "chrome")
+
+              if tls == "tls":
+                  outbound["streamSettings"]["tlsSettings"] = {
+                      "serverName": sni,
+                      "fingerprint": fp,
+                      "allowInsecure": False
+                  }
+
+              if network == "ws":
+                  outbound["streamSettings"]["wsSettings"] = {
+                      "path": path,
+                      "headers": {"Host": host}
+                  }
+
+              config["outbounds"].append(outbound)
+
+          elif protocol == "trojan":
+              password, rest = content.split("@", 1)
+              if "?" in rest:
+                  host_port, params_str = rest.split("?", 1)
+              else:
+                  host_port, params_str = rest, ""
+
+              if ":" in host_port:
+                  address, port = host_port.rsplit(":", 1)
+              else:
+                  address, port = host_port, "443"
+
+              params = parse_qs(params_str)
+              sni = params.get("sni", [address])[0]
+              network = params.get("type", ["tcp"])[0]
+              host = params.get("host", [sni])[0]
+              path = unquote(params.get("path", ["/"])[0])
+              fp = params.get("fp", ["chrome"])[0]
+
+              print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
 
               outbound = {
                   "protocol": "trojan",
                   "settings": {
                       "servers": [{
-                          "address": host,
-                          "port": port,
+                          "address": address,
+                          "port": int(port),
                           "password": password
                       }]
                   },
@@ -284,24 +307,62 @@ jobs:
                       }
                   }
               }
+
               if network == "ws":
                   outbound["streamSettings"]["wsSettings"] = {
                       "path": path,
-                      "headers": {"Host": host_hdr}
+                      "headers": {"Host": host}
                   }
 
-          config = {
-              "log": {"loglevel": "warning"},
-              "inbounds": [{
-                  "listen": "127.0.0.1",
-                  "port": 8080,
-                  "protocol": "http",
-              }],
-              "outbounds": [outbound],
-          }
+              config["outbounds"].append(outbound)
 
-          with open("xray-config.json", "w", encoding="ascii") as f:
+          elif protocol == "ss":
+              try:
+                  ss_url = urlparse(url)
+                  userinfo = ss_url.username or ""
+                  address = ss_url.hostname or ""
+                  port = ss_url.port
+
+                  if userinfo and address and port:
+                      decoded_userinfo = unquote(userinfo)
+                      if ":" not in decoded_userinfo:
+                          padding = "=" * (-len(decoded_userinfo) % 4)
+                          decoded_userinfo = base64.urlsafe_b64decode(decoded_userinfo + padding).decode("utf-8")
+                      method, password = decoded_userinfo.split(":", 1)
+                  else:
+                      raw = content.split("#", 1)[0].split("?", 1)[0]
+                      padding = "=" * (-len(raw) % 4)
+                      decoded = base64.urlsafe_b64decode(raw + padding).decode("utf-8")
+                      user_part, server_part = decoded.rsplit("@", 1)
+                      method, password = user_part.split(":", 1)
+                      address, port = server_part.rsplit(":", 1)
+
+                  if not address or not port:
+                      raise ValueError("缺少服务器或端口")
+              except Exception as e:
+                  print(f"[ERROR] Shadowsocks 解析失败: {e}")
+                  sys.exit(1)
+
+              print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
+
+              outbound = {
+                  "protocol": "shadowsocks",
+                  "settings": {
+                      "servers": [{
+                          "address": address,
+                          "port": int(port),
+                          "method": method,
+                          "password": password
+                      }]
+                  }
+              }
+
+              config["outbounds"].append(outbound)
+
+          with open("xray_config.json", "w") as f:
               json.dump(config, f, indent=2)
+
+          print("[INFO] ✅ 代理配置已生成")
           PYEOF
 
       - name: 启动代理
@@ -315,11 +376,32 @@ jobs:
               | sed 's/\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)/\1.xxx.xxx.\4/g'
             exit 0
           fi
-          nohup xray run -c xray-config.json > xray.log 2>&1 &
-          sleep 3
-          echo "✅ Xray 已启动，测试连通性..."
-          curl -s -x http://127.0.0.1:8080 https://api.ipify.org \
-            | sed 's/\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)\.\([0-9]*\)/\1.xxx.xxx.\4/g'
+
+          if [ -f "use_external_socks.txt" ]; then
+            EXTERNAL_SOCKS=$(cat use_external_socks.txt)
+            echo "LOCAL_PROXY=$EXTERNAL_SOCKS" >> $GITHUB_ENV
+            echo "[INFO] ✅ 使用外部 SOCKS5 代理"
+            exit 0
+          fi
+
+          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          sleep 5
+
+          echo "[INFO] 测试代理连接..."
+          for i in 1 2 3 4 5; do
+            if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "[INFO] ✅ 代理连接成功"
+              echo "LOCAL_PROXY=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+              exit 0
+            fi
+            echo "[WARN] 尝试 $i/5..."
+            sleep 3
+          done
+
+          echo "[ERROR] ❌ 代理连接失败"
+          echo "--- Xray 日志 ---"
+          cat xray.log
+          exit 1
 
       - name: 安装系统依赖
         run: |
