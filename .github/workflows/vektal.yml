@@ -142,15 +142,15 @@ jobs:
             echo "proxy=127.0.0.1:8080" >> "$GITHUB_OUTPUT"
             echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
             python3 << 'PYEOF'
-ip = open("/tmp/vektal_proxy_ip", encoding="utf-8").read().strip()
-parts = ip.split(".")
-if len(parts) == 4:
-    ip = f"{parts[0]}.xxx.xxx.{parts[3]}"
-elif len(ip) > 8:
-    ip = f"{ip[:4]}***{ip[-4:]}"
-else:
-    ip = "***"
-print(f"[INFO] ✅ 代理可用，出口 IP: {ip}")
+            ip = open("/tmp/vektal_proxy_ip", encoding="utf-8").read().strip()
+            parts = ip.split(".")
+            if len(parts) == 4:
+                ip = f"{parts[0]}.xxx.xxx.{parts[3]}"
+            elif len(ip) > 8:
+                ip = f"{ip[:4]}***{ip[-4:]}"
+            else:
+                ip = "***"
+            print(f"[INFO] ✅ 代理可用，出口 IP: {ip}")
 PYEOF
           else
             echo "[ERROR] ❌ 代理不可用，禁止直连"
