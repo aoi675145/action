@@ -269,7 +269,7 @@ jobs:
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -H "Accept: application/vnd.github.raw" \
             -o main.py \
-            "https://api.github.com/repos/aoi675145/scripts/contents/scripts/victus/main.py?ref=main"
+            "https://api.github.com/repos/aoi675145/scripts/contents/scripts/victus/victus.py?ref=main"
           curl -sL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -H "Accept: application/vnd.github.raw" \
@@ -287,7 +287,7 @@ jobs:
           victus_COOKIE_REPO_PATH: scripts/victus/cookie.txt
         run: |
           mkdir -p screenshots
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python main.py
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python victus.py
 
       - name: 清理运行记录
         if: always()
