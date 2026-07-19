@@ -225,7 +225,7 @@ jobs:
             sudo -E apt-get update -qq
             sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb
           fi
-          pip install --quiet seleniumbase requests
+          pip install --quiet seleniumbase requests cloudscraper
 
       - name: Check IP
         run: |
@@ -251,7 +251,7 @@ jobs:
             curl -s https://ipinfo.io | mask_ip
           fi
 
-      - name: Fetch private Ateex script
+      - name: Fetch Ateex main.py from private repo
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -261,7 +261,7 @@ jobs:
             -o main.py \
             "https://api.github.com/repos/aoi675145/scripts/contents/scripts/Ateex/main.py?ref=main"
 
-      - name: Run full flow
+      - name: Run full flow (Discord OAuth + Linkvertise)
         env:
           DISCORD_TOKEN_A: ${{ secrets.DISCORD_TOKEN_A }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
