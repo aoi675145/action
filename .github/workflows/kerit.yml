@@ -20,7 +20,7 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: Interval Check (Strict 4-day cycle)
+      - name: Interval Check (Strict 3-day cycle)
         id: check
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -28,12 +28,12 @@ jobs:
             exit 0
           fi
           DAYS=$(( $(date -u +%s) / 86400 ))
-          REMAINDER=$(( $DAYS % 4 ))
+          REMAINDER=$(( $DAYS % 3 ))
           if [ $REMAINDER -eq 2 ]; then
             echo "Today is the scheduled day. Starting workflow..."
             echo "run=true" >> $GITHUB_OUTPUT
           else
-            echo "Not today. Skipping (Current remainder: $REMAINDER, Target: 1)."
+            echo "Not today. Skipping (Current remainder: $REMAINDER, Target: 2)."
             echo "run=false" >> $GITHUB_OUTPUT
           fi
 
