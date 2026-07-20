@@ -3,7 +3,7 @@ name: Kerit 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '33 1 * * *'  # 每天 01:33 UTC 触发，由步骤内控制4天一次
+    - cron: '33 1 * * *'  # 每天 01:33 UTC 触发，由步骤内控制3天一次
 
 permissions:
   contents: write
