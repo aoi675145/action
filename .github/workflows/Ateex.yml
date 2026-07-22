@@ -268,6 +268,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           Ateex_RUNTIME_PROXY: ${{ env.Ateex_RUNTIME_PROXY }}
           Ateex_PROXY_STATUS: ${{ env.Ateex_PROXY_STATUS }}
+          PYTHONUNBUFFERED: 1
         run: |
           mkdir -p screenshots
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python main.py
