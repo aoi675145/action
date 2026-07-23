@@ -35,9 +35,9 @@ jobs:
           
       - name: ⚙ 设置代理 (sing-box)
         env:
-          NODE_LINK: ${{ secrets.HIDEN_PROXY_NODE }}
+          HIDEN_PROXY_NODE: ${{ secrets.HIDEN_PROXY_NODE }}
         run: |
-          bash <(wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh)
+          NODE_LINK="$HIDEN_PROXY_NODE" bash <(wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh)
           
       - name: 🚀 运行续期脚本
         id: run_renew
