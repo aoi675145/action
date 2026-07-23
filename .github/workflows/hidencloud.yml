@@ -56,10 +56,7 @@ jobs:
         if: success()
         working-directory: private-repo/scripts/hidencloud
         run: |
-          DUE_DATE=$(grep -oE '续费后到期时间[：:] [0-9]{1,2} [A-Za-z]{3} [0-9]{4}' renew.log | grep -oE '[0-9]{1,2} [A-Za-z]{3} [0-9]{4}' | tail -1 || echo "")
-          if [ -z "$DUE_DATE" ]; then
-            DUE_DATE=$(grep -oE '续费前到期时间[：:] [0-9]{1,2} [A-Za-z]{3} [0-9]{4}' renew.log | grep -oE '[0-9]{1,2} [A-Za-z]{3} [0-9]{4}' | tail -1 || echo "")
-          fi
+          DUE_DATE=$(grep -oP '到期时间\(标准\): \K\d{4}-\d{2}-\d{2}' renew.log | tail -1 || echo "")
           if [ -z "$DUE_DATE" ]; then
             echo "skip_update=true" >> $GITHUB_OUTPUT
             echo "::warning::未能提取到期时间，跳过 Cron 更新"
@@ -77,17 +74,9 @@ jobs:
           DUE_DATE="${{ steps.extract_due.outputs.due_date }}"
           echo "📅 当前到期时间: $DUE_DATE"
 
-          # 将 "28 Apr 2026" 转换为 YYYY-MM-DD
-          DUE_DATE_STD=$(date -u -d "$DUE_DATE" +"%Y-%m-%d" 2>/dev/null || echo "")
-          if [ -z "$DUE_DATE_STD" ]; then
-            echo "::error::日期解析失败: $DUE_DATE"
-            exit 1
-          fi
-          echo "📅 标准化到期时间: $DUE_DATE_STD"
-
           # 计算距离到期还有多少小时
           CURRENT_EPOCH=$(date -u +%s)
-          DUE_EPOCH=$(date -u -d "$DUE_DATE_STD 00:00:00" +%s)
+          DUE_EPOCH=$(date -u -d "$DUE_DATE 00:00:00" +%s)
           REMAINING_SECONDS=$((DUE_EPOCH - CURRENT_EPOCH))
           REMAINING_HOURS_DISPLAY=$(echo "scale=2; $REMAINING_SECONDS / 3600" | bc)
           echo "⏳ 距离到期还有 $REMAINING_HOURS_DISPLAY 小时"
