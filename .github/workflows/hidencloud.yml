@@ -1,4 +1,4 @@
-name: Auto Renew HidenCloud 
+name: HidenCloud 续期
 
 on:
   workflow_dispatch:
