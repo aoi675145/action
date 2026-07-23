@@ -3,7 +3,7 @@ name: HidenCloud 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '30 05 * * 0' # 根据到期时间在星期几 提前一天,比如星期三到期，cron写星期二即可
+    - cron: '39 3 30 7 *'   # 自动更新下次运行时间
 
 permissions:
   actions: write
