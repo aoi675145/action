@@ -103,7 +103,7 @@ jobs:
           echo "::notice::📟 新 Cron: $NEW_CRON"
 
           # 克隆仓库并修改 workflow 文件
-          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git workflow_repo
+          git clone https://${{ github.actor }}:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git workflow_repo
           cd workflow_repo
 
           WORKFLOW_FILE=".github/workflows/hidencloud.yml"
