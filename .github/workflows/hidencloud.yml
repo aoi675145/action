@@ -35,7 +35,7 @@ jobs:
           
       - name: ⚙ 设置代理 (sing-box)
         env:
-          HIDEN_PROXY_NODE: ${{ secrets.HIDEN_PROXY_NODE }}
+          NODE_LINK: ${{ secrets.HIDEN_PROXY_NODE }}
         run: |
           bash <(wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh)
           
@@ -46,7 +46,8 @@ jobs:
           HIDEN_COOKIES: ${{ secrets.HIDEN_COOKIES }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          HIDEN_PROXY_NODE: ${{ secrets.HIDEN_PROXY_NODE }}
+          IS_PROXY: ${{ env.IS_PROXY }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
         working-directory: private-repo/scripts/hidencloud
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python3 hidencloud.py 2>&1 | tee renew.log
 
