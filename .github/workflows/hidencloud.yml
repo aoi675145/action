@@ -35,20 +35,18 @@ jobs:
           
       - name: ⚙ 设置代理 (sing-box)
         env:
-          NODE_LINK: ${{ secrets.NODE_LINK }}
+          HIDEN_PROXY_NODE: ${{ secrets.HIDEN_PROXY_NODE }}
         run: |
           bash <(wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh)
           
       - name: 🚀 运行续期脚本
         id: run_renew
         env:
-          EMAIL: ${{ secrets.EMAIL }}
-          PASSWORD: ${{ secrets.PASSWORD }}
-          COOKIE_VALUE: ${{ secrets.COOKIE_VALUE }}
+          HIDENCLOUD: ${{ secrets.HIDENCLOUD }}
+          HIDEN_COOKIES: ${{ secrets.HIDEN_COOKIES }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          IS_PROXY: ${{ env.IS_PROXY }}
-          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+          HIDEN_PROXY_NODE: ${{ secrets.HIDEN_PROXY_NODE }}
         working-directory: private-repo/scripts/hidencloud
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python3 hidencloud.py 2>&1 | tee renew.log
 
