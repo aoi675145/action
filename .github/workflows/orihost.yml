@@ -320,7 +320,7 @@ jobs:
           git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git workflow_repo
           cd workflow_repo
 
-          WORKFLOW_FILE=".github/workflows/Ori.yml"
+          WORKFLOW_FILE=".github/workflows/orihost.yml"
 
           LINE_NUM=$(grep -n "cron: '" "$WORKFLOW_FILE" | head -n1 | cut -d: -f1)
 
