@@ -56,9 +56,9 @@ jobs:
         if: success()
         working-directory: private-repo/scripts/hidencloud
         run: |
-          DUE_DATE=$(grep -oP '续费后到期时间[：:]\s*\K\d{1,2}\s+[A-Za-z]{3}\s+\d{4}' renew.log | tail -1 || echo "")
+          DUE_DATE=$(grep -oE '续费后到期时间[：:] [0-9]{1,2} [A-Za-z]{3} [0-9]{4}' renew.log | grep -oE '[0-9]{1,2} [A-Za-z]{3} [0-9]{4}' | tail -1 || echo "")
           if [ -z "$DUE_DATE" ]; then
-            DUE_DATE=$(grep -oP '续费前到期时间[：:]\s*\K\d{1,2}\s+[A-Za-z]{3}\s+\d{4}' renew.log | tail -1 || echo "")
+            DUE_DATE=$(grep -oE '续费前到期时间[：:] [0-9]{1,2} [A-Za-z]{3} [0-9]{4}' renew.log | grep -oE '[0-9]{1,2} [A-Za-z]{3} [0-9]{4}' | tail -1 || echo "")
           fi
           if [ -z "$DUE_DATE" ]; then
             echo "skip_update=true" >> $GITHUB_OUTPUT
