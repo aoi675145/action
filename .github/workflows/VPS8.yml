@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "42 7 * * *"
+    - cron: "52 3 * * *"
 
 jobs:
   sign:
@@ -77,13 +77,13 @@ jobs:
         run: |
           mkdir -p scripts/extensions/nopecha scripts/extensions/buster
 
-          curl -fsSL -o scripts/extensions/nopecha/chromium_automation.zip \
-            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.1/chromium_automation.zip
-          unzip -qo scripts/extensions/nopecha/chromium_automation.zip -d scripts/extensions/nopecha/unpacked
+          wget -q -O scripts/extensions/nopecha/chromium.zip \
+            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.1/chromium.zip
+          7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
 
-          curl -fsSL -o scripts/extensions/buster/buster.zip \
+          wget -q -O scripts/extensions/buster/buster.zip \
             https://github.com/dessant/buster/releases/download/v3.4.0/buster_captcha_solver_for_humans-3.4.0-chrome.zip
-          unzip -qo scripts/extensions/buster/buster.zip -d scripts/extensions/buster/unpacked
+          7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
 
       - name: 安装并启动代理
         env:
@@ -506,10 +506,10 @@ jobs:
           git push
           echo "[缓存] vps8_service_expiry.txt 已保存到私库 scripts/vps8/"
 
-      - name: 随机化下次 cron 运行时间 (UTC 7-10时 = 北京 15-18时)
+      - name: 随机化下次 cron 运行时间 (UTC 0-3时 = 北京 8-12时)
         if: always()
         run: |
-          RND_HOUR=$((7 + RANDOM % 4))
+          RND_HOUR=$((RANDOM % 4))
           RND_MINUTE=$((RANDOM % 60))
           WORKFLOW=".github/workflows/VPS8.yml"
           sed -i "s/- cron: \".*\"/- cron: \"$RND_MINUTE $RND_HOUR * * *\"/" "$WORKFLOW"
