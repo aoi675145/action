@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "12 3 * * *"
+    - cron: "52 3 * * *"
 
 jobs:
   sign:
@@ -506,10 +506,10 @@ jobs:
           git push
           echo "[缓存] vps8_service_expiry.txt 已保存到私库 scripts/vps8/"
 
-      - name: 随机化下次 cron 运行时间 (UTC 0-3时 = 北京 8-12时)
+      - name: 随机化下次 cron 运行时间 (UTC 7-10时 = 北京 15-18时)
         if: always()
         run: |
-          RND_HOUR=$((RANDOM % 4))
+          RND_HOUR=$((7 + RANDOM % 4))
           RND_MINUTE=$((RANDOM % 60))
           WORKFLOW=".github/workflows/VPS8.yml"
           sed -i "s/- cron: \".*\"/- cron: \"$RND_MINUTE $RND_HOUR * * *\"/" "$WORKFLOW"
