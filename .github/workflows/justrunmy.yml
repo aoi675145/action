@@ -249,7 +249,8 @@ jobs:
 
     - name: 运行续期脚本
       env:
-        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}      # 已经改好的新变量名
+        JUST_APP_ID: ${{ secrets.JUST_APP_ID }}
+        TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
         TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
       run: |
         if [ -z "$PROXY_SERVER" ]; then
