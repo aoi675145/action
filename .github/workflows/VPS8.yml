@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "26 8 * * *"
+    - cron: "0 8 * * *"
 
 jobs:
   sign:
@@ -77,13 +77,13 @@ jobs:
         run: |
           mkdir -p scripts/extensions/nopecha scripts/extensions/buster
 
-          wget -q -O scripts/extensions/nopecha/chromium.zip \
+          curl -fsSL -o scripts/extensions/nopecha/chromium_automation.zip \
             https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.1/chromium_automation.zip
-          7z x -y scripts/extensions/nopecha/chromium_automation.zip -oscripts/extensions/nopecha/unpacked
+          unzip -qo scripts/extensions/nopecha/chromium_automation.zip -d scripts/extensions/nopecha/unpacked
 
-          wget -q -O scripts/extensions/buster/buster.zip \
+          curl -fsSL -o scripts/extensions/buster/buster.zip \
             https://github.com/dessant/buster/releases/download/v3.4.0/buster_captcha_solver_for_humans-3.4.0-chrome.zip
-          7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
+          unzip -qo scripts/extensions/buster/buster.zip -d scripts/extensions/buster/unpacked
 
       - name: 安装并启动代理
         env:
