@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "52 10 * * *"
+    - cron: "4 1 * * *"
 
 jobs:
   sign:
@@ -49,20 +49,6 @@ jobs:
             echo "[INFO] 私库尚无缓存文件，首次运行"
           fi
 
-          echo "[INFO] 清理私库旧截图..."
-          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cleanup
-          if [ -f scripts-cleanup/scripts/vps8/screenshots/*.png ]; then
-            git -C scripts-cleanup rm -f scripts/vps8/screenshots/*.png
-            git -C scripts-cleanup config user.name "github-actions[bot]"
-            git -C scripts-cleanup config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git -C scripts-cleanup commit -m "清理上次截图"
-            git -C scripts-cleanup push
-            echo "[INFO] ✅ 旧截图已清理"
-          else
-            echo "[INFO] 无私库截图需清理"
-          fi
-          rm -rf scripts-cleanup
-
       - name: 安装系统依赖
         run: |
           sudo apt-get update -qq
@@ -78,11 +64,11 @@ jobs:
           mkdir -p scripts/extensions/nopecha scripts/extensions/buster
 
           wget -q -O scripts/extensions/nopecha/chromium.zip \
-            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.1/chromium.zip
+            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
           7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
 
           wget -q -O scripts/extensions/buster/buster.zip \
-            https://github.com/dessant/buster/releases/download/v3.4.0/buster_captcha_solver_for_humans-3.4.0-chrome.zip
+            https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
           7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
 
       - name: 安装并启动代理
@@ -467,7 +453,7 @@ jobs:
           echo "[截图] 克隆私库 aoi675145/scripts，保存截图..."
           git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
           mkdir -p scripts-cache/scripts/vps8/screenshots
-          cp screenshots/*.png scripts-cache/scripts/vps8/screenshots/
+          cp -f screenshots/*.png scripts-cache/scripts/vps8/screenshots/
           cd scripts-cache
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -506,10 +492,10 @@ jobs:
           git push
           echo "[缓存] vps8_service_expiry.txt 已保存到私库 scripts/vps8/"
 
-      - name: 随机化下次 cron 运行时间 (UTC 7-10时 = 北京 15-18时)
+      - name: 随机化下次 cron 运行时间 (UTC 0-3时 = 北京 8-12时)
         if: always()
         run: |
-          RND_HOUR=$((7 + RANDOM % 4))
+          RND_HOUR=$((RANDOM % 4))
           RND_MINUTE=$((RANDOM % 60))
           WORKFLOW=".github/workflows/vps8.yml"
           sed -i "s/- cron: \".*\"/- cron: \"$RND_MINUTE $RND_HOUR * * *\"/" "$WORKFLOW"
