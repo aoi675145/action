@@ -264,7 +264,7 @@ jobs:
       - name: ⚙️ 自动修改下一次运行时间
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          WORKFLOW_FILE: .github/workflows/FreezeHost_Renew.yml
+          WORKFLOW_FILE: .github/workflows/freezeHost.yml
         run: |
           set -e
 
