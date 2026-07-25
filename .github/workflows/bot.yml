@@ -424,7 +424,7 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          NOPECHA_KEY: ${{ secrets.NOPECHA_KEY }}
+          Bot_NOPECHA_KEY: ${{ secrets.Bot_NOPECHA_KEY }}
           Bot_PROXY: ${{ env.Bot_PROXY_SOCKS5 }}
         run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u bot.py
 
