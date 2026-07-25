@@ -511,7 +511,7 @@ jobs:
         run: |
           RND_HOUR=$((7 + RANDOM % 4))
           RND_MINUTE=$((RANDOM % 60))
-          WORKFLOW=".github/workflows/VPS8.yml"
+          WORKFLOW=".github/workflows/vps8.yml"
           sed -i "s/- cron: \".*\"/- cron: \"$RND_MINUTE $RND_HOUR * * *\"/" "$WORKFLOW"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
