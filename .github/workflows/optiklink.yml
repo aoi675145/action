@@ -22,11 +22,11 @@ jobs:
           node-version: '22'
 
       - name: 安装依赖
-        working-directory: scripts/OptikLink
+        working-directory: scripts/optikLink
         run: npm install
 
       - name: 安装 Playwright 浏览器
-        working-directory: scripts/OptikLink
+        working-directory: scripts/optikLink
         run: npx playwright install chromium --with-deps
 
       - name: 解析节点并启动 Xray 代理
@@ -413,7 +413,7 @@ jobs:
 
       - name: 运行保活脚本
         id: keepalive
-        working-directory: scripts/OptikLink
+        working-directory: scripts/optikLink
         env:
           DISCORD_TOKEN_K:   ${{ secrets.DISCORD_TOKEN_K }}
           OPTIKLINK:     ${{ secrets.OPTIKLINK }}
@@ -475,7 +475,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: failure-screenshots
-          path: scripts/OptikLink/test-results/
+          path: scripts/optikLink/test-results/
           retention-days: 7
 
       - name: 清理运行记录
