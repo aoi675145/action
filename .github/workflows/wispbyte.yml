@@ -38,7 +38,7 @@ jobs:
           curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -o scripts/main.py \
-            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/Wispbyte/main.py"
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/wispbyte/main.py"
           echo "[INFO] ✅ main.py 已下载 ($(wc -l < scripts/main.py) 行)"
 
       - name: 安装系统依赖
