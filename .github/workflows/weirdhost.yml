@@ -28,7 +28,7 @@ jobs:
       - name: 检查是否需要续期
         id: check_renew
         run: |
-          LOG_FILE="scripts/Weirdhost/logs.txt"
+          LOG_FILE="scripts/weirdhost/logs.txt"
           if [ ! -f "$LOG_FILE" ]; then
             echo "need_renew=true" >> $GITHUB_OUTPUT
             exit 0
@@ -386,7 +386,7 @@ jobs:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
-          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python "scripts/Weirdhost/Weirdhost_renew.py" 2>&1 | tee renew.log; exit ${PIPESTATUS[0]}
+          xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python "scripts/weirdhost/weirdhost_renew.py" 2>&1 | tee renew.log; exit ${PIPESTATUS[0]}
 
       - name: 清理旧的工作流运行记录
         if: steps.check_renew.outputs.need_renew == 'true'
