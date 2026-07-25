@@ -345,7 +345,7 @@ jobs:
           exit 1
 
       - name: 🚀 运行 ACLClouds Python 脚本
-        working-directory: scripts_repo/scripts/Acl
+        working-directory: scripts_repo/scripts/aclcloud
         env:
           AclCloud: ${{ secrets.AclCloud }}
           Acl_PROXY: ${{ env.PROXY_SERVER }}
