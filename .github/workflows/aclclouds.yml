@@ -2,7 +2,7 @@ name:  ACLClouds Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '14 16 27 7 *' # 下一个: 2026-07-27 16:14 UTC / 2026-07-28 00:14 北京时间 (到期前1天执行)
+    - cron: '16 14 27 7 *' # 下一个: 2026-07-27 14:16 UTC / 2026-07-27 22:16 北京时间 (到期前1天执行)
 
 jobs:
   run_renewal:
@@ -345,7 +345,7 @@ jobs:
           exit 1
 
       - name: 🚀 运行 ACLClouds Python 脚本
-        working-directory: scripts_repo/scripts/aclcloud
+        working-directory: scripts_repo/scripts/aclclouds
         env:
           AclCloud: ${{ secrets.AclCloud }}
           Acl_PROXY: ${{ env.PROXY_SERVER }}
@@ -365,7 +365,7 @@ jobs:
           from datetime import datetime, timedelta
 
           workflow_file = os.environ.get("WORKFLOW_FILE")
-          date_file = 'scripts_repo/scripts/Acl/next_time.txt'
+          date_file = 'scripts_repo/scripts/aclclouds/next_time.txt'
           
           now_utc = datetime.utcnow()
           target_date = None
