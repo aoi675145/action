@@ -1,0 +1,261 @@
+name: Lunes Host 自动保活
+
+on:
+  schedule:
+    # 每10天运行：1号、11号、21号 中午12:12 (北京时间)
+    # UTC 时间 = 北京时间 - 8小时 = 04:12
+    - cron: '12 4 1,11,21 * *'
+  workflow_dispatch:
+
+jobs:
+  keepalive:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: write
+    concurrency:
+      group: lunes-keepalive
+      cancel-in-progress: false
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb unzip
+          pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 requests>=2.31.0
+
+      - name: 配置代理
+        env:
+          LUNES_1_PROXY_NODE: ${{ secrets.LUNES_1_PROXY_NODE }}
+          LUNES_2_PROXY_NODE: ${{ secrets.LUNES_2_PROXY_NODE }}
+          LUNES_3_PROXY_NODE: ${{ secrets.LUNES_3_PROXY_NODE }}
+          LUNES_4_PROXY_NODE: ${{ secrets.LUNES_4_PROXY_NODE }}
+          LUNES_5_PROXY_NODE: ${{ secrets.LUNES_5_PROXY_NODE }}
+        run: |
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          def to_bool(value: str) -> bool:
+              return str(value).lower() in {"1", "true", "yes", "on"}
+
+          def build_common_stream(network: str, security: str, query: dict, host: str) -> dict:
+              stream = {
+                  "network": network or "tcp",
+                  "security": "none",
+              }
+
+              if security and security != "none":
+                  stream["security"] = security
+
+              if security == "tls":
+                  tls_settings = {
+                      "serverName": query.get("sni", [host])[0] or host,
+                      "allowInsecure": True,
+                  }
+                  alpn = query.get("alpn", [""])[0]
+                  if alpn:
+                      tls_settings["alpn"] = [item.strip() for item in alpn.split(",") if item.strip()]
+                  fp = query.get("fp", [""])[0] or query.get("fingerprint", [""])[0]
+                  if fp:
+                      tls_settings["fingerprint"] = fp
+                  stream["tlsSettings"] = tls_settings
+
+              if network == "ws":
+                  ws_headers = {}
+                  ws_host = query.get("host", [host])[0]
+                  if ws_host:
+                      ws_headers["Host"] = ws_host
+                  stream["wsSettings"] = {
+                      "path": unquote(query.get("path", ["/"])[0] or "/"),
+                      "headers": ws_headers,
+                  }
+              elif network == "grpc":
+                  stream["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", [""])[0],
+                      "multiMode": to_bool(query.get("mode", [""])[0] == "multi"),
+                  }
+
+              return stream
+
+          def parse_vless(url: str) -> dict:
+              parsed = urlparse(url)
+              query = parse_qs(parsed.query)
+              host = parsed.hostname
+              port = parsed.port
+              uuid = parsed.username
+              if not host or not port or not uuid:
+                  raise SystemExit("VLESS 节点格式无效")
+
+              user = {
+                  "id": uuid,
+                  "encryption": "none",
+              }
+              flow = query.get("flow", [""])[0]
+              if flow:
+                  user["flow"] = flow
+
+              network = query.get("type", ["tcp"])[0]
+              security = query.get("security", ["none"])[0]
+
+              return {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [user],
+                      }]
+                  },
+                  "streamSettings": build_common_stream(network, security, query, host),
+              }
+
+          def parse_vmess(url: str) -> dict:
+              payload = url[len("vmess://"):].strip()
+              padding = "=" * (-len(payload) % 4)
+              try:
+                  config = json.loads(base64.urlsafe_b64decode(payload + padding).decode("utf-8"))
+              except Exception as exc:
+                  raise SystemExit(f"VMess 节点解析失败: {exc}")
+
+              host = config.get("add")
+              port = int(config.get("port", 0))
+              uuid = config.get("id")
+              if not host or not port or not uuid:
+                  raise SystemExit("VMess 节点格式无效")
+
+              network = config.get("net", "tcp")
+              security = "tls" if str(config.get("tls", "")).lower() == "tls" else "none"
+
+              query = {
+                  "path": [config.get("path", "/")],
+                  "host": [config.get("host", host)],
+                  "sni": [config.get("sni", host)],
+              }
+              if config.get("alpn"):
+                  query["alpn"] = [config.get("alpn")]
+              if config.get("fp"):
+                  query["fp"] = [config.get("fp")]
+
+              return {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": uuid,
+                              "alterId": int(config.get("aid", 0) or 0),
+                              "security": config.get("scy", "auto") or "auto",
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_common_stream(network, security, query, host),
+              }
+
+          configured = []
+          for account_index in range(1, 6):
+              node = os.environ.get(f"LUNES_{account_index}_PROXY_NODE", "").strip()
+              if not node:
+                  continue
+
+              if node.startswith("vless://"):
+                  outbound = parse_vless(node)
+              elif node.startswith("vmess://"):
+                  outbound = parse_vmess(node)
+              else:
+                  raise SystemExit(f"LUNES_{account_index}_PROXY_NODE 仅支持 vless:// 或 vmess:// 节点")
+
+              port = 7890 + account_index
+              xray_config = {
+                  "log": {"loglevel": "warning"},
+                  "inbounds": [{
+                      "tag": "http-in",
+                      "port": port,
+                      "listen": "127.0.0.1",
+                      "protocol": "http",
+                      "settings": {},
+                  }],
+                  "outbounds": [
+                      {"tag": "proxy", **outbound},
+                      {"tag": "direct", "protocol": "freedom", "settings": {}},
+                  ],
+                  "routing": {
+                      "domainStrategy": "AsIs",
+                      "rules": [{
+                          "type": "field",
+                          "inboundTag": ["http-in"],
+                          "outboundTag": "proxy",
+                      }],
+                  },
+              }
+
+              config_path = f"xray-{account_index}.json"
+              with open(config_path, "w", encoding="utf-8") as f:
+                  json.dump(xray_config, f, ensure_ascii=True, indent=2)
+              configured.append((account_index, config_path, port))
+
+          with open("xray-start.sh", "w", encoding="utf-8") as f:
+              f.write("#!/usr/bin/env bash\nset -e\n")
+              for account_index, config_path, port in configured:
+                  f.write(f"xray run -c {config_path} > xray-{account_index}.log 2>&1 &\n")
+                  f.write(f"echo '账号 {account_index} 代理已启动: http://127.0.0.1:{port}'\n")
+          PY
+
+          chmod +x xray-start.sh
+          ./xray-start.sh
+          sleep 3
+
+      - name: 执行保活
+        env:
+#          LUNES_EMAIL: ${{ secrets.LUNES_EMAIL }}
+#          LUNES_PASSWORD: ${{ secrets.LUNES_PASSWORD }}
+          LUNES_1: ${{ secrets.LUNES_1 }}
+          LUNES_2: ${{ secrets.LUNES_2 }}
+          LUNES_3: ${{ secrets.LUNES_3 }}
+          LUNES_4: ${{ secrets.LUNES_4 }}
+          LUNES_5: ${{ secrets.LUNES_5 }}
+          LUNES_1_PROXY_NODE: ${{ secrets.LUNES_1_PROXY_NODE }}
+          LUNES_2_PROXY_NODE: ${{ secrets.LUNES_2_PROXY_NODE }}
+          LUNES_3_PROXY_NODE: ${{ secrets.LUNES_3_PROXY_NODE }}
+          LUNES_4_PROXY_NODE: ${{ secrets.LUNES_4_PROXY_NODE }}
+          LUNES_5_PROXY_NODE: ${{ secrets.LUNES_5_PROXY_NODE }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python scripts/luneshost/luneshost.py
+
+#      - name: 上传截图
+#        uses: actions/upload-artifact@v4
+#        if: always()
+#        with:
+#          name: screenshots-${{ github.run_number }}
+#          path: output/screenshots/
+#          retention-days: 3
+
+      - name: 清理旧运行
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
