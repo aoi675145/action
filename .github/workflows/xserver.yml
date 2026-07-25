@@ -1,0 +1,284 @@
+name: XServer 续期多账号版
+
+on:
+  schedule:
+    - cron: '28 12 25 7 *'  # 自动更新下次运行时间
+  workflow_dispatch:
+
+jobs:
+  extend-server:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          pip install httpx
+
+      - name: 配置代理节点
+        env:
+          XSERVER_1_XARY: ${{ secrets.XSERVER_1_XARY }}
+          XSERVER_2_XARY: ${{ secrets.XSERVER_2_XARY }}
+          XSERVER_3_XARY: ${{ secrets.XSERVER_3_XARY }}
+          XSERVER_4_XARY: ${{ secrets.XSERVER_4_XARY }}
+          XSERVER_5_XARY: ${{ secrets.XSERVER_5_XARY }}
+          XSERVER_6_XARY: ${{ secrets.XSERVER_6_XARY }}
+          XSERVER_7_XARY: ${{ secrets.XSERVER_7_XARY }}
+          XSERVER_8_XARY: ${{ secrets.XSERVER_8_XARY }}
+          XSERVER_9_XARY: ${{ secrets.XSERVER_9_XARY }}
+          XSERVER_10_XARY: ${{ secrets.XSERVER_10_XARY }}
+        run: |
+          set -e
+          echo "⬇️ 下载 Xray..."
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          echo "📦 解压..."
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+          echo "✅ Xray $(xray version | head -1)"
+
+          echo "⚙️ 生成代理配置..."
+          python - <<'PY'
+          import base64, json, os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          def to_bool(v): return str(v).lower() in {"1","true","yes","on"}
+
+          def build_stream(network, security, query, host):
+              stream = {"network": network or "tcp", "security": "none"}
+              if security and security != "none":
+                  stream["security"] = security
+              if security == "tls":
+                  tls_settings = {
+                      "serverName": query.get("sni", [host])[0] or host,
+                      "allowInsecure": True,
+                  }
+                  alpn = query.get("alpn", [""])[0]
+                  if alpn:
+                      tls_settings["alpn"] = [s.strip() for s in alpn.split(",") if s.strip()]
+                  stream["tlsSettings"] = tls_settings
+              elif security == "reality":
+                  reality_settings = {"serverName": query.get("sni", [host])[0] or host}
+                  fp = query.get("fp", [""])[0] or query.get("fingerprint", [""])[0]
+                  if fp:
+                      reality_settings["fingerprint"] = fp
+                  pbk = query.get("pbk", [""])[0] or query.get("publicKey", [""])[0]
+                  if pbk:
+                      reality_settings["publicKey"] = pbk
+                  sid = query.get("sid", [""])[0] or query.get("shortId", [""])[0]
+                  if sid:
+                      reality_settings["shortId"] = sid
+                  spx = query.get("spx", [""])[0] or query.get("spiderX", [""])[0]
+                  if spx:
+                      reality_settings["spiderX"] = spx
+                  stream["realitySettings"] = reality_settings
+              if network == "ws":
+                  ws_host = query.get("host", [host])[0]
+                  stream["wsSettings"] = {
+                      "path": unquote(query.get("path", ["/"])[0] or "/"),
+                      "headers": {"Host": ws_host} if ws_host else {},
+                  }
+              elif network == "grpc":
+                  stream["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", [""])[0],
+                      "multiMode": to_bool(query.get("mode", [""])[0] == "multi"),
+                  }
+              return stream
+
+          def parse_vless(url):
+              p = urlparse(url)
+              q = parse_qs(p.query)
+              host, port, uuid = p.hostname, p.port, p.username
+              if not host or not port or not uuid:
+                  raise SystemExit("VLESS 格式无效")
+              user = {"id": uuid, "encryption": "none"}
+              flow = q.get("flow", [""])[0]
+              if flow: user["flow"] = flow
+              network = q.get("type", ["tcp"])[0]
+              security = q.get("security", ["none"])[0]
+              return {
+                  "protocol": "vless",
+                  "settings": {"vnext": [{"address": host, "port": port, "users": [user]}]},
+                  "streamSettings": build_stream(network, security, q, host),
+              }
+
+          def parse_vmess(url):
+              payload = url[len("vmess://"):].strip() + "=" * (-len(url[len("vmess://"):].strip()) % 4)
+              try:
+                  c = json.loads(base64.urlsafe_b64decode(payload).decode("utf-8"))
+              except Exception as e:
+                  raise SystemExit(f"VMess 解析失败: {e}")
+              host, port, uuid = c.get("add"), int(c.get("port", 0)), c.get("id")
+              if not host or not port or not uuid:
+                  raise SystemExit("VMess 格式无效")
+              network = c.get("net", "tcp")
+              security = "tls" if str(c.get("tls", "")).lower() == "tls" else "none"
+              query = {
+                  "path": [c.get("path", "/")],
+                  "host": [c.get("host", host)],
+                  "sni": [c.get("sni", host)],
+              }
+              if c.get("alpn"): query["alpn"] = [c["alpn"]]
+              if c.get("fp"): query["fp"] = [c["fp"]]
+              return {
+                  "protocol": "vmess",
+                  "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": uuid, "alterId": int(c.get("aid", 0) or 0), "security": c.get("scy", "auto") or "auto"}]}]},
+                  "streamSettings": build_stream(network, security, query, host),
+              }
+
+          configured = []
+          for i in range(1, 21):
+              node = os.environ.get(f"XSERVER_{i}_XARY", "").strip()
+              if not node:
+                  continue
+              if node.startswith("vless://"):
+                  outbound = parse_vless(node)
+              elif node.startswith("vmess://"):
+                  outbound = parse_vmess(node)
+              else:
+                  print(f"⚠️ XSERVER_{i}_XARY 不支持的格式，跳过")
+                  continue
+              port = 7890 + i
+              config = {
+                  "log": {"loglevel": "warning"},
+                  "inbounds": [{"tag": "http-in", "port": port, "listen": "127.0.0.1", "protocol": "http", "settings": {}}],
+                  "outbounds": [{"tag": "proxy", **outbound}, {"tag": "direct", "protocol": "freedom", "settings": {}}],
+                  "routing": {"domainStrategy": "AsIs", "rules": [{"type": "field", "inboundTag": ["http-in"], "outboundTag": "proxy"}]},
+              }
+              with open(f"xray-{i}.json", "w") as f:
+                  json.dump(config, f, ensure_ascii=True, indent=2)
+              configured.append((i, port))
+              print(f"  ✅ 账号 {i} → 127.0.0.1:{port}")
+
+          with open("xray-start.sh", "w") as f:
+              f.write("#!/usr/bin/env bash\nset -e\n")
+              for i, port in configured:
+                  f.write(f"xray run -c xray-{i}.json > xray-{i}.log 2>&1 &\n")
+          PY
+
+          echo "🚀 启动代理..."
+          chmod +x xray-start.sh
+          ./xray-start.sh
+          sleep 3
+
+          echo "🔍 检查代理进程..."
+          if pgrep -x xray > /dev/null 2>&1; then
+              echo "✅ Xray 进程数: $(pgrep -x xray | wc -l)"
+          else
+              echo "❌ Xray 进程未运行！检查日志："
+              for f in xray-*.log; do
+                  [ -f "$f" ] && echo "--- $f ---" && cat "$f"
+              done
+              exit 1
+          fi
+          echo "🔍 连通性测试..."
+          for i in $(seq 1 20); do
+              port=$((7890 + i))
+              if curl -s -o /dev/null --max-time 5 -x "http://127.0.0.1:$port" https://api.ipify.org 2>/dev/null; then
+                  echo "  ✅ 账号 $i 代理正常"
+              fi
+          done
+
+      - name: 运行续期脚本
+        env:
+          XSERVER_1: ${{ secrets.XSERVER_1 }}
+          XSERVER_2: ${{ secrets.XSERVER_2 }}
+          XSERVER_3: ${{ secrets.XSERVER_3 }}
+          XSERVER_4: ${{ secrets.XSERVER_4 }}
+          XSERVER_5: ${{ secrets.XSERVER_5 }}
+          XSERVER_6: ${{ secrets.XSERVER_6 }}
+          XSERVER_7: ${{ secrets.XSERVER_7 }}
+          XSERVER_8: ${{ secrets.XSERVER_8 }}
+          XSERVER_9: ${{ secrets.XSERVER_9 }}
+          XSERVER_10: ${{ secrets.XSERVER_10 }}
+          XSERVER_1_XARY: ${{ secrets.XSERVER_1_XARY }}
+          XSERVER_2_XARY: ${{ secrets.XSERVER_2_XARY }}
+          XSERVER_3_XARY: ${{ secrets.XSERVER_3_XARY }}
+          XSERVER_4_XARY: ${{ secrets.XSERVER_4_XARY }}
+          XSERVER_5_XARY: ${{ secrets.XSERVER_5_XARY }}
+          XSERVER_6_XARY: ${{ secrets.XSERVER_6_XARY }}
+          XSERVER_7_XARY: ${{ secrets.XSERVER_7_XARY }}
+          XSERVER_8_XARY: ${{ secrets.XSERVER_8_XARY }}
+          XSERVER_9_XARY: ${{ secrets.XSERVER_9_XARY }}
+          XSERVER_10_XARY: ${{ secrets.XSERVER_10_XARY }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          ACCOUNTS_TO_RENEW: ALL
+        run: python scripts/xserver/main.py
+
+      - name: 自动修改下次 Cron
+        if: always()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          WORKFLOW_REPO: ${{ github.repository }}
+        run: |
+          NEXT_FILE="next_time.txt"
+          if [ ! -f "$NEXT_FILE" ]; then
+            echo "⏭️ next_time.txt 不存在，跳过 cron 更新"
+            exit 0
+          fi
+
+          echo "📅 读取最早可续期时间..."
+          python3 << 'PYEOF'
+          import os, re, subprocess
+          from datetime import datetime, timedelta
+
+          date_file = "next_time.txt"
+          with open(date_file) as f:
+              raw = f.read().strip()
+
+          m = re.search(r'(\d{4})\D+(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})', raw)
+          if not m:
+              print("❌ 解析失败"); exit(1)
+
+          jst = datetime(int(m[1]), int(m[2]), int(m[3]), int(m[4]), int(m[5]))
+          utc = jst - timedelta(hours=9)
+          new_cron = f"{utc.minute} {utc.hour} {utc.day} {utc.month} *"
+          info = f"{utc.strftime('%Y-%m-%d %H:%M')} UTC (JST: {jst.strftime('%Y-%m-%d %H:%M')})"
+          print(f"⏰ {info}")
+          print(f"📟 {new_cron}")
+
+          token = os.environ["REPO_TOKEN"]
+          repo = os.environ["WORKFLOW_REPO"]
+          subprocess.run(["git", "clone", f"https://x-access-token:{token}@github.com/{repo}.git", "wf-repo"], check=True, capture_output=True)
+          os.chdir("wf-repo")
+
+          wf = ".github/workflows/xserver.yml"
+          with open(wf) as f:
+              content = f.read()
+          content = re.sub(r"- cron: '.*?'.*", f"- cron: '{new_cron}'  # 自动更新下次运行时间", content, count=1)
+          with open(wf, 'w') as f:
+              f.write(content)
+
+          subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True, capture_output=True)
+          subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True, capture_output=True)
+          subprocess.run(["git", "add", wf], check=True, capture_output=True)
+          r = subprocess.run(["git", "commit", "-m", "🔄 自动更新 XServer 续期 Cron", "-m", f"下次运行: {info}"], capture_output=True, text=True)
+          if r.returncode == 0:
+              subprocess.run(["git", "push"], check=True, capture_output=True)
+              print("✅ Cron 更新成功")
+          else:
+              print("ℹ️  无变更需提交")
+          PYEOF
+
+      - name: 清理旧运行
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 1
