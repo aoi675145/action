@@ -199,8 +199,7 @@ jobs:
           fi
 
       - name: 🎮 5. 执行每日领取
-        # --- 路径已更新为 scripts/TheBerry ---
-        working-directory: scripts/TheBerry
+        working-directory: scripts/theBerry
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           SESSION_ID: ${{ secrets.SESSION_ID }}
