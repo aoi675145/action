@@ -7,7 +7,7 @@ on:
 
 jobs:
   renew:
-    name: Game4Free 投票续期
+    name: Game4Free 续期
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
