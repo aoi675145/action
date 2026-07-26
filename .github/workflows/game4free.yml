@@ -1,0 +1,70 @@
+name: Game4Free 续期
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 1 * * *'
+
+jobs:
+  renew:
+    name: Game4Free 投票续期
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 从私库拉取脚本
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          echo "[INFO] 从私库拉取 game4free.py..."
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o game4free.py \
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/game4free/game4free.py"
+          echo "[INFO] ✅ game4free.py 已下载 ($(wc -l < game4free.py) 行)"
+
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y google-chrome-stable xvfb xdotool
+
+      - name: 安装 Python 依赖
+        run: pip install seleniumbase
+
+      - name: 安装 ChromeDriver
+        run: seleniumbase install chromedriver
+
+      - name: 执行 Game4Free 投票续期
+        env:
+          TG_BOT: ${{ secrets.TG_BOT }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          GAME4FREE_ACCOUNT: ${{ secrets.GAME4FREE_ACCOUNT }}
+          GAME4FREE_PROXY: ${{ secrets.GAME4FREE_PROXY }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          xvfb-run -a --server-args="-screen 0 1920x1080x24" \
+            python -u game4free.py
+
+      - name: 清理进程
+        if: always()
+        run: |
+          pkill -f sing-box 2>/dev/null || true
+          pkill -f Xvfb 2>/dev/null || true
+
+      - name: 清理历史运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 1
