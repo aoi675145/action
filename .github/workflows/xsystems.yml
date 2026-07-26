@@ -2,7 +2,7 @@ name: X Systems Coins
 
 on:
   schedule:
-    - cron: '35 8 26 7 *'   # 自动更新下次运行时间
+    - cron: '19 10 27 7 *'   # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
