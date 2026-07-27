@@ -10,7 +10,7 @@ jobs:
     runs-on: ubuntu-22.04
     
     steps:
-      - name: Interval Check (Strict 4-day cycle)
+      - name: 检查运行周期
         id: check
         run: |
           # 如果是手动触发，则跳过检查直接运行
@@ -31,7 +31,7 @@ jobs:
             echo "run=false" >> $GITHUB_OUTPUT
           fi
           
-      - name: ☁️ 拉取私有代码
+      - name: 拉取私库脚本
         if: steps.check.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
@@ -39,7 +39,7 @@ jobs:
           # 使用你指定的 REPO_TOKEN 变量名
           token: ${{ secrets.REPO_TOKEN }} 
 
-      - name: Set up Python
+      - name: 安装 Python
         if: steps.check.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
@@ -47,7 +47,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: scripts/katabump/requirements.txt
 
-      - name: Install dependencies
+      - name: 安装依赖
         if: steps.check.outputs.run == 'true'
         run: |
           # 进入私库中对应的目录安装依赖
@@ -62,7 +62,7 @@ jobs:
             }
           fi
           
-      - name: Get Chromium Version
+      - name: 获取浏览器版本
         if: steps.check.outputs.run == 'true'
         id: get_version
         run: |
@@ -77,11 +77,11 @@ jobs:
           echo "Detected Chrome/Chromium Major Version: $CHROME_VERSION"
           echo "CHROME_VERSION=$CHROME_VERSION" >> $GITHUB_ENV
 
-      - name: Start X Virtual Frame Buffer (Xvfb)
+      - name: 启动虚拟显示
         if: steps.check.outputs.run == 'true'
         run: Xvfb :99 -ac &
 
-      - name: Install and Start Proxy
+      - name: 安装并启动代理
         if: steps.check.outputs.run == 'true'
         env:
           Katabump_PROXY_NODE: ${{ secrets.Katabump_PROXY_NODE }}
@@ -389,7 +389,7 @@ jobs:
           cat xray.log || true
           exit 0
 
-      - name: Run Script in Stealth Mode (via Xvfb)
+      - name: 执行续期
         if: steps.check.outputs.run == 'true'
         env:
           Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
