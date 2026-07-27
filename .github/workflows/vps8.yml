@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "26 1 * * *"
+    - cron: "6 2 * * *"
 
 jobs:
   sign:
@@ -57,6 +57,9 @@ jobs:
       - name: 安装 Python 库
         run: |
           pip install -q seleniumbase requests
+
+      - name: 安装 ChromeDriver
+        run: seleniumbase install chromedriver
 
       - name: 下载并解压扩展
         run: |
