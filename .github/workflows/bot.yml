@@ -48,15 +48,11 @@ jobs:
 
       - name: 下载并解压扩展
         run: |
-          mkdir -p scripts/extensions/nopecha scripts/extensions/buster
+          mkdir -p scripts/extensions/nopecha
 
           wget -q -O scripts/extensions/nopecha/chromium.zip \
             https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
           7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
-
-          wget -q -O scripts/extensions/buster/buster.zip \
-            https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
-          7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
 
       - name: 安装并启动代理
         env:
