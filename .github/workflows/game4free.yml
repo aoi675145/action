@@ -41,7 +41,7 @@ jobs:
       - name: 安装 ChromeDriver
         run: seleniumbase install chromedriver
 
-      - name: 执行 Game4Free 投票续期
+      - name: 执行 Game4Free 续期
         env:
           TG_BOT: ${{ secrets.TG_BOT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
