@@ -6,11 +6,13 @@ on:
     - cron: '33 1 * * *'  # 每天 01:33 UTC 触发，由步骤内控制3天一次
 
 permissions:
-  contents: write
+  actions: write
+  contents: read
 
 jobs:
   renew:
     runs-on: ubuntu-latest
+    timeout-minutes: 35
 
     steps:
       - name: 拉取私有仓库
@@ -252,6 +254,11 @@ jobs:
 
           if [ -f "use_external_socks.txt" ]; then
             EXTERNAL_SOCKS=$(cat use_external_socks.txt)
+            echo "[INFO] 测试外部 SOCKS5 代理..."
+            if ! curl --proxy "$EXTERNAL_SOCKS" -s --max-time 20 https://api.ipify.org > /dev/null 2>&1; then
+              echo "[ERROR] ❌ 外部 SOCKS5 代理连接失败"
+              exit 1
+            fi
             echo "KERIT_PROXY=$EXTERNAL_SOCKS" >> $GITHUB_ENV
             echo "[INFO] ✅ 使用外部 SOCKS5 代理"
             exit 0
@@ -283,7 +290,20 @@ jobs:
           TG_BOT: ${{ secrets.TG_BOT }}
           KERIT_PROXY: ${{ env.KERIT_PROXY }}
         run: |
+          set -o pipefail
           python3 scripts/kerit/kerit.py 2>&1 | tee renew.log
+
+      - name: 上传失败日志和截图
+        if: failure() && steps.check.outputs.run == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: kerit-failure-${{ github.run_id }}
+          path: |
+            renew.log
+            *.png
+            xray.log
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: 清理运行记录
         if: always()
