@@ -1,0 +1,191 @@
+name: TheRose 续期
+
+on:
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write
+
+    steps:
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 安装依赖
+        run: pip install seleniumbase requests
+
+      - name: 安装 Chrome 和 UC 驱动
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y google-chrome-stable xvfb
+          seleniumbase install uc_driver > /tmp/uc_driver_install.log 2>&1 || {
+            cat /tmp/uc_driver_install.log
+            exit 1
+          }
+          echo "[INFO] UC 驱动已准备"
+
+      - name: 安装并启动代理
+        env:
+          PROXY_LINK: ${{ secrets.TheRose_Proxy }}
+        run: |
+          if [ -z "${PROXY_LINK}" ]; then
+            echo "[WARN] TheRose_Proxy 未配置，将直连访问"
+            echo "PROXY_SERVER=" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          wget -q --timeout=30 --tries=3 https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+
+          python3 << 'PYEOF'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          proxy_url = os.environ["PROXY_LINK"].strip()
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess", "ss", "hysteria2", "h2"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def truthy(value):
+              return str(value).lower() in {"1", "true", "yes"}
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+              stream_settings = {"network": transport_type, "security": query.get("security", "none")}
+              if stream_settings["security"] == "reality":
+                  reality = {"serverName": query.get("sni", host), "fingerprint": query.get("fp", "chrome"), "publicKey": query.get("pbk", "")}
+                  if query.get("sid"): reality["shortId"] = query["sid"]
+                  if query.get("spx"): reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {"serverName": query.get("sni", host), "fingerprint": query.get("fp", "chrome"), "allowInsecure": truthy(query.get("allowInsecure", query.get("insecure", "0")))}
+              if transport_type == "tcp":
+                  stream_settings["tcpSettings"] = {"header": {"type": query.get("headerType", "none")}}
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"): headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {"path": query.get("path", "/"), "headers": headers}
+              elif transport_type == "http":
+                  stream_settings["httpSettings"] = {"host": [h for h in query.get("host", "").split(",") if h], "path": query.get("path", "/")}
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {"serviceName": query.get("serviceName", ""), "authority": query.get("authority", "")}
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host, port, user_id = parsed.hostname, parsed.port, unquote(parsed.username or "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL")
+              outbound = {"protocol": "vless", "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": user_id, "encryption": qs.get("encryption", "none"), "flow": qs.get("flow", "")}]}]}, "streamSettings": build_stream_settings(qs, host)}
+          elif scheme == "vmess":
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host, port, user_id = vmess.get("add"), int(vmess.get("port", 0)), vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL")
+              query = {"type": vmess.get("net", "tcp"), "security": vmess.get("tls", "none"), "path": vmess.get("path", "/") or "/", "host": vmess.get("host", ""), "sni": vmess.get("sni", "") or host, "fp": vmess.get("fp", "chrome"), "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")), "serviceName": vmess.get("path", ""), "authority": vmess.get("host", ""), "headerType": vmess.get("type", "none") or "none"}
+              outbound = {"protocol": "vmess", "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": user_id, "alterId": int(vmess.get("aid", 0) or 0), "security": vmess.get("scy", "auto")}]}]}, "streamSettings": build_stream_settings(query, host)}
+          elif scheme in {"hysteria2", "h2"}:
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port or 443
+              password = unquote(parsed.password or parsed.username or "")
+              sni = qs.get("sni", host)
+              insecure = qs.get("insecure", "0") in {"1", "true", "yes"}
+              outbound = {"protocol": "hysteria2", "settings": {"servers": [{"address": host, "port": port, "password": password}]}, "streamSettings": {"security": "tls", "tlsSettings": {"serverName": sni, "allowInsecure": insecure}}}
+          elif scheme == "ss":
+              content = parsed.netloc + parsed.path
+              if "@" in content:
+                  encoded, server_part = content.split("@", 1)
+                  decoded = base64.b64decode(encoded + "==").decode("utf-8")
+                  method, password = decoded.split(":", 1)
+                  address, port = server_part.split(":", 1)
+              else:
+                  decoded = base64.b64decode(content + "==").decode("utf-8")
+                  if "@" in decoded:
+                      user_part, server_part = decoded.split("@", 1)
+                      method, password = user_part.split(":", 1)
+                      address, port = server_part.split(":", 1)
+                  else:
+                      raise SystemExit("Invalid SS URL")
+              outbound = {"protocol": "shadowsocks", "settings": {"servers": [{"address": address, "port": int(port), "method": method, "password": password}]}}
+          else:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          config = {"log": {"loglevel": "warning"}, "inbounds": [{"listen": "127.0.0.1", "port": 8080, "protocol": "http"}], "outbounds": [outbound]}
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PYEOF
+
+          xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 2
+          xray version
+          sed -n '1,20p' xray.log || true
+
+          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/therose_proxy_ip; then
+            IP=$(cat /tmp/therose_proxy_ip)
+            MASKED=$(echo "$IP" | sed 's/\.[0-9]*\.[0-9]*\./.xxx.xxx./')
+            echo "[INFO] 代理可用，出口 IP: $MASKED"
+            echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+          else
+            echo "[WARN] 代理不可用，将直连访问"
+            echo "PROXY_SERVER=" >> "$GITHUB_ENV"
+          fi
+
+      - name: 检查代理出口
+        run: |
+          if [ -n "${PROXY_SERVER}" ]; then
+            IP=$(curl -fsS --max-time 15 --proxy "${PROXY_SERVER}" https://api.ipify.org)
+            MASKED=$(echo "$IP" | sed 's/\.[0-9]*\.[0-9]*\./.xxx.xxx./')
+            echo "[INFO] 代理出口 IP: $MASKED"
+            echo "[INFO] 检查 TheRose 面板可访问..."
+            curl -sSI --connect-timeout 10 --max-time 30 --proxy "${PROXY_SERVER}" https://client.therose.cloud/login | sed -n '1,8p' || echo "[WARN] HTTP 预检失败，将交由浏览器继续尝试"
+          else
+            echo "[INFO] 直连模式，检查 TheRose 面板可访问..."
+            curl -sSI --connect-timeout 10 --max-time 30 https://client.therose.cloud/login | sed -n '1,8p' || echo "[WARN] HTTP 预检失败，将交由浏览器继续尝试"
+          fi
+
+      - name: 下载私库脚本
+        env:
+          GH_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl --fail --location --silent --show-error \
+            --connect-timeout 15 --max-time 60 --retry 3 --retry-delay 2 \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github.raw+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/aoi675145/scripts/contents/scripts/therose/therose.py?ref=main" \
+            --output /tmp/therose.py
+          test -s /tmp/therose.py
+
+      - name: 执行续期
+        env:
+          TheRose: ${{ secrets.TheRose }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+        run: xvfb-run python /tmp/therose.py
+
+      - name: 清理运行记录
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 5
