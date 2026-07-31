@@ -11,27 +11,27 @@ jobs:
 
     steps:
       # 👇 修改 1：改为拉取私有仓库
-      - name: Checkout repository
+      - name: 拉取脚本仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: Setup Node.js
+      - name: 配置 Node.js 环境
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
       # 👇 修改 2：指定工作目录，并补充安装 playwright 浏览器内核
-      - name: Install dependencies
+      - name: 安装运行依赖
         working-directory: scripts/sap-login
         run: |
           npm install playwright axios form-data
           npx playwright install chromium --with-deps
 
       # 👇 修改 3：指定工作目录，并修改 TG 环境变量名匹配你的截图
-      - name: Run login script
+      - name: 执行 SAP 保活
         working-directory: scripts/sap-login
         run: node login.js
         env:
@@ -40,7 +40,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
 
       # 👇 修改 4：修正截图收集路径
-      - name: Upload screenshots as artifact
+      - name: 上传运行截图
         if: always() # 建议加上这行，无论成功失败都截个图
         uses: actions/upload-artifact@v4
         with:
