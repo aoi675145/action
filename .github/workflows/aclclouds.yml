@@ -2,7 +2,7 @@ name:  ACLClouds Auto Renew
 on:
   workflow_dispatch:
   schedule:
-    - cron: '14 16 4 8 *' # 下一个: 2026-08-04 16:14 UTC / 2026-08-05 00:14 北京时间 (到期前1天执行)
+    - cron: '16 14 27 7 *' # 下一个: 2026-07-27 14:16 UTC / 2026-07-27 22:16 北京时间 (到期前1天执行)
 
 jobs:
   run_renewal:
@@ -353,6 +353,26 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           python aclclouds.py
+
+      - name: 同步 cookies.txt 和 next_time.txt 回私有仓库
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          git -C scripts_repo config user.name "github-actions[bot]"
+          git -C scripts_repo config user.email "github-actions[bot]@users.noreply.github.com"
+          for f in cookies.txt next_time.txt; do
+            if [ -f "scripts_repo/scripts/aclclouds/$f" ]; then
+              git -C scripts_repo add "scripts/aclclouds/$f"
+            fi
+          done
+          if git -C scripts_repo diff --cached --quiet; then
+            echo "scripts 仓库无变更需要提交"
+          else
+            git -C scripts_repo commit -m "🚀 auto: 更新 cookies 和下次运行时间"
+            git -C scripts_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/scripts.git
+            git -C scripts_repo push
+          fi
 
       - name: 自动修改下一次运行时间
         env:
