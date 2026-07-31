@@ -1,0 +1,314 @@
+name: Zampto 续期
+
+on:
+  schedule:
+    - cron: '47 0 * * *'
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      actions: write
+    concurrency:
+      group: Zampto_Renew       # 同一时间只允许一个运行
+      cancel-in-progress: false
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .  # 拉到根目录
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update && sudo apt-get install -y xvfb unzip
+          pip install "seleniumbase>=4.25.0" "pyvirtualdisplay>=3.0" "requests[socks]>=2.31.0"
+
+      - name: 修复 DNS
+        run: |
+          sudo systemctl stop systemd-resolved 2>/dev/null || true
+          sudo systemctl disable systemd-resolved 2>/dev/null || true
+          sudo rm -f /etc/resolv.conf
+          printf "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1\n" | sudo tee /etc/resolv.conf
+
+      - name: 安装并启动代理
+        env:
+          ZAMPTO_PROXY_NODE: ${{ secrets.ZAMPTO_PROXY_NODE }}
+        run: |
+          if [ -z "${ZAMPTO_PROXY_NODE}" ]; then
+            echo "[ERROR] ZAMPTO_PROXY_NODE 未配置，禁止直连"
+            exit 1
+          fi
+
+          # ---------- Hysteria2 ----------
+          if [[ "$ZAMPTO_PROXY_NODE" == hysteria2://* || "$ZAMPTO_PROXY_NODE" == hy2://* ]]; then
+            echo "[INFO] 配置 Hysteria2 代理"
+            wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
+            chmod +x hysteria
+
+            python3 << 'PYEOF'
+          import json, os, sys
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          url = os.environ.get("ZAMPTO_PROXY_NODE", "").strip()
+          parsed = urlparse(url)
+          auth = unquote(parsed.username or "")
+          if not auth or not parsed.hostname or not parsed.port:
+              print("[ERROR] Hysteria2 节点解析失败")
+              sys.exit(1)
+          params = parse_qs(parsed.query)
+          sni = params.get("sni", [parsed.hostname])[0]
+          insecure = params.get("insecure", params.get("allowInsecure", ["0"]))[0].lower() in {"1", "true", "yes", "on"}
+          server = f"{parsed.hostname}:{parsed.port}"
+          with open("hy2.yaml", "w", encoding="utf-8") as f:
+              f.write(f"server: {json.dumps(server)}\n")
+              f.write(f"auth: {json.dumps(auth)}\n")
+              f.write("tls:\n")
+              f.write(f"  sni: {json.dumps(sni)}\n")
+              f.write(f"  insecure: {'true' if insecure else 'false'}\n")
+              f.write("socks5:\n")
+              f.write("  listen: 127.0.0.1:10808\n")
+          print(f"[INFO] Hysteria2 -> {parsed.hostname[:2]}***{parsed.hostname[-2:]}:{parsed.port}")
+          PYEOF
+
+            ./hysteria client -c hy2.yaml > hysteria.log 2>&1 &
+            sleep 5
+
+            echo "[INFO] 测试 Hysteria2 代理连接..."
+            for i in 1 2 3 4 5; do
+              if curl -x socks5h://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /tmp/zampto_proxy_ip 2>&1; then
+                PROXY_IP=$(cat /tmp/zampto_proxy_ip)
+                MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); parts=ip.split("."); v6=ip.split(":"); print(f"{parts[0]}.{parts[1]}.***.***" if len(parts)==4 else f"{v6[0]}:{v6[1]}:***" if ":" in ip and len(v6)>2 else ip[:3]+"***")' "$PROXY_IP")
+                echo "[INFO] ✅ Hysteria2 代理可用，出口 IP: ${MASKED_IP}"
+                echo "PROXY_SERVER=socks5://127.0.0.1:10808" >> "$GITHUB_ENV"
+                exit 0
+              fi
+              echo "[WARN] Hysteria2 尝试 $i/5..."
+              sleep 3
+            done
+
+            echo "[ERROR] ❌ Hysteria2 代理连接失败"
+            echo "--- Hysteria2 日志 ---"
+            cat hysteria.log
+            exit 1
+          fi
+          # ---------- Xray (vless/vmess) ----------
+          echo "[INFO] 配置 Xray 代理"
+          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
+          mkdir -p xray-bin
+          unzip -oq Xray-linux-64.zip -d xray-bin
+          chmod +x xray-bin/xray
+          sudo mv xray-bin/xray /usr/local/bin/xray
+
+          python3 << 'PYEOF'
+          import base64
+          import json
+          import os
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          proxy_url = os.environ["ZAMPTO_PROXY_NODE"].strip()
+          parsed = urlparse(proxy_url)
+          scheme = parsed.scheme
+
+          if scheme not in {"vless", "vmess"}:
+              raise SystemExit(f"Unsupported proxy scheme: {scheme}")
+
+          def truthy(value):
+              return str(value).lower() in {"1", "true", "yes"}
+
+          def build_stream_settings(query, host):
+              transport_type = query.get("type", "tcp")
+              if transport_type == "h2":
+                  transport_type = "http"
+
+              stream_settings = {
+                  "network": transport_type,
+                  "security": query.get("security", "none"),
+              }
+
+              if stream_settings["security"] == "reality":
+                  reality = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "publicKey": query.get("pbk", ""),
+                  }
+                  if query.get("sid"):
+                      reality["shortId"] = query["sid"]
+                  if query.get("spx"):
+                      reality["spiderX"] = query["spx"]
+                  stream_settings["realitySettings"] = reality
+              elif stream_settings["security"] == "tls":
+                  stream_settings["tlsSettings"] = {
+                      "serverName": query.get("sni", host),
+                      "fingerprint": query.get("fp", "chrome"),
+                      "allowInsecure": truthy(query.get("allowInsecure", query.get("insecure", "0"))),
+                  }
+
+              if transport_type == "tcp":
+                  stream_settings["tcpSettings"] = {
+                      "header": {"type": query.get("headerType", "none")}
+                  }
+              elif transport_type == "ws":
+                  headers = {}
+                  if query.get("host"):
+                      headers["Host"] = query["host"]
+                  stream_settings["wsSettings"] = {
+                      "path": query.get("path", "/"),
+                      "headers": headers,
+                  }
+              elif transport_type == "http":
+                  stream_settings["httpSettings"] = {
+                      "host": [h for h in query.get("host", "").split(",") if h],
+                      "path": query.get("path", "/"),
+                  }
+              elif transport_type == "grpc":
+                  stream_settings["grpcSettings"] = {
+                      "serviceName": query.get("serviceName", ""),
+                      "authority": query.get("authority", ""),
+                  }
+
+              return stream_settings
+
+          if scheme == "vless":
+              qs = {k: v[-1] for k, v in parse_qs(parsed.query).items()}
+              host = parsed.hostname
+              port = parsed.port
+              user_id = unquote(parsed.username or "")
+
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VLESS URL: missing host, port, or uuid")
+
+              outbound = {
+                  "protocol": "vless",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "encryption": qs.get("encryption", "none"),
+                              "flow": qs.get("flow", ""),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(qs, host),
+              }
+          else:
+              payload = parsed.netloc + parsed.path
+              padded = payload + "=" * (-len(payload) % 4)
+              vmess = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+              host = vmess.get("add")
+              port = int(vmess.get("port", 0))
+              user_id = vmess.get("id", "")
+              if not host or not port or not user_id:
+                  raise SystemExit("Invalid VMess URL: missing host, port, or uuid")
+
+              query = {
+                  "type": vmess.get("net", "tcp"),
+                  "security": vmess.get("tls", "none"),
+                  "path": vmess.get("path", "/") or "/",
+                  "host": vmess.get("host", ""),
+                  "sni": vmess.get("sni", "") or host,
+                  "fp": vmess.get("fp", "chrome"),
+                  "allowInsecure": vmess.get("allowInsecure", vmess.get("insecure", "0")),
+                  "serviceName": vmess.get("path", ""),
+                  "authority": vmess.get("host", ""),
+                  "headerType": vmess.get("type", "none") or "none",
+              }
+
+              outbound = {
+                  "protocol": "vmess",
+                  "settings": {
+                      "vnext": [{
+                          "address": host,
+                          "port": port,
+                          "users": [{
+                              "id": user_id,
+                              "alterId": int(vmess.get("aid", 0) or 0),
+                              "security": vmess.get("scy", "auto"),
+                          }],
+                      }]
+                  },
+                  "streamSettings": build_stream_settings(query, host),
+              }
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{
+                  "listen": "127.0.0.1",
+                  "port": 8080,
+                  "protocol": "http",
+              }],
+              "outbounds": [outbound],
+          }
+
+          with open("xray-config.json", "w", encoding="ascii") as f:
+              json.dump(config, f, indent=2)
+          PYEOF
+
+          xray run -c xray-config.json > xray.log 2>&1 &
+          sleep 2
+          xray version
+          sed -n '1,20p' xray.log || true
+
+          if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/zampto_proxy_ip; then
+            PROXY_IP=$(cat /tmp/zampto_proxy_ip)
+            MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); parts=ip.split("."); v6=ip.split(":"); print(f"{parts[0]}.{parts[1]}.***.***" if len(parts)==4 else f"{v6[0]}:{v6[1]}:***" if ":" in ip and len(v6)>2 else ip[:3]+"***")' "$PROXY_IP")
+            echo "[INFO] ✅ 代理可用，出口 IP: ${MASKED_IP}"
+            echo "PROXY_SERVER=http://127.0.0.1:8080" >> "$GITHUB_ENV"
+          else
+            echo "[ERROR] ❌ 代理不可用，禁止直连"
+            cat xray.log
+            exit 1
+          fi
+
+      - name: 检查脚本代理出口
+        run: |
+          if [ -z "${PROXY_SERVER}" ]; then
+            echo "[ERROR] PROXY_SERVER 为空，禁止直连"
+            exit 1
+          fi
+
+          echo "[INFO] 检查代理出口 IP..."
+          CHECK_IP=$(curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org)
+          MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); parts=ip.split("."); v6=ip.split(":"); print(f"{parts[0]}.{parts[1]}.***.***" if len(parts)==4 else f"{v6[0]}:{v6[1]}:***" if ":" in ip and len(v6)>2 else ip[:3]+"***")' "$CHECK_IP")
+          echo "[INFO] 出口 IP: ${MASKED_IP}"
+
+          echo "[INFO] 检查代理访问 Zampto..."
+          curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://auth.zampto.net/ | sed -n '1,8p'
+
+      - name: 执行续期
+        env:
+          ZAMPTO_ACCOUNT: ${{ secrets.ZAMPTO_ACCOUNT }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          ZAMPTO_PROXY_NODE: ${{ env.PROXY_SERVER }}
+        run: python scripts/zampto/zampto.py
+#        > /dev/null 2>&1
+
+#      - name: 上传截图
+#        uses: actions/upload-artifact@v4
+#        if: always()
+#        with:
+#          name: screenshots-${{ github.run_number }}
+#          path: output/screenshots/
+#          retention-days: 3
+
+      - name: 清理旧运行
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 5
