@@ -226,6 +226,8 @@ jobs:
             sudo -E apt-get install -y -qq -o Dpkg::Use-Pty=0 xvfb
           fi
           pip install --quiet seleniumbase requests
+          sbase get cft
+          echo "[browser] Chrome for Testing 安装完成"
 
       - name: 安装 AdGuard 浏览器扩展
         env:
@@ -307,6 +309,15 @@ jobs:
         run: |
           mkdir -p screenshots
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python -u main.py
+
+      - name: 上传 Linkvertise 诊断截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ateex-screenshots
+          path: screenshots/
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: 清理运行记录
         if: always()
