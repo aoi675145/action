@@ -56,10 +56,11 @@ jobs:
             xdotool \
             scrot
 
-      - name: 安装 Python 依赖
+      - name: 安装 Python 依赖和 UC 驱动
         if: steps.check.outputs.run == 'true'
         run: |
           pip install --quiet seleniumbase requests
+          sbase get uc_driver >/dev/null
 
       - name: 安装并启动 Xray 代理
         if: steps.check.outputs.run == 'true'
