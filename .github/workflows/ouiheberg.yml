@@ -18,11 +18,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 拉取私有仓库代码
+      - name: 拉取私库 OuiHeberg 脚本
         uses: actions/checkout@v4
         with:
           repository: 'aoi675145/scripts'
           token: ${{ secrets.REPO_TOKEN }}
+          sparse-checkout: scripts/ouiheberg/ouiheberg.py
+          sparse-checkout-cone-mode: false
 
       - name: 启动代理转换网关
         env:
@@ -201,7 +203,7 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT: ${{ secrets.TG_BOT }}
         run: |
-          python3 scripts/OuiHeberg/ouiheberg_code.py
+          python3 scripts/ouiheberg/ouiheberg.py
 
       - name: 清理运行记录
         if: always()
