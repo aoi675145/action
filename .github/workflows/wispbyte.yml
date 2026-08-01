@@ -33,12 +33,32 @@ jobs:
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
+          set -o pipefail
           mkdir -p scripts
           echo "[INFO] 从私库拉取 main.py..."
-          curl -fsSL \
+          DOWNLOAD_FILE="$(mktemp)"
+          if curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
-            -o scripts/main.py \
-            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/Wispbyte/main.py"
+            -o "${DOWNLOAD_FILE}" \
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/wispbyte/main.py"; then
+            echo "[INFO] 使用私库路径: scripts/wispbyte/main.py"
+          elif curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o "${DOWNLOAD_FILE}" \
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/Wispbyte/main.py"; then
+            echo "[WARN] 使用兼容路径: scripts/Wispbyte/main.py"
+          else
+            rm -f "${DOWNLOAD_FILE}"
+            if [ -s scripts/main.py ]; then
+              echo "[WARN] 私库脚本下载失败，继续使用当前仓库中的 scripts/main.py"
+              echo "[INFO] ✅ main.py 已就绪 ($(wc -l < scripts/main.py) 行)"
+              exit 0
+            fi
+            echo "[ERROR] 私库及当前仓库中均未找到可用的 main.py"
+            exit 1
+          fi
+          test -s "${DOWNLOAD_FILE}"
+          mv "${DOWNLOAD_FILE}" scripts/main.py
           echo "[INFO] ✅ main.py 已下载 ($(wc -l < scripts/main.py) 行)"
 
       - name: 安装系统依赖
