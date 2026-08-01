@@ -1,4 +1,4 @@
-name: OuiHeberg 续期
+name: OuiHeberg 自动续期
 
 on:
   schedule:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ouiheberg 续期
+  group: ouiheberg-code
   cancel-in-progress: false
 
 jobs:
@@ -189,21 +189,36 @@ jobs:
             if [ -n "$TG_TOKEN" ]; then
               curl -s -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
                 -d chat_id="${TG_CHAT_ID}" \
-                -d text="🔑 OuiHeberg 激活码获取任务%0A🕐 ${RUN_TIME}%0A❌ 代理失败: ${FAILED}" > /dev/null
+                -d text="🔄 OuiHeberg 自动续期任务%0A🕐 ${RUN_TIME}%0A❌ 代理失败: ${FAILED}" > /dev/null
             fi
             exit 1
           fi
 
-      - name: 安装 Python 依赖
+      - name: 安装 Python 依赖和 UC 驱动
         run: |
-          python3 -m pip install --disable-pip-version-check requests websocket-client pysocks
+          python3 -m pip install --disable-pip-version-check 'requests[socks]' websocket-client python-socks seleniumbase
+          seleniumbase install uc_driver >/tmp/uc-driver-install.log 2>&1 || {
+            cat /tmp/uc-driver-install.log
+            exit 1
+          }
+          echo "✅ SeleniumBase UC 驱动已准备完成"
 
-      - name: 获取 OuiHeberg 激活码
+      - name: 执行 OuiHeberg 续期
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          OUIHEBERG: ${{ secrets.OUIHEBERG }}
           TG_BOT: ${{ secrets.TG_BOT }}
         run: |
           python3 scripts/ouiheberg/ouiheberg.py
+
+      - name: 上传 OuiPanel 截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ouipanel-screenshots
+          path: screenshots/*.png
+          if-no-files-found: ignore
+          retention-days: 3
 
       - name: 清理运行记录
         if: always()
