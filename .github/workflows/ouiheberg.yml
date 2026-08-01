@@ -1,4 +1,4 @@
-name: OuiHeberg 每日获取激活码
+name: OuiHeberg 续期
 
 on:
   schedule:
@@ -10,7 +10,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: ouiheberg-code
+  group: ouiheberg 续期
   cancel-in-progress: false
 
 jobs:
