@@ -2,8 +2,8 @@ name: Ateex Coins
 
 on:
   workflow_dispatch:
-#  schedule:
-#    - cron: '0 0 */7 * *'
+  schedule:
+    - cron: '0 0 */7 * *'
 
 jobs:
   run:
@@ -227,6 +227,40 @@ jobs:
           fi
           pip install --quiet seleniumbase requests
 
+      - name: 安装 AdGuard 浏览器扩展
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ASSET_URL="$(python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          request = urllib.request.Request(
+              "https://api.github.com/repos/AdguardTeam/AdguardBrowserExtension/releases/latest",
+              headers={
+                  "Accept": "application/vnd.github+json",
+                  "Authorization": f"Bearer {os.environ['GH_TOKEN']}",
+                  "User-Agent": "Ateex-GitHub-Actions",
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              release = json.load(response)
+          for asset in release.get("assets", []):
+              if asset.get("name") == "chrome-mv3.zip":
+                  print(asset["browser_download_url"])
+                  break
+          else:
+              raise SystemExit("chrome-mv3.zip not found in latest AdGuard release")
+          PY
+          )"
+          curl -fL --retry 3 -o adguard-chrome.zip "$ASSET_URL"
+          mkdir -p adguard-extension
+          unzip -oq adguard-chrome.zip -d adguard-extension
+          test -s adguard-extension/manifest.json
+          echo "ADGUARD_EXTENSION_DIR=$GITHUB_WORKSPACE/adguard-extension" >> "$GITHUB_ENV"
+          echo "[adguard] 浏览器扩展安装完成"
+
       - name: 检测 IP
         run: |
           mask_ip() {
@@ -268,6 +302,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           Ateex_RUNTIME_PROXY: ${{ env.Ateex_RUNTIME_PROXY }}
           Ateex_PROXY_STATUS: ${{ env.Ateex_PROXY_STATUS }}
+          ADGUARD_EXTENSION_DIR: ${{ env.ADGUARD_EXTENSION_DIR }}
           PYTHONUNBUFFERED: 1
         run: |
           mkdir -p screenshots
