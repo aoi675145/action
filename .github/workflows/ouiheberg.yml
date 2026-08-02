@@ -207,7 +207,6 @@ jobs:
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           OUIHEBERG: ${{ secrets.OUIHEBERG }}
-          OUIHEBERG_API_TOKEN: ${{ secrets.OUIHEBERG_API_TOKEN }}
           TG_BOT: ${{ secrets.TG_BOT }}
         run: |
           set -o pipefail
@@ -235,8 +234,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          # 到期日前一天北京时间 09:17 运行，即 UTC 01:17。
-          NEXT_RUN_UTC=$(date -u -d "$DUE_DATE 01:17:00 UTC -1 day" '+%Y-%m-%d %H:%M')
+          # 到期日当天北京时间 09:17 运行，即 UTC 01:17。
+          NEXT_RUN_UTC=$(date -u -d "$DUE_DATE 01:17:00 UTC" '+%Y-%m-%d %H:%M')
           NEXT_MINUTE=$(date -u -d "$NEXT_RUN_UTC UTC" '+%-M')
           NEXT_HOUR=$(date -u -d "$NEXT_RUN_UTC UTC" '+%-H')
           NEXT_DAY=$(date -u -d "$NEXT_RUN_UTC UTC" '+%-d')
@@ -262,7 +261,7 @@ jobs:
             echo "::error::找不到 cron 配置行"
             exit 1
           fi
-          sed -i "${LINE_NUM}c\\    - cron: '$NEW_CRON' # 自动更新：到期日前一天运行" "$WORKFLOW_FILE"
+          sed -i "${LINE_NUM}c\\    - cron: '$NEW_CRON' # 自动更新：到期日当天运行" "$WORKFLOW_FILE"
 
           if git diff --quiet "$WORKFLOW_FILE"; then
             echo "::notice::Cron 无变化，无需提交"
