@@ -1,8 +1,8 @@
-name: OuiHeberg 自动续期
+name: OuiHeberg 续期
 
 on:
   schedule:
-    - cron: '17 1 31 8 *' # 自动更新：到期日当天运行
+    - cron: '17 1 * * *'
   workflow_dispatch:
 
 permissions:
@@ -14,7 +14,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  get-code:
+  renew-server:
+    name: OuiHeberg 续期
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

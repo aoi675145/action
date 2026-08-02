@@ -1,4 +1,4 @@
-name: OuiHeberg 自动续期_A
+name: OuiHeberg 续期_A
 
 on:
   schedule:
@@ -14,7 +14,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  get-code:
+  renew-server-A:
+    name: OuiHeberg 续期_A
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
