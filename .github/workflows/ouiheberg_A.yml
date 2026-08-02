@@ -1,4 +1,4 @@
-name: OuiHeberg 自动续期
+name: OuiHeberg 自动续期_A
 
 on:
   schedule:
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: ouiheberg-code
+  group: ouiheberg-code-A
   cancel-in-progress: false
 
 jobs:
@@ -28,12 +28,12 @@ jobs:
 
       - name: 启动代理转换网关
         env:
-          MY_PROXY_NODE: ${{ secrets.OuiHeberg_PROXY }}
+          MY_PROXY_NODE: ${{ secrets.OuiHeberg_PROXY_A }}
           TG_BOT: ${{ secrets.TG_BOT }}
         run: |
           FAILED=""
           if [ -z "$MY_PROXY_NODE" ]; then
-            echo "[ERROR] 代理未配置 (OuiHeberg_PROXY 为空)"
+            echo "[ERROR] 代理未配置 (OuiHeberg_PROXY_A 为空)"
             FAILED="代理未配置"
           fi
 
@@ -205,8 +205,8 @@ jobs:
 
       - name: 执行 OuiHeberg 续期
         env:
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          OUIHEBERG: ${{ secrets.OUIHEBERG }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN_A }}
+          OUIHEBERG: ${{ secrets.OUIHEBERG_A }}
           TG_BOT: ${{ secrets.TG_BOT }}
         run: |
           set -o pipefail
@@ -247,12 +247,12 @@ jobs:
 
           git clone "https://x-access-token:${REPO_TOKEN}@github.com/${{ github.repository }}.git" workflow_repo
           cd workflow_repo
-          WORKFLOW_FILE="ouiheberg.yml"
+          WORKFLOW_FILE="ouiheberg_A.yml"
           if [ ! -f "$WORKFLOW_FILE" ]; then
-            WORKFLOW_FILE=".github/workflows/ouiheberg.yml"
+            WORKFLOW_FILE=".github/workflows/ouiheberg_A.yml"
           fi
           if [ ! -f "$WORKFLOW_FILE" ]; then
-            echo "::error::找不到 OuiHeberg 工作流文件"
+            echo "::error::找不到 OuiHeberg_A 工作流文件"
             exit 1
           fi
 
@@ -270,7 +270,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add "$WORKFLOW_FILE"
-          git commit -m "自动更新 OuiHeberg 续期 Cron" \
+          git commit -m "自动更新 OuiHeberg_A 续期 Cron" \
             -m "下次运行: $NEXT_RUN_UTC UTC" \
             -m "到期时间: $DUE_DATE"
           git push
