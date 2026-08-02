@@ -217,15 +217,15 @@ jobs:
         id: extract_due
         if: success()
         run: |
-          DUE_DATE=$(grep -oP '到期时间\(标准\): \K\d{4}-\d{2}-\d{2}' ouiheberg-renew.log | tail -1 || true)
-          if [ -z "$DUE_DATE" ]; then
+          DUE_DATE=$(tr -d '\r\n' < ouiheberg-due-date.txt 2>/dev/null || true)
+          if ! [[ "$DUE_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
             echo "skip_update=true" >> "$GITHUB_OUTPUT"
             echo "::warning::未提取到续期到期时间，跳过 Cron 更新"
             exit 0
           fi
           echo "due_date=$DUE_DATE" >> "$GITHUB_OUTPUT"
           echo "skip_update=false" >> "$GITHUB_OUTPUT"
-          echo "::notice::续期后到期时间: $DUE_DATE"
+          echo "::notice::已获取续期到期时间"
 
       - name: 自动修改下次运行 Cron
         if: success() && steps.extract_due.outputs.skip_update != 'true'
@@ -243,8 +243,7 @@ jobs:
           NEXT_MONTH=$(date -u -d "$NEXT_RUN_UTC UTC" '+%-m')
           NEW_CRON="$NEXT_MINUTE $NEXT_HOUR $NEXT_DAY $NEXT_MONTH *"
 
-          echo "::notice::下次运行: $NEXT_RUN_UTC UTC"
-          echo "::notice::新 Cron: $NEW_CRON"
+          echo "::notice::已根据网站利用期限生成下次运行计划"
 
           git clone "https://x-access-token:${REPO_TOKEN}@github.com/${{ github.repository }}.git" workflow_repo
           cd workflow_repo
