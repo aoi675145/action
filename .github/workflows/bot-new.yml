@@ -218,7 +218,7 @@ jobs:
       - name: 🚀 运行续期脚本
         if: steps.check.outputs.run == 'true'
         env:
-          DISCORD_TOKEN_1: ${{ secrets.DISCORD_TOKEN_1 }}
+          DISCORD_TOKEN_A: ${{ secrets.DISCORD_TOKEN_A }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           BOTNEW_PROXY: ${{ env.PROXY_SERVER }}
