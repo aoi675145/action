@@ -269,7 +269,7 @@ jobs:
         cd scripts/justrunmy
         
         # 使用 xvfb 运行以支持强力过人机验证模式
-        xvfb-run -a python just.py
+        xvfb-run -a python justrunmy.py
 
     # 👇 新增步骤：将更新后的 cookie.txt 提交回仓库
     - name: 提交 Cookie 更新
