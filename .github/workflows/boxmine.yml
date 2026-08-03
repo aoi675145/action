@@ -141,6 +141,7 @@ jobs:
           exit 1
 
       - name: 运行 AFK 脚本
+        id: afk
         env:
           DISCORD_TOKEN:                ${{ secrets.DISCORD_TOKEN_A }}
           TG_BOT_TOKEN:                 ${{ secrets.TG_BOT_TOKEN }}
@@ -148,6 +149,65 @@ jobs:
           PROXY_URL:                    ${{ env.PROXY_URL }}
           PYTHONUNBUFFERED:             1
         run: python scripts/boxmine/boxmine_afk.py
+
+      - name: 更新下次 AFK 调度
+        if: success()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          NEXT_CRON: ${{ steps.afk.outputs.cron }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$NEXT_CRON" ]; then
+            echo "⚠️ 未获取到下次 AFK 时间，保留现有调度"
+            exit 0
+          fi
+          python3 - <<'PYEOF'
+          import base64
+          import json
+          import os
+          import re
+          import urllib.request
+
+          token = os.environ["REPO_TOKEN"]
+          repo = os.environ["TARGET_REPO"]
+          workflow_ref = os.environ["WORKFLOW_REF"]
+          cron = os.environ["NEXT_CRON"]
+          marker = f"{repo}/"
+          path_ref = workflow_ref.split(marker, 1)[1]
+          path = path_ref.rsplit("@", 1)[0]
+          api = f"https://api.github.com/repos/{repo}/contents/{path}"
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "BoxMine-AFK",
+          }
+          request = urllib.request.Request(api, headers=headers)
+          with urllib.request.urlopen(request, timeout=30) as response:
+              current = json.load(response)
+          content = base64.b64decode(current["content"]).decode("utf-8")
+          updated, count = re.subn(
+              r"(?m)^(\s*-\s*cron:\s*)['\"][^'\"]+['\"]\s*$",
+              lambda match: f"{match.group(1)}'{cron}'",
+              content,
+              count=1,
+          )
+          if count != 1:
+              raise RuntimeError("未找到工作流 schedule cron")
+          if updated == content:
+              print("ℹ️ Cron 没有变化")
+              raise SystemExit(0)
+          payload = json.dumps({
+              "message": "Update BoxMine AFK schedule",
+              "content": base64.b64encode(updated.encode("utf-8")).decode("ascii"),
+              "sha": current["sha"],
+          }).encode("utf-8")
+          request = urllib.request.Request(api, data=payload, headers={**headers, "Content-Type": "application/json"}, method="PUT")
+          with urllib.request.urlopen(request, timeout=30):
+              pass
+          print(f"✅ Cron 已更新：{cron}（UTC）")
+          PYEOF
 
       - name: 清理运行记录
         if: always()
