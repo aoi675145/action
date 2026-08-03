@@ -1,4 +1,4 @@
-name: boxmine afk
+name: Boxmine AFK
 
 on:
   workflow_dispatch:
