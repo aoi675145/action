@@ -31,7 +31,7 @@ jobs:
           python-version: '3.11'
 
       - name: 安装依赖
-        run: pip install --quiet "requests[socks]" websocket-client
+        run: pip install --quiet "requests[socks]" websocket-client PySocks python-socks
 
       - name: 校验必填 Secrets
         env:
