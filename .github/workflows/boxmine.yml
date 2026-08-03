@@ -1,4 +1,4 @@
-name: boxmine 挖矿
+name: boxmine afk
 
 on:
   workflow_dispatch:
