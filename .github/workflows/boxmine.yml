@@ -1,4 +1,4 @@
-name: Boxmine AFK
+name: BoxMine AFK
 
 on:
   workflow_dispatch:
@@ -39,21 +39,113 @@ jobs:
           BOXMINE_PROXY:   ${{ secrets.BOXMINE_PROXY }}
         run: |
           if [ -z "$DISCORD_TOKEN_A" ]; then
-            echo "[ERROR] DISCORD_TOKEN_A 未配置"
+            echo "❌ DISCORD_TOKEN_A 未配置"
             exit 1
           fi
           if [ -z "$BOXMINE_PROXY" ]; then
-            echo "[ERROR] BOXMINE_PROXY 未配置"
+            echo "❌ BOXMINE_PROXY 未配置"
             exit 1
           fi
-          echo "[INFO] 必填 Secrets 均已配置"
+          echo "✅ 必填 Secrets 校验通过"
 
-      - name: 运行挖矿脚本
+      - name: 配置 AFK 代理
+        env:
+          BOXMINE_PROXY: ${{ secrets.BOXMINE_PROXY }}
+        run: |
+          if [[ "$BOXMINE_PROXY" != vless://* ]]; then
+            echo "🔗 使用现有代理配置"
+            echo "PROXY_URL=$BOXMINE_PROXY" >> "$GITHUB_ENV"
+            exit 0
+          fi
+
+          echo "🔗 检测到 VLESS 节点，配置本地 Xray SOCKS5"
+          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip -O xray.zip
+          unzip -q xray.zip -d xray
+          chmod +x xray/xray
+
+          python3 << 'PYEOF'
+          import json
+          import os
+          import sys
+          from urllib.parse import parse_qs, unquote, urlparse
+
+          raw = os.environ["BOXMINE_PROXY"].strip()
+          parsed = urlparse(raw)
+          if parsed.scheme != "vless" or not parsed.username or not parsed.hostname or not parsed.port:
+              print("❌ VLESS 节点格式错误")
+              sys.exit(1)
+
+          params = parse_qs(parsed.query)
+          security = params.get("security", ["none"])[0]
+          network = params.get("type", ["tcp"])[0]
+          sni = params.get("sni", [parsed.hostname])[0]
+          fingerprint = params.get("fp", ["chrome"])[0]
+          flow = params.get("flow", [""])[0]
+          public_key = params.get("pbk", [""])[0]
+          short_id = params.get("sid", [""])[0]
+          host = params.get("host", [sni])[0]
+          path = unquote(params.get("path", ["/"])[0])
+
+          outbound = {
+              "protocol": "vless",
+              "settings": {
+                  "vnext": [{
+                      "address": parsed.hostname,
+                      "port": parsed.port,
+                      "users": [{"id": unquote(parsed.username), "encryption": "none"}],
+                  }]
+              },
+              "streamSettings": {"network": network, "security": security},
+          }
+          user = outbound["settings"]["vnext"][0]["users"][0]
+          if flow:
+              user["flow"] = flow
+          if security == "reality":
+              if not public_key:
+                  print("❌ VLESS Reality 节点缺少 pbk")
+                  sys.exit(1)
+              reality = {"serverName": sni, "fingerprint": fingerprint, "publicKey": public_key}
+              if short_id:
+                  reality["shortId"] = short_id
+              outbound["streamSettings"]["realitySettings"] = reality
+          elif security == "tls":
+              outbound["streamSettings"]["tlsSettings"] = {"serverName": sni, "fingerprint": fingerprint}
+          if network == "ws":
+              outbound["streamSettings"]["wsSettings"] = {"path": path, "headers": {"Host": host}}
+          elif network == "grpc":
+              outbound["streamSettings"]["grpcSettings"] = {"serviceName": params.get("serviceName", [""])[0]}
+
+          config = {
+              "log": {"loglevel": "warning"},
+              "inbounds": [{"listen": "127.0.0.1", "port": 10808, "protocol": "socks", "settings": {"udp": True}}],
+              "outbounds": [outbound],
+          }
+          with open("xray_config.json", "w", encoding="utf-8") as handle:
+              json.dump(config, handle, indent=2)
+          print(f"✅ VLESS 配置已生成：{parsed.hostname[:2]}***{parsed.hostname[-2:]}:{parsed.port}")
+          PYEOF
+
+          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
+          echo "🔄 等待 Xray 启动..."
+          for i in 1 2 3 4 5; do
+            if curl -x socks5h://127.0.0.1:10808 -fsS --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
+              echo "✅ VLESS 代理连接成功"
+              echo "PROXY_URL=socks5://127.0.0.1:10808" >> "$GITHUB_ENV"
+              exit 0
+            fi
+            echo "⏳ Xray 连接重试 $i/5"
+            sleep 3
+          done
+          echo "❌ VLESS 代理连接失败"
+          sed -n '1,80p' xray.log
+          exit 1
+
+      - name: 运行 AFK 脚本
         env:
           DISCORD_TOKEN:                ${{ secrets.DISCORD_TOKEN_A }}
           TG_BOT_TOKEN:                 ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:                   ${{ secrets.TG_CHAT_ID }}
-          PROXY_URL:                    ${{ secrets.BOXMINE_PROXY }}
+          PROXY_URL:                    ${{ env.PROXY_URL }}
           PYTHONUNBUFFERED:             1
         run: python scripts/boxmine/boxmine_afk.py
 
