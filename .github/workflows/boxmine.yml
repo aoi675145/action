@@ -1,0 +1,68 @@
+name: boxmine 挖矿
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 4 * * *'
+
+permissions:
+  actions: write
+
+concurrency:
+  group: boxmine-afk
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: pip install --quiet "requests[socks]" websocket-client
+
+      - name: 校验必填 Secrets
+        env:
+          DISCORD_TOKEN_A: ${{ secrets.DISCORD_TOKEN_A }}
+          BOXMINE_PROXY:   ${{ secrets.BOXMINE_PROXY }}
+        run: |
+          if [ -z "$DISCORD_TOKEN_A" ]; then
+            echo "[ERROR] DISCORD_TOKEN_A 未配置"
+            exit 1
+          fi
+          if [ -z "$BOXMINE_PROXY" ]; then
+            echo "[ERROR] BOXMINE_PROXY 未配置"
+            exit 1
+          fi
+          echo "[INFO] 必填 Secrets 均已配置"
+
+      - name: 运行挖矿脚本
+        env:
+          DISCORD_TOKEN:                ${{ secrets.DISCORD_TOKEN_A }}
+          TG_BOT_TOKEN:                 ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID:                   ${{ secrets.TG_CHAT_ID }}
+          PROXY_URL:                    ${{ secrets.BOXMINE_PROXY }}
+          PYTHONUNBUFFERED:             1
+        run: python scripts/boxmine/boxmine_afk.py
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 6
