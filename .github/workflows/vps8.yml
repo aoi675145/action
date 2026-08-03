@@ -443,7 +443,7 @@ jobs:
           VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
         run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py
 
-      - name: 保存截图到私库（覆盖上一次）
+      - name: 保存截图到私库
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -494,7 +494,7 @@ jobs:
           git push
           echo "[缓存] vps8_service_expiry.txt 已保存到私库 scripts/vps8/"
 
-      - name: 生成明天具体日期的随机 cron (UTC 0-3时 = 北京 8-12时)
+      - name: 随机 cron 
         if: always()
         run: |
           WORKFLOW=".github/workflows/vps8.yml"
