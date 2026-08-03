@@ -1,4 +1,4 @@
-name: Bot-Hosting 金币领取
+name: Bot-Coins
 
 on:
   workflow_dispatch:
