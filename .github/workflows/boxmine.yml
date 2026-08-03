@@ -122,7 +122,7 @@ jobs:
           }
           with open("xray_config.json", "w", encoding="utf-8") as handle:
               json.dump(config, handle, indent=2)
-          print(f"✅ VLESS 配置已生成：{parsed.hostname[:2]}***{parsed.hostname[-2:]}:{parsed.port}")
+          print(f"✅ VLESS 配置已生成：{parsed.hostname[:2]}***{parsed.hostname[-2:]}")
           PYEOF
 
           ./xray/xray run -c xray_config.json > xray.log 2>&1 &
