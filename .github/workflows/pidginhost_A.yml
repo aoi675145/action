@@ -1,9 +1,9 @@
-name: pidginhost 续期
+name: pidginhost_A 续期
 
 on:
   workflow_dispatch:
   schedule:
-    - cron: '20 0 */10 * *'
+    - cron: '30 0 */10 * *'
 
 permissions:
   contents: write
@@ -31,7 +31,7 @@ jobs:
 
       - name: 安装并启动代理
         env:
-          PIDGIN_PROXY_NODE: ${{ secrets.PIDGIN_PROXY_NODE }}
+          PIDGIN_PROXY_NODE: ${{ secrets.PIDGIN_PROXY_NODE_A }}
           TG_BOT_TOKEN:      ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:        ${{ secrets.TG_CHAT_ID }}
         run: |
@@ -289,8 +289,8 @@ jobs:
 
       - name: 运行保活/续期脚本
         env:
-          PIDGIN_SERVER_ID:  ${{ secrets.PIDGIN_SERVER_ID }}
-          PIDGIN_COOKIE_FILE: cookies.txt
+          PIDGIN_SERVER_ID:  ${{ secrets.PIDGIN_SERVER_ID_A }}
+          PIDGIN_COOKIE_FILE: cookies_A.txt
           TG_BOT_TOKEN:      ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:        ${{ secrets.TG_CHAT_ID }}
           PROXY_URL:         ${{ env.PROXY_URL }}
@@ -302,9 +302,9 @@ jobs:
         run: |
           git config --global user.name "GitHub Actions"
           git config --global user.email "actions@github.com"
-          if [[ -n $(git status -s scripts/pidginhost/cookies.txt) ]]; then
-            git add scripts/pidginhost/cookies.txt
-            git commit -m "Auto-update auth cookie [skip ci]"
+          if [[ -n $(git status -s scripts/pidginhost/cookies_A.txt) ]]; then
+            git add scripts/pidginhost/cookies_A.txt
+            git commit -m "Auto-update auth cookie A [skip ci]"
             git pull --rebase origin main
             git push
           else
