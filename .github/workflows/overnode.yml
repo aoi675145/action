@@ -2,7 +2,7 @@ name: OverNode 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '42 17 6 8 *' # 自动更新下次运行时间
+    - cron: '30 16 * * *' # 自动更新下次运行时间
 jobs:
   renew:
     runs-on: ubuntu-latest
@@ -50,7 +50,7 @@ jobs:
         if: success()
         working-directory: private-repo/scripts/overnode
         run: |
-          NEXT_RUN=$(grep -oP '下次运行时间\(UTC\): \K\d{4}-\d{2}-\d{2} \d{2}:\d{2}' renew.log | tail -1 || true)
+          NEXT_RUN=$(grep -oP '下次触发\(UTC\): \K\d{4}-\d{2}-\d{2} \d{2}:\d{2}' renew.log | tail -1 || true)
           if [ -z "$NEXT_RUN" ]; then
             echo "skip_update=true" >> "$GITHUB_OUTPUT"
             echo "::warning::未能提取下次运行时间，跳过 Cron 更新"
