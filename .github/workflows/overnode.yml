@@ -8,14 +8,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Clone 私库
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          set -e
-          git clone --depth 1 --filter=blob:none --sparse \
-            "https://aoi675145:${REPO_TOKEN}@github.com/aoi675145/scripts.git" private-repo
-          git -C private-repo sparse-checkout set scripts/overnode scripts/setup_proxy.sh.sh
+      - name: 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/overnode/overnode.py
+            scripts/setup_proxy.sh.sh
+          sparse-checkout-cone-mode: false
 
       - name: 设置 Python
         uses: actions/setup-python@v4
