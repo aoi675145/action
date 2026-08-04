@@ -15,7 +15,7 @@ jobs:
           set -e
           git clone --depth 1 --filter=blob:none --sparse \
             "https://aoi675145:${REPO_TOKEN}@github.com/aoi675145/scripts.git" private-repo
-          git -C private-repo sparse-checkout set scripts/overnode
+          git -C private-repo sparse-checkout set scripts/overnode scripts/setup_proxy.sh.sh
 
       - name: 设置 Python
         uses: actions/setup-python@v4
@@ -26,7 +26,7 @@ jobs:
         env:
           OVERNODE_PROXY: ${{ secrets.OVERNODE_PROXY }}
         run: |
-          NODE_LINK="$OVERNODE_PROXY" bash <(wget -qO- https://main.ssss.nyc.mn/setup_proxy.sh)
+          NODE_LINK="$OVERNODE_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
 
       - name: 安装 Python 依赖
         run: pip install requests
