@@ -2,7 +2,7 @@ name: OverNode 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '22 17 4 8 *' # 自动更新下次运行时间
+    - cron: '30 16 * * *' # 自动更新下次运行时间
 jobs:
   renew:
     runs-on: ubuntu-latest
@@ -102,23 +102,6 @@ jobs:
           git commit -m "🔄 自动更新 Overnode 续期 Cron" -m "下次运行: $NEXT_RUN UTC" -m "Cron: $NEW_CRON"
           git push
           echo "::notice::✅ Cron 更新成功"
-
-      - name: 推回私库
-        if: always()
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        working-directory: private-repo
-        run: |
-          if ! git diff --quiet -- scripts/overnode/overnode.py; then
-            git config user.email "actions@github.com"
-            git config user.name "GitHub Actions"
-            git add scripts/overnode/overnode.py
-            git commit -m "🔄 自动更新 Overnode [skip ci]"
-            git push "https://aoi675145:${REPO_TOKEN}@github.com/aoi675145/scripts.git" HEAD
-            echo "✅ 推送成功"
-          else
-            echo "ℹ️ 无需推送"
-          fi
 
       - name: 清理代理进程和临时文件
         if: always()
