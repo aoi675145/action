@@ -3,7 +3,8 @@ name: BoxMine AFK
 on:
   workflow_dispatch:
   schedule:
-    - cron: '35 16 4 8 *'
+    - cron: '30 4 * * *'
+
 permissions:
   actions: write
 
@@ -14,7 +15,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-latest
-    timeout-minutes: 150
+    timeout-minutes: 300
 
     steps:
       - name: 拉取私有仓库
