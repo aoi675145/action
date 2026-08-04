@@ -38,7 +38,7 @@ jobs:
           fail() {
             echo "[ERROR] $1"
             if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
-              MSG="🎮 PidginHost 保活/续期%0A⏰ $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')%0A📊 结果：❌ 代理失败%0A❌ $1"
+              MSG="🎮 PidginHost 续期%0A⏰ $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')%0A📊 结果：❌ 代理失败%0A❌ $1"
               curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
                 -d "chat_id=${TG_CHAT_ID}&text=${MSG}" > /dev/null 2>&1 || true
             fi
