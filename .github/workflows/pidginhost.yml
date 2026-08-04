@@ -1,4 +1,4 @@
-name: pidginhost 保活/续期
+name: pidginhost 续期
 
 on:
   workflow_dispatch:
