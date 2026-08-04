@@ -2,7 +2,7 @@ name: OverNode 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '57 17 4 8 *' # 自动更新下次运行时间
+    - cron: '30 16 * * *' # 自动更新下次运行时间
 jobs:
   renew:
     runs-on: ubuntu-latest
@@ -31,7 +31,7 @@ jobs:
           NODE_LINK="$OVERNODE_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
 
       - name: 安装 Python 依赖
-        run: pip install requests
+        run: pip install 'requests[socks]'
 
       - name: 执行续期
         env:
