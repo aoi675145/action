@@ -292,7 +292,7 @@ jobs:
           XSYSTEMS_PROXY: ${{ env.PROXY_URL }}
         run: python scripts_repo/scripts/xsystems/xsystems.py 2>&1 | tee renew.log
 
-      - name: 提取下次领取时间
+      - name: ⏰ 提取下次领取时间
         id: extract_next
         if: success()
         run: |
@@ -306,7 +306,7 @@ jobs:
           echo "skip_update=false" >> $GITHUB_OUTPUT
           echo "::notice::⏰ 下次领取时间: $NEXT_CRON"
 
-      - name: 修改下次 Cron 时间
+      - name: 🔄 修改下次 Cron 时间
         if: success() && steps.extract_next.outputs.skip_update != 'true'
         run: |
           set -e
@@ -359,3 +359,13 @@ jobs:
                      -m "Cron: $NEW_CRON"
           git push
           echo "::notice::✅ Cron 更新成功"
+
+      - name: 🧹 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
