@@ -1,8 +1,8 @@
-name: XServer 续期
+name: XServer 续期多账号版
 
 on:
   schedule:
-    - cron: '28 12 5 8 *'  # 自动更新下次运行时间
+    - cron: '28 12 25 7 *'  # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
@@ -139,7 +139,7 @@ jobs:
               }
 
           configured = []
-          for i in range(1, 21):
+          for i in range(1, 11):
               node = os.environ.get(f"XSERVER_{i}_XARY", "").strip()
               if not node:
                   continue
@@ -162,6 +162,11 @@ jobs:
               configured.append((i, port))
               print(f"  ✅ 账号 {i} → 127.0.0.1:{port}")
 
+          if not configured:
+              raise SystemExit("没有成功生成任何账号代理配置")
+          with open("xray-accounts.txt", "w") as f:
+              for i, port in configured:
+                  f.write(f"{i} {port}\n")
           with open("xray-start.sh", "w") as f:
               f.write("#!/usr/bin/env bash\nset -e\n")
               for i, port in configured:
@@ -183,13 +188,21 @@ jobs:
               done
               exit 1
           fi
-          echo "🔍 连通性测试..."
-          for i in $(seq 1 20); do
-              port=$((7890 + i))
-              if curl -s -o /dev/null --max-time 5 -x "http://127.0.0.1:$port" https://api.ipify.org 2>/dev/null; then
+          echo "🔍 逐账号连通性测试..."
+          proxy_failed=0
+          while read -r i port; do
+              if curl -fsS -o /dev/null --max-time 10 -x "http://127.0.0.1:$port" https://api.ipify.org; then
                   echo "  ✅ 账号 $i 代理正常"
+              else
+                  echo "  ❌ 账号 $i 代理不可用，日志如下："
+                  [ -f "xray-$i.log" ] && cat "xray-$i.log"
+                  proxy_failed=1
               fi
-          done
+          done < xray-accounts.txt
+          if [ "$proxy_failed" -ne 0 ]; then
+              echo "❌ 存在不可用的账号代理，停止续期"
+              exit 1
+          fi
 
       - name: 运行续期脚本
         env:
