@@ -1,4 +1,4 @@
-name: Velrix 签到续期
+name: Velrix 续期
 on:
   workflow_dispatch:
   schedule:
