@@ -1,50 +1,63 @@
 name: Velrix 签到续期
-
 on:
-  schedule:
-    - cron: '5 0 * * *'   # 每天 UTC 00:05（签到刷新时间可自行调整）
   workflow_dispatch:
-
+  schedule:
+    - cron: '5 0 * * *'
 jobs:
   renew:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    permissions:
-      contents: read
-    concurrency:
-      group: Velrix_Renew
-      cancel-in-progress: false
-
     steps:
-      - name: 拉取私有脚本仓库
+      - name: 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: scripts_repo
-          sparse-checkout: scripts/velrix/velrix.py
+          path: private-repo
+          sparse-checkout: |
+            scripts/velrix/velrix.py
+            scripts/setup_proxy.sh.sh
+          sparse-checkout-cone-mode: false
 
       - name: 设置 Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v4
         with:
           python-version: '3.12'
 
-      - name: 安装依赖
-        run: pip install --quiet requests
-
-      - name: 运行签到 + 续期
+      - name: 设置代理 (sing-box)
         env:
-          VELRIX_SESSION: ${{ secrets.VELRIX_SESSION }}
           VELRIX_PROXY: ${{ secrets.VELRIX_PROXY }}
+        run: |
+          NODE_LINK="$VELRIX_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+
+      - name: 安装 Python 依赖
+        run: pip install 'requests[socks]'
+
+      - name: 执行签到续期
+        env:
+          PYTHONIOENCODING: utf-8
+          VELRIX_SESSION: ${{ secrets.VELRIX_SESSION }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python scripts_repo/scripts/velrix/velrix.py 2>&1 | tee renew.log
-
-      - name: 续期失败提醒
-        if: failure()
+          IS_PROXY: ${{ env.IS_PROXY }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+        working-directory: private-repo/scripts/velrix
         run: |
-          if [ -n "${{ secrets.TG_BOT_TOKEN }}" ]; then
-            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage" \
-              -d chat_id="${{ secrets.TG_CHAT_ID }}" \
-              -d text="🎮 Velrix 任务运行失败($(date -u '+%Y-%m-%d %H:%M') UTC)，请检查日志"
-          fi
+          set -o pipefail
+          python velrix.py 2>&1 | tee renew.log
+
+      - name: 清理代理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-config.json sing-box.log
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 6
