@@ -1,0 +1,49 @@
+name: Velrix 签到续期
+
+on:
+  schedule:
+    - cron: '5 0 * * *'   # 每天 UTC 00:05（签到刷新时间可自行调整）
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    concurrency:
+      group: Velrix_Renew
+      cancel-in-progress: false
+
+    steps:
+      - name: 拉取私有脚本仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .  # 拉到根目录
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: pip install --quiet requests
+
+      - name: 运行签到 + 续期
+        env:
+          VELRIX_SESSION: ${{ secrets.VELRIX_SESSION }}
+          VELRIX_PROXY: ${{ secrets.VELRIX_PROXY }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python velrix/velrix.py 2>&1 | tee renew.log
+
+      - name: 续期失败提醒
+        if: failure()
+        run: |
+          if [ -n "${{ secrets.TG_BOT_TOKEN }}" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${{ secrets.TG_BOT_TOKEN }}/sendMessage" \
+              -d chat_id="${{ secrets.TG_CHAT_ID }}" \
+              -d text="🎮 Velrix 任务运行失败($(date -u '+%Y-%m-%d %H:%M') UTC)，请检查日志"
+          fi
