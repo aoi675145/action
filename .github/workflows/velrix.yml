@@ -21,7 +21,8 @@ jobs:
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: .  # 拉到根目录
+          path: scripts_repo
+          sparse-checkout: scripts/velrix/velrix.py
 
       - name: 设置 Python
         uses: actions/setup-python@v5
@@ -37,7 +38,7 @@ jobs:
           VELRIX_PROXY: ${{ secrets.VELRIX_PROXY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python velrix/velrix.py 2>&1 | tee renew.log
+        run: python scripts_repo/scripts/velrix/velrix.py 2>&1 | tee renew.log
 
       - name: 续期失败提醒
         if: failure()
