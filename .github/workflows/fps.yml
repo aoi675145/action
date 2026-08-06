@@ -28,6 +28,8 @@ jobs:
     permissions:
       contents: write
       actions: write
+    env:
+      FPS_PROXY_SECRET: ${{ secrets.FPS_PROXY }}
 
     steps:
       # ── 1. 安装 Python ─────────────────────────────────────────────
@@ -55,10 +57,10 @@ jobs:
 
       # ── 4. 设置本地代理 (setup_proxy.sh, 参考 Overnode 流程) ────────
       - name: 设置代理 (sing-box)
-        if: secrets.FPS_PROXY != ''
+        if: env.FPS_PROXY_SECRET != ''
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          FPS_PROXY: ${{ secrets.FPS_PROXY }}
+          FPS_PROXY_SECRET: ${{ secrets.FPS_PROXY }}
         run: |
           curl -s -f -H "Authorization: token $REPO_TOKEN" \
             -o setup_proxy.sh \
@@ -67,7 +69,7 @@ jobs:
             echo "[WARN] 拉取 setup_proxy.sh.sh 失败, 本次直连运行"
             exit 0
           fi
-          NODE_LINK="$FPS_PROXY" bash setup_proxy.sh
+          NODE_LINK="$FPS_PROXY_SECRET" bash setup_proxy.sh
 
       # ── 5. 从私有仓库拉取脚本与 cookies，并运行 ────────────────────
       - name: 运行 fps.ms 续期脚本
