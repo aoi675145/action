@@ -73,7 +73,7 @@ jobs:
       - name: 运行 fps.ms 续期脚本
         id: run_renew
         env:
-                    REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           FPS_PROXY: ${{ env.PROXY_SERVER }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
