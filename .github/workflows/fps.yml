@@ -125,7 +125,7 @@ jobs:
           exit $EXIT_CODE
 
       # ── 6. 把滑动更新后的 cookies 推回私有仓库（下次直接复用） ─────
-      - name: 上传更新后的 cookies.txt 到私有仓库
+      - name: 更新cookies.txt 
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
