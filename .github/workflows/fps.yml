@@ -42,7 +42,7 @@ jobs:
           pip install --upgrade pip
           pip install seleniumbase requests
 
-      # ── 3. 安装系统依赖（Chrome 运行时 + 录屏工具） ────────────────
+      # ── 3. 安装系统依赖（Chrome 运行时） ─────────────────────────────
       - name: 安装系统依赖
         run: |
           sudo apt-get update -qq
@@ -51,21 +51,36 @@ jobs:
             libgtk-3-0 libgbm1 libxkbcommon0 \
             fonts-wqy-zenhei fonts-noto-cjk \
             jq bc curl \
-            xvfb x11-utils \
-            ffmpeg
+            xvfb x11-utils
 
-      # ── 4. 从私有仓库拉取脚本与 cookies，并运行 ────────────────────
+      # ── 4. 设置本地代理 (setup_proxy.sh, 参考 Overnode 流程) ────────
+      - name: 设置代理 (sing-box)
+        if: secrets.FPS_PROXY != ''
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          FPS_PROXY: ${{ secrets.FPS_PROXY }}
+        run: |
+          curl -s -f -H "Authorization: token $REPO_TOKEN" \
+            -o setup_proxy.sh \
+            "https://raw.githubusercontent.com/${SCRIPTS_REPO}/${SCRIPTS_BRANCH}/scripts/setup_proxy.sh.sh"
+          if [ ! -s setup_proxy.sh ]; then
+            echo "[WARN] 拉取 setup_proxy.sh.sh 失败, 本次直连运行"
+            exit 0
+          fi
+          NODE_LINK="$FPS_PROXY" bash setup_proxy.sh
+
+      # ── 5. 从私有仓库拉取脚本与 cookies，并运行 ────────────────────
       - name: 运行 fps.ms 续期脚本
         id: run_renew
         env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          FPSMS_DISCORD_TOKEN: ${{ secrets.FPSMS_DISCORD_TOKEN }}
-          FPSMS_COOKIES: ${{ secrets.FPSMS_COOKIES }}
+                    REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          FPS_PROXY: ${{ env.PROXY_SERVER }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           DISPLAY: ':99'
         run: |
-          mkdir -p screenshots recordings
+          mkdir -p screenshots
 
           RAW="https://raw.githubusercontent.com/${SCRIPTS_REPO}/${SCRIPTS_BRANCH}/${SCRIPTS_DIR}"
           # 拉取脚本
@@ -76,13 +91,9 @@ jobs:
           fi
           echo "[OK] fps.py 已拉取 ($(wc -c < fps.py) bytes)"
 
-          # 拉取已持久化的 cookies（12h 滑动会话）
+          # 拉取已持久化的 cookies（12h 滑动会话）；缺失时由脚本用 DISCORD_TOKEN 重建
           if ! curl -s -f -H "Authorization: token $REPO_TOKEN" -o cookies.txt "$RAW/cookies.txt"; then
-            echo "[WARN] 私库无 cookies.txt, 检查 secret 兜底或 Discord 登录"
-            if [ -n "$FPSMS_COOKIES" ]; then
-              echo "$FPSMS_COOKIES" > cookies.txt
-              echo "[OK] cookies.txt 已从 secret 生成"
-            fi
+            echo "[WARN] 私库无 cookies.txt, 交由 DISCORD_TOKEN 兜底登录重建"
           else
             echo "[OK] cookies.txt 已拉取 ($(wc -c < cookies.txt) bytes)"
           fi
@@ -92,21 +103,6 @@ jobs:
           XVFB_PID=$!
           sleep 2
           echo "[INFO] Xvfb 已启动 (PID=$XVFB_PID)"
-
-          # 启动 ffmpeg 录屏
-          ffmpeg -y \
-            -f x11grab \
-            -r 10 \
-            -video_size 1280x800 \
-            -i :99 \
-            -vcodec libx264 \
-            -preset ultrafast \
-            -crf 30 \
-            recordings/session.mp4 \
-            2>recordings/ffmpeg.log &
-          FFMPEG_PID=$!
-          echo "[INFO] ffmpeg 录屏已启动 (PID=$FFMPEG_PID)"
-          sleep 1
 
           echo "=============================="
           echo " 开始执行 fps.ms 续期脚本"
@@ -121,16 +117,12 @@ jobs:
           echo " 脚本退出码: $EXIT_CODE"
           echo "=============================="
 
-          # 优雅停止 ffmpeg
-          kill -INT $FFMPEG_PID 2>/dev/null || true
-          wait $FFMPEG_PID 2>/dev/null || true
-
           # 停止 Xvfb
           kill $XVFB_PID 2>/dev/null || true
 
           exit $EXIT_CODE
 
-      # ── 5. 把滑动更新后的 cookies 推回私有仓库（下次直接复用） ─────
+      # ── 6. 把滑动更新后的 cookies 推回私有仓库（下次直接复用） ─────
       - name: 上传更新后的 cookies.txt 到私有仓库
         if: always()
         env:
@@ -154,25 +146,12 @@ jobs:
             echo "[OK] cookies.txt 已创建"
           fi
 
-      # ── 6. 上传截图 ────────────────────────────────────────────────
-      - name: 上传调试截图
+      # ── 7. 清理代理进程和临时文件 ──────────────────────────────────
+      - name: 清理代理进程和临时文件
         if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: renew-screenshots-${{ github.run_number }}
-          path: screenshots/
-          retention-days: 3
-          if-no-files-found: ignore
-
-      # ── 7. 上传录屏视频 ────────────────────────────────────────────
-      - name: 上传录屏视频
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: renew-recording-${{ github.run_number }}
-          path: recordings/
-          retention-days: 3
-          if-no-files-found: ignore
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-config.json sing-box.log
 
       # ── 8. 清理旧的 workflow 运行记录 ──────────────────────────────
       - name: 清理历史运行记录
