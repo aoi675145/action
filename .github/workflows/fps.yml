@@ -1,0 +1,186 @@
+name: fps.ms 每日续期
+
+on:
+  #schedule:
+    # 每天 UTC 02:00 执行（北京时间 10:00），可按需修改
+  #  - cron: '0 2 * * *'
+  workflow_dispatch:
+    inputs:
+      debug_mode:
+        description: '调试模式（打印更多日志）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+env:
+  SCRIPTS_REPO: aoi675145/scripts
+  SCRIPTS_DIR: scripts/fps
+  SCRIPTS_BRANCH: main
+
+jobs:
+  renew:
+    name: 执行续期
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      # ── 1. 安装 Python ─────────────────────────────────────────────
+      - name: 安装 Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      # ── 2. 安装 Python 依赖 ────────────────────────────────────────
+      - name: 安装 Python 依赖
+        run: |
+          pip install --upgrade pip
+          pip install seleniumbase requests
+
+      # ── 3. 安装系统依赖（Chrome 运行时 + 录屏工具） ────────────────
+      - name: 安装系统依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 \
+            libgtk-3-0 libgbm1 libxkbcommon0 \
+            fonts-wqy-zenhei fonts-noto-cjk \
+            jq bc curl \
+            xvfb x11-utils \
+            ffmpeg
+
+      # ── 4. 从私有仓库拉取脚本与 cookies，并运行 ────────────────────
+      - name: 运行 fps.ms 续期脚本
+        id: run_renew
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          FPSMS_DISCORD_TOKEN: ${{ secrets.FPSMS_DISCORD_TOKEN }}
+          FPSMS_COOKIES: ${{ secrets.FPSMS_COOKIES }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          DISPLAY: ':99'
+        run: |
+          mkdir -p screenshots recordings
+
+          RAW="https://raw.githubusercontent.com/${SCRIPTS_REPO}/${SCRIPTS_BRANCH}/${SCRIPTS_DIR}"
+          # 拉取脚本
+          curl -s -f -H "Authorization: token $REPO_TOKEN" -o fps.py "$RAW/fps.py"
+          if [ ! -s fps.py ]; then
+            echo "[FAIL] 拉取 fps.py 失败（检查 REPO_TOKEN / 路径）"
+            exit 1
+          fi
+          echo "[OK] fps.py 已拉取 ($(wc -c < fps.py) bytes)"
+
+          # 拉取已持久化的 cookies（12h 滑动会话）
+          if ! curl -s -f -H "Authorization: token $REPO_TOKEN" -o cookies.txt "$RAW/cookies.txt"; then
+            echo "[WARN] 私库无 cookies.txt, 检查 secret 兜底或 Discord 登录"
+            if [ -n "$FPSMS_COOKIES" ]; then
+              echo "$FPSMS_COOKIES" > cookies.txt
+              echo "[OK] cookies.txt 已从 secret 生成"
+            fi
+          else
+            echo "[OK] cookies.txt 已拉取 ($(wc -c < cookies.txt) bytes)"
+          fi
+
+          # 启动虚拟显示
+          Xvfb :99 -screen 0 1280x800x24 &
+          XVFB_PID=$!
+          sleep 2
+          echo "[INFO] Xvfb 已启动 (PID=$XVFB_PID)"
+
+          # 启动 ffmpeg 录屏
+          ffmpeg -y \
+            -f x11grab \
+            -r 10 \
+            -video_size 1280x800 \
+            -i :99 \
+            -vcodec libx264 \
+            -preset ultrafast \
+            -crf 30 \
+            recordings/session.mp4 \
+            2>recordings/ffmpeg.log &
+          FFMPEG_PID=$!
+          echo "[INFO] ffmpeg 录屏已启动 (PID=$FFMPEG_PID)"
+          sleep 1
+
+          echo "=============================="
+          echo " 开始执行 fps.ms 续期脚本"
+          echo " 时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo "=============================="
+
+          python fps.py 2>&1 | tee renew.log
+          EXIT_CODE=${PIPESTATUS[0]}
+
+          echo ""
+          echo "=============================="
+          echo " 脚本退出码: $EXIT_CODE"
+          echo "=============================="
+
+          # 优雅停止 ffmpeg
+          kill -INT $FFMPEG_PID 2>/dev/null || true
+          wait $FFMPEG_PID 2>/dev/null || true
+
+          # 停止 Xvfb
+          kill $XVFB_PID 2>/dev/null || true
+
+          exit $EXIT_CODE
+
+      # ── 5. 把滑动更新后的 cookies 推回私有仓库（下次直接复用） ─────
+      - name: 上传更新后的 cookies.txt 到私有仓库
+        if: always()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          if [ ! -s cookies.txt ]; then
+            echo "[SKIP] 无 cookies.txt"
+            exit 0
+          fi
+          API="https://api.github.com/repos/${SCRIPTS_REPO}/contents/${SCRIPTS_DIR}/cookies.txt"
+          AUTH="Authorization: token $REPO_TOKEN"
+          SHA=$(curl -s -H "$AUTH" -H "Accept: application/vnd.github+json" "$API" | jq -r '.sha // empty')
+          B64=$(base64 -w0 cookies.txt)
+          if [ -n "$SHA" ]; then
+            echo "{\"message\":\"update: cookies.txt [skip ci]\",\"content\":\"$B64\",\"sha\":\"$SHA\"}" > /tmp/upd.json
+            curl -s -X PUT -H "$AUTH" -H "Accept: application/vnd.github+json" -d @/tmp/upd.json "$API" > /dev/null
+            echo "[OK] cookies.txt 已更新 (sha: $SHA)"
+          else
+            echo "{\"message\":\"create: cookies.txt [skip ci]\",\"content\":\"$B64\"}" > /tmp/up.json
+            curl -s -X PUT -H "$AUTH" -H "Accept: application/vnd.github+json" -d @/tmp/up.json "$API" > /dev/null
+            echo "[OK] cookies.txt 已创建"
+          fi
+
+      # ── 6. 上传截图 ────────────────────────────────────────────────
+      - name: 上传调试截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renew-screenshots-${{ github.run_number }}
+          path: screenshots/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      # ── 7. 上传录屏视频 ────────────────────────────────────────────
+      - name: 上传录屏视频
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renew-recording-${{ github.run_number }}
+          path: recordings/
+          retention-days: 3
+          if-no-files-found: ignore
+
+      # ── 8. 清理旧的 workflow 运行记录 ──────────────────────────────
+      - name: 清理历史运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
