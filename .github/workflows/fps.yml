@@ -5,15 +5,6 @@ on:
     # 每天 UTC 02:00 执行（北京时间 10:00），可按需修改
   #  - cron: '0 2 * * *'
   workflow_dispatch:
-    inputs:
-      debug_mode:
-        description: '调试模式（打印更多日志）'
-        required: false
-        default: 'false'
-        type: choice
-        options:
-          - 'false'
-          - 'true'
 
 env:
   SCRIPTS_REPO: aoi675145/scripts
@@ -38,42 +29,61 @@ jobs:
         with:
           python-version: '3.12'
 
-      # ── 2. 安装 Python 依赖 ────────────────────────────────────────
-      - name: 安装 Python 依赖
+      # ── 2. 安装运行依赖并启动虚拟显示 ───────────────────────────────
+      - name: 准备运行环境
         run: |
-          pip install --upgrade pip
-          pip install seleniumbase requests
-
-      # ── 3. 安装系统依赖（Chrome 运行时） ─────────────────────────────
-      - name: 安装系统依赖
-        run: |
+          echo "📦 安装 Python 与 Chrome 运行依赖..."
+          pip install --upgrade pip -q
+          pip install seleniumbase requests -q
           sudo apt-get update -qq
           sudo apt-get install -y -qq \
             libnss3 libxss1 libasound2t64 libatk-bridge2.0-0 \
             libgtk-3-0 libgbm1 libxkbcommon0 \
             fonts-wqy-zenhei fonts-noto-cjk \
-            jq bc curl \
-            xvfb x11-utils
+            jq bc curl xvfb x11-utils >/dev/null
+          mkdir -p screenshots
+          Xvfb :99 -screen 0 1280x800x24 >/tmp/xvfb.log 2>&1 &
+          echo "XVFB_PID=$!" >> "$GITHUB_ENV"
+          sleep 2
+          if ! kill -0 "$!" 2>/dev/null; then
+            echo "❌ Xvfb 启动失败"
+            cat /tmp/xvfb.log
+            exit 1
+          fi
+          echo "✅ 运行环境准备完成"
 
-      # ── 4. 设置本地代理 (setup_proxy.sh, 参考 Overnode 流程) ────────
-      - name: 设置代理 (sing-box)
-        if: env.FPS_PROXY_SECRET != ''
+      # ── 3. 设置并验证强制代理 ──────────────────────────────────────
+      - name: 设置并验证代理 (sing-box)
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          FPS_PROXY_SECRET: ${{ secrets.FPS_PROXY }}
         run: |
-          curl -s -f -H "Authorization: token $REPO_TOKEN" \
+          if [ -z "$FPS_PROXY_SECRET" ]; then
+            echo "❌ 未配置 FPS_PROXY，禁止直连"
+            exit 1
+          fi
+          echo "🔗 正在配置强制代理..."
+          curl -sSf -H "Authorization: token $REPO_TOKEN" \
             -o setup_proxy.sh \
             "https://raw.githubusercontent.com/${SCRIPTS_REPO}/${SCRIPTS_BRANCH}/scripts/setup_proxy.sh.sh"
           if [ ! -s setup_proxy.sh ]; then
-            echo "[WARN] 拉取 setup_proxy.sh.sh 失败, 本次直连运行"
-            exit 0
+            echo "❌ 拉取代理脚本失败，禁止直连"
+            exit 1
           fi
           NODE_LINK="$FPS_PROXY_SECRET" bash setup_proxy.sh
+          source "$GITHUB_ENV"
+          if [ -z "${PROXY_SERVER:-}" ]; then
+            echo "❌ 代理脚本未生成 PROXY_SERVER，禁止直连"
+            exit 1
+          fi
+          PROXY_IP=$(curl -fsS --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org) || {
+            echo "❌ 代理连通性检查失败，禁止直连"
+            exit 1
+          }
+          MASKED_IP=$(python -c 'import sys; p=sys.argv[1].strip().split("."); print(".".join(p[:2]+["***","***"]) if len(p)==4 else sys.argv[1][:8]+"***")' "$PROXY_IP")
+          echo "✅ 强制代理已就绪，出口 IP: $MASKED_IP"
 
-      # ── 5. 从私有仓库拉取脚本与 cookies，并运行 ────────────────────
+      # ── 4. 从私有仓库拉取脚本与 cookies，并运行 ────────────────────
       - name: 运行 fps.ms 续期脚本
-        id: run_renew
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
@@ -82,56 +92,44 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           DISPLAY: ':99'
         run: |
-          mkdir -p screenshots
-
-          RAW="https://raw.githubusercontent.com/${SCRIPTS_REPO}/${SCRIPTS_BRANCH}/${SCRIPTS_DIR}"
-          # 拉取脚本
-          curl -s -f -H "Authorization: token $REPO_TOKEN" -o fps.py "$RAW/fps.py"
-          if [ ! -s fps.py ]; then
-            echo "[FAIL] 拉取 fps.py 失败（检查 REPO_TOKEN / 路径）"
+          if [ -z "$FPS_PROXY" ]; then
+            echo "❌ PROXY_SERVER 未传入脚本，禁止直连"
             exit 1
           fi
-          echo "[OK] fps.py 已拉取 ($(wc -c < fps.py) bytes)"
 
-          # 拉取已持久化的 cookies（12h 滑动会话）；缺失时由脚本用 DISCORD_TOKEN 重建
-          if ! curl -s -f -H "Authorization: token $REPO_TOKEN" -o cookies.txt "$RAW/cookies.txt"; then
-            echo "[WARN] 私库无 cookies.txt, 交由 DISCORD_TOKEN 兜底登录重建"
+          RAW="https://raw.githubusercontent.com/${SCRIPTS_REPO}/${SCRIPTS_BRANCH}/${SCRIPTS_DIR}"
+          echo "📥 拉取 fps.ms 脚本与会话..."
+          curl -sSf -H "Authorization: token $REPO_TOKEN" -o fps.py "$RAW/fps.py"
+          if [ ! -s fps.py ]; then
+            echo "❌ 拉取 fps.py 失败（检查 REPO_TOKEN / 路径）"
+            exit 1
+          fi
+          echo "✅ fps.py 已拉取 ($(wc -c < fps.py) bytes)"
+
+          if ! curl -sSf -H "Authorization: token $REPO_TOKEN" -o cookies.txt "$RAW/cookies.txt"; then
+            echo "⚠️ 私库无 cookies.txt，将使用 DISCORD_TOKEN 重建会话"
           else
-            echo "[OK] cookies.txt 已拉取 ($(wc -c < cookies.txt) bytes)"
+            echo "✅ cookies.txt 已拉取 ($(wc -c < cookies.txt) bytes)"
           fi
 
-          # 启动虚拟显示
-          Xvfb :99 -screen 0 1280x800x24 &
-          XVFB_PID=$!
-          sleep 2
-          echo "[INFO] Xvfb 已启动 (PID=$XVFB_PID)"
-
-          echo "=============================="
-          echo " 开始执行 fps.ms 续期脚本"
-          echo " 时间: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          echo "=============================="
-
+          echo "🚀 启动 fps.ms 自动续期"
           python fps.py 2>&1 | tee renew.log
           EXIT_CODE=${PIPESTATUS[0]}
+          if [ "$EXIT_CODE" -eq 0 ]; then
+            echo "✅ fps.ms 任务执行完成"
+          else
+            echo "❌ fps.ms 任务执行失败，退出码: $EXIT_CODE"
+          fi
+          exit "$EXIT_CODE"
 
-          echo ""
-          echo "=============================="
-          echo " 脚本退出码: $EXIT_CODE"
-          echo "=============================="
-
-          # 停止 Xvfb
-          kill $XVFB_PID 2>/dev/null || true
-
-          exit $EXIT_CODE
-
-      # ── 6. 把滑动更新后的 cookies 推回私有仓库（下次直接复用） ─────
-      - name: 更新cookies.txt 
-        if: always()
+      # ── 5. 把滑动更新后的 cookies 推回私有仓库（下次直接复用） ─────
+      - name: 上传更新后的 cookies.txt 到私有仓库
+        if: ${{ always() && env.PROXY_SERVER != '' }}
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           if [ ! -s cookies.txt ]; then
-            echo "[SKIP] 无 cookies.txt"
+            echo "⚠️ 无 cookies.txt，跳过上传"
             exit 0
           fi
           API="https://api.github.com/repos/${SCRIPTS_REPO}/contents/${SCRIPTS_DIR}/cookies.txt"
@@ -140,22 +138,25 @@ jobs:
           B64=$(base64 -w0 cookies.txt)
           if [ -n "$SHA" ]; then
             echo "{\"message\":\"update: cookies.txt [skip ci]\",\"content\":\"$B64\",\"sha\":\"$SHA\"}" > /tmp/upd.json
-            curl -s -X PUT -H "$AUTH" -H "Accept: application/vnd.github+json" -d @/tmp/upd.json "$API" > /dev/null
-            echo "[OK] cookies.txt 已更新 (sha: $SHA)"
+            curl -sSf -X PUT -H "$AUTH" -H "Accept: application/vnd.github+json" -d @/tmp/upd.json "$API" > /dev/null
+            echo "✅ cookies.txt 已更新"
           else
             echo "{\"message\":\"create: cookies.txt [skip ci]\",\"content\":\"$B64\"}" > /tmp/up.json
-            curl -s -X PUT -H "$AUTH" -H "Accept: application/vnd.github+json" -d @/tmp/up.json "$API" > /dev/null
-            echo "[OK] cookies.txt 已创建"
+            curl -sSf -X PUT -H "$AUTH" -H "Accept: application/vnd.github+json" -d @/tmp/up.json "$API" > /dev/null
+            echo "✅ cookies.txt 已创建"
           fi
 
-      # ── 7. 清理代理进程和临时文件 ──────────────────────────────────
-      - name: 清理代理进程和临时文件
+      # ── 6. 清理运行进程和临时文件 ──────────────────────────────────
+      - name: 清理运行进程和临时文件
         if: always()
         run: |
+          if [ -n "${XVFB_PID:-}" ]; then
+            kill "$XVFB_PID" 2>/dev/null || true
+          fi
           pkill -f sing-box || true
-          rm -f sing-box sing-box-config.json sing-box.log
+          rm -f sing-box sing-box-config.json sing-box.log setup_proxy.sh
 
-      # ── 8. 清理旧的 workflow 运行记录 ──────────────────────────────
+      # ── 7. 清理旧的 workflow 运行记录 ─────────────────────────────
       - name: 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
