@@ -3,13 +3,13 @@ name: Game4Free 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 1 * * *'
+    - cron: '0 1,13 * * *'
 
 jobs:
   renew:
     name: Game4Free 续期
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     permissions:
       contents: write
       actions: write
@@ -48,6 +48,8 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           GAME4FREE_ACCOUNT: ${{ secrets.GAME4FREE_ACCOUNT }}
           GAME4FREE_PROXY: ${{ secrets.GAME4FREE_PROXY }}
+          GAME4FREE_MAX_RUNTIME: '6600'
+          GAME4FREE_PROXY_COOLDOWN: '300'
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           xvfb-run -a --server-args="-screen 0 1920x1080x24" \
