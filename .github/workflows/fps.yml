@@ -1,10 +1,10 @@
 name: fps.ms 续期
 
 on:
-  #schedule:
-    # 每天 UTC 02:00 执行（北京时间 10:00），可按需修改
-  #  - cron: '0 2 * * *'
   workflow_dispatch:
+  schedule:
+    # 初始值: 每天 UTC 02:00; 每次运行后自动更新为"到期前 15~20 小时"
+    - cron: '0 2 * * *'
 
 env:
   SCRIPTS_REPO: aoi675145/scripts
@@ -23,13 +23,12 @@ jobs:
       FPS_PROXY_SECRET: ${{ secrets.FPS_PROXY }}
 
     steps:
-      # ── 1. 安装 Python ─────────────────────────────────────────────
+
       - name: 安装 Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      # ── 2. 安装运行依赖并启动虚拟显示 ───────────────────────────────
       - name: 准备运行环境
         run: |
           echo "📦 安装 Python 与 Chrome 运行依赖..."
@@ -52,7 +51,6 @@ jobs:
           fi
           echo "✅ 运行环境准备完成"
 
-      # ── 3. 设置并验证强制代理 ──────────────────────────────────────
       - name: 设置并验证代理 (sing-box)
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -82,8 +80,8 @@ jobs:
           MASKED_IP=$(python -c 'import sys; p=sys.argv[1].strip().split("."); print(".".join(p[:2]+["***","***"]) if len(p)==4 else sys.argv[1][:8]+"***")' "$PROXY_IP")
           echo "✅ 强制代理已就绪，出口 IP: $MASKED_IP"
 
-      # ── 4. 从私有仓库拉取脚本与 cookies，并运行 ────────────────────
       - name: 运行 fps.ms 续期脚本
+        id: run_renew
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
@@ -122,8 +120,66 @@ jobs:
           fi
           exit "$EXIT_CODE"
 
-      # ── 5. 把滑动更新后的 cookies 推回私有仓库（下次直接复用） ─────
-      - name: 上传更新后的 cookies.txt 到私有仓库
+      - name: 自动修改下次 Cron
+        if: success()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          NEXT_CRON: ${{ steps.run_renew.outputs.cron }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$NEXT_CRON" ]; then
+            echo "⚠️ 未获取到下次运行时间，保留现有调度"
+            exit 0
+          fi
+          python3 - <<'PYEOF'
+          import base64
+          import json
+          import os
+          import re
+          import urllib.request
+
+          token = os.environ["REPO_TOKEN"]
+          repo = os.environ["TARGET_REPO"]
+          workflow_ref = os.environ["WORKFLOW_REF"]
+          cron = os.environ["NEXT_CRON"]
+          marker = f"{repo}/"
+          path_ref = workflow_ref.split(marker, 1)[1]
+          path = path_ref.rsplit("@", 1)[0]
+          api = f"https://api.github.com/repos/{repo}/contents/{path}"
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "FPS-Renew",
+          }
+          request = urllib.request.Request(api, headers=headers)
+          with urllib.request.urlopen(request, timeout=30) as response:
+              current = json.load(response)
+          content = base64.b64decode(current["content"]).decode("utf-8")
+          updated, count = re.subn(
+              r"(?m)^(\s*-\s*cron:\s*)['\"][^'\"]+['\"]\s*$",
+              lambda match: f"{match.group(1)}'{cron}'",
+              content,
+              count=1,
+          )
+          if count != 1:
+              raise RuntimeError("未找到工作流 schedule cron")
+          if updated == content:
+              print("ℹ️ Cron 没有变化")
+              raise SystemExit(0)
+          payload = json.dumps({
+              "message": "Update fps.ms renewal schedule",
+              "content": base64.b64encode(updated.encode("utf-8")).decode("ascii"),
+              "sha": current["sha"],
+          }).encode("utf-8")
+          request = urllib.request.Request(api, data=payload, headers={**headers, "Content-Type": "application/json"}, method="PUT")
+          with urllib.request.urlopen(request, timeout=30):
+              pass
+          print(f"✅ Cron 已更新：{cron}（UTC）")
+          PYEOF
+
+      - name: 更新cookies.txt
         if: ${{ always() && env.PROXY_SERVER != '' }}
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -146,7 +202,6 @@ jobs:
             echo "✅ cookies.txt 已创建"
           fi
 
-      # ── 6. 清理运行进程和临时文件 ──────────────────────────────────
       - name: 清理运行进程和临时文件
         if: always()
         run: |
@@ -156,7 +211,6 @@ jobs:
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log setup_proxy.sh
 
-      # ── 7. 清理旧的 workflow 运行记录 ─────────────────────────────
       - name: 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
