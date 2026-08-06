@@ -29,6 +29,13 @@ jobs:
             -o game4free.py \
             "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/game4free/game4free.py"
           echo "[INFO] ✅ game4free.py 已下载 ($(wc -l < game4free.py) 行)"
+          echo "[INFO] 从私库拉取 proxy.txt..."
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o proxy.txt \
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/game4free/proxy.txt"
+          test -s proxy.txt || { echo "[ERROR] proxy.txt 为空"; exit 1; }
+          echo "[INFO] ✅ proxy.txt 已下载 ($(grep -cvE '^[[:space:]]*(#|$)' proxy.txt) 个节点)"
 
       - name: 安装系统依赖
         run: |
@@ -47,7 +54,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           GAME4FREE_ACCOUNT: ${{ secrets.GAME4FREE_ACCOUNT }}
-          GAME4FREE_PROXY: ${{ secrets.GAME4FREE_PROXY }}
+          GAME4FREE_PROXY_FILE: 'proxy.txt'
           GAME4FREE_MAX_RUNTIME: '18000'
           GAME4FREE_PROXY_COOLDOWN: '300'
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
