@@ -2,7 +2,7 @@ name: TreeMC 续期 A
 
 on:
   schedule:
-    - cron: '0 */8 * * *'
+    - cron: '5 */8 * * *'
   workflow_dispatch:
 
 jobs:
