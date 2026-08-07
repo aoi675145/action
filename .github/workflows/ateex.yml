@@ -1,4 +1,4 @@
-name: Ateex 自动续期
+name: Ateex 续期
 
 on:
   workflow_dispatch:
