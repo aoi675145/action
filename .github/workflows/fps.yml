@@ -4,7 +4,8 @@ on:
   workflow_dispatch:
   schedule:
     # 初始值: 每天 UTC 02:00; 每次运行后自动更新为"到期前 15~20 小时"
-    - cron: '28 14 7 8 *'
+    - cron: '0 2 * * *'
+
 env:
   SCRIPTS_REPO: aoi675145/scripts
   SCRIPTS_DIR: scripts/fps
@@ -120,7 +121,7 @@ jobs:
           exit "$EXIT_CODE"
 
       - name: 自动修改下次 Cron
-        if: success()
+        if: ${{ always() && steps.run_renew.outputs.cron != '' }}
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           NEXT_CRON: ${{ steps.run_renew.outputs.cron }}
