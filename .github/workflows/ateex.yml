@@ -3,24 +3,31 @@ name: Ateex 自动续期
 on:
   workflow_dispatch:
   schedule:
+    # 初始兜底时间；每次运行后按 renewalstatus 自动更新为单次日期 Cron
     - cron: "17 1 * * *"
+
+env:
+  SCRIPTS_REPO: aoi675145/scripts
+  SCRIPTS_BRANCH: main
+  SCRIPTS_DIR: scripts/ateex
 
 jobs:
   renew:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: read
+      contents: write
 
     steps:
-      - name: 拉取脚本库
+      - name: 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
-          path: scripts_repo
+          path: private-repo
           sparse-checkout: |
             scripts/ateex/ateex.py
+            scripts/setup_proxy.sh.sh
           sparse-checkout-cone-mode: false
 
       - name: 设置 Python
@@ -28,15 +35,110 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: 设置代理 (sing-box)
+        env:
+          ATEEX_PROXY: ${{ secrets.ATEEX_PROXY }}
+        run: |
+          if [ -z "$ATEEX_PROXY" ]; then
+            echo "❌ 未配置 ATEEX_PROXY，已禁止直连"
+            exit 1
+          fi
+          NODE_LINK="$ATEEX_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+          source "$GITHUB_ENV"
+          if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then
+            echo "❌ 代理脚本未生成 PROXY_SERVER，禁止继续"
+            exit 1
+          fi
+          PROXY_IP=$(curl -fsS --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org) || {
+            echo "❌ 代理出口验证失败，禁止继续"
+            exit 1
+          }
+          MASKED_IP=$(python -c 'import sys; p=sys.argv[1].strip().split("."); print(".".join(p[:2]+["***","***"]) if len(p)==4 else "***")' "$PROXY_IP")
+          echo "✅ 代理出口 IP: $MASKED_IP"
+
       - name: 安装 Python 依赖
         run: python -m pip install --disable-pip-version-check "requests[socks]"
 
       - name: 执行 Ateex 续期
+        id: run_renew
         env:
           PYTHONIOENCODING: utf-8
           DISCORD_TOKEN_A: ${{ secrets.DISCORD_TOKEN_A }}
-          ATEEX_PROXY: ${{ secrets.ATEEX_PROXY }}
+          IS_PROXY: ${{ env.IS_PROXY }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        working-directory: scripts_repo/scripts/ateex
-        run: python ateex.py
+        working-directory: private-repo/scripts/ateex
+        run: |
+          set -o pipefail
+          python ateex.py 2>&1 | tee renew.log
+
+      - name: 清理代理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-config.json sing-box.log
+
+      - name: 自动修改下次 Cron
+        if: always()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          NEXT_CRON: ${{ steps.run_renew.outputs.cron }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          TARGET_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$NEXT_CRON" ]; then
+            echo "⚠️ 未获取到下次运行时间，保留现有调度"
+            exit 0
+          fi
+          python3 - <<'PYEOF'
+          import base64
+          import json
+          import os
+          import re
+          import urllib.request
+
+          token = os.environ["REPO_TOKEN"]
+          repo = os.environ["TARGET_REPO"]
+          workflow_ref = os.environ["WORKFLOW_REF"]
+          cron = os.environ["NEXT_CRON"]
+          marker = f"{repo}/"
+          path_ref = workflow_ref.split(marker, 1)[1]
+          path = path_ref.rsplit("@", 1)[0]
+          api = f"https://api.github.com/repos/{repo}/contents/{path}"
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "Ateex-Renew",
+          }
+          request = urllib.request.Request(api, headers=headers)
+          with urllib.request.urlopen(request, timeout=30) as response:
+              current = json.load(response)
+          content = base64.b64decode(current["content"]).decode("utf-8")
+          updated, count = re.subn(
+              r"(?m)^(\s*-\s*cron:\s*)[\"'][^\"']+[\"'].*$",
+              lambda match: f"{match.group(1)}\"{cron}\"",
+              content,
+              count=1,
+          )
+          if count != 1:
+              raise RuntimeError("未找到工作流 schedule cron")
+          if updated == content:
+              print("ℹ️ Cron 没有变化")
+              raise SystemExit(0)
+          payload = json.dumps({
+              "message": "Update Ateex renewal schedule",
+              "content": base64.b64encode(updated.encode("utf-8")).decode("ascii"),
+              "sha": current["sha"],
+          }).encode("utf-8")
+          request = urllib.request.Request(
+              api,
+              data=payload,
+              headers={**headers, "Content-Type": "application/json"},
+              method="PUT",
+          )
+          with urllib.request.urlopen(request, timeout=30):
+              pass
+          print(f"✅ Cron 已更新：{cron}（UTC）")
+          PYEOF
