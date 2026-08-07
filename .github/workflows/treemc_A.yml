@@ -1,4 +1,4 @@
-name: TreeMC 续期
+name: TreeMC 续期 A
 
 on:
   schedule:
@@ -33,7 +33,7 @@ jobs:
 
       - name: 设置代理 (sing-box)
         env:
-          TREEMC_PROXY: ${{ secrets.TREEMC_PROXY }}
+          TREEMC_PROXY: ${{ secrets.TREEMC_PROXY_A }}
         run: |
           NODE_LINK="$TREEMC_PROXY" bash scripts_repo/scripts/setup_proxy.sh.sh
 
@@ -43,7 +43,7 @@ jobs:
       - name: 运行续期脚本
         env:
           PYTHONIOENCODING: utf-8
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN_A }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           IS_PROXY: ${{ env.IS_PROXY }}
