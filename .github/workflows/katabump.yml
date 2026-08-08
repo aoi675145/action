@@ -1,4 +1,4 @@
-name: Katabump Auto Renew 
+name: Katabump 续期 
 
 on:  
   schedule:
