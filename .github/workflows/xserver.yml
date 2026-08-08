@@ -2,7 +2,7 @@ name: XServer 续期
 
 on:
   schedule:
-    - cron: '29 12 8 8 *'  # 自动更新下次运行时间
+    - cron: '28 0 9 8 *'  # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
