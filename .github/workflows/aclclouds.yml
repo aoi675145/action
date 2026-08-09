@@ -62,6 +62,9 @@ jobs:
           from urllib.parse import parse_qs, unquote
 
           def mask(value):
+              parts = value.split(".")
+              if len(parts) == 4:
+                  return f"{parts[0]}.{parts[1]}.***.**"
               return f"{value[:2]}***{value[-2:]}" if len(value) > 4 else "****"
 
           url = os.environ.get("Acl_PROXY", "").strip()
@@ -129,7 +132,7 @@ jobs:
               host = params.get("host", [sni])[0]
               path = unquote(params.get("path", ["/"])[0])
 
-              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
+              print(f"[INFO] VLESS")
 
               outbound = {
                   "protocol": "vless",
