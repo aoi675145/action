@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "1 8 * * *"
+    - cron: "52 3 * * *"
 
 jobs:
   sign:
@@ -43,16 +43,16 @@ jobs:
           if curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -o vps8_service_expiry.txt \
-            "https://raw.githubusercontent.com/aoi675145/vps8/main/vps8_service_expiry.txt" 2>/dev/null; then
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/vps8/vps8_service_expiry.txt" 2>/dev/null; then
             echo "[INFO] ✅ vps8_service_expiry.txt 已下载 ($(wc -l < vps8_service_expiry.txt) 行)"
           else
             echo "[INFO] 私库尚无缓存文件，首次运行"
           fi
 
           echo "[INFO] 清理私库旧截图..."
-          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/vps8.git" scripts-cleanup
-          if [ -f scripts-cleanup/screenshots/*.png ]; then
-            git -C scripts-cleanup rm -f screenshots/*.png
+          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cleanup
+          if [ -f scripts-cleanup/scripts/vps8/screenshots/*.png ]; then
+            git -C scripts-cleanup rm -f scripts/vps8/screenshots/*.png
             git -C scripts-cleanup config user.name "github-actions[bot]"
             git -C scripts-cleanup config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git -C scripts-cleanup commit -m "清理上次截图"
@@ -464,21 +464,21 @@ jobs:
             echo "[截图] screenshots 目录不存在或为空，跳过"
             exit 0
           fi
-          echo "[截图] 克隆私库 aoi675145/vps8，保存截图..."
-          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/vps8.git" scripts-cache
-          mkdir -p scripts-cache/screenshots
-          cp screenshots/*.png scripts-cache/screenshots/
+          echo "[截图] 克隆私库 aoi675145/scripts，保存截图..."
+          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
+          mkdir -p scripts-cache/scripts/vps8/screenshots
+          cp screenshots/*.png scripts-cache/scripts/vps8/screenshots/
           cd scripts-cache
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A screenshots/
-          if [ -z "$(git status --porcelain -- screenshots/)" ]; then
+          git add -A scripts/vps8/screenshots/
+          if [ -z "$(git status --porcelain -- scripts/vps8/screenshots/)" ]; then
             echo "[截图] 截图无变化，跳过提交"
             exit 0
           fi
           git commit -m "更新 VPS8 截图 $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           git push
-          echo "[截图] 截图已保存到私库 vps8/screenshots/"
+          echo "[截图] 截图已保存到私库 scripts/vps8/screenshots/"
 
       - name: 保存服务到期缓存到私库
         if: always()
@@ -490,21 +490,21 @@ jobs:
             exit 0
           fi
           rm -rf scripts-cache
-          echo "[缓存] 克隆私库 aoi675145/vps8，保存 vps8_service_expiry.txt"
-          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/vps8.git" scripts-cache
-          mkdir -p scripts-cache
-          cp vps8_service_expiry.txt scripts-cache/vps8_service_expiry.txt
+          echo "[缓存] 克隆私库 aoi675145/scripts，保存 vps8_service_expiry.txt"
+          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
+          mkdir -p scripts-cache/scripts/vps8
+          cp vps8_service_expiry.txt scripts-cache/scripts/vps8/vps8_service_expiry.txt
           cd scripts-cache
-          if [ -z "$(git status --porcelain -- vps8_service_expiry.txt)" ]; then
+          if [ -z "$(git status --porcelain -- scripts/vps8/vps8_service_expiry.txt)" ]; then
             echo "[缓存] 服务到期缓存无变化，不需要提交"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add vps8_service_expiry.txt
+          git add scripts/vps8/vps8_service_expiry.txt
           git commit -m "更新 VPS8 服务到期缓存"
           git push
-          echo "[缓存] vps8_service_expiry.txt 已保存到私库 vps8/"
+          echo "[缓存] vps8_service_expiry.txt 已保存到私库 scripts/vps8/"
 
       - name: 随机化下次 cron 运行时间 (UTC 7-10时 = 北京 15-18时)
         if: always()
