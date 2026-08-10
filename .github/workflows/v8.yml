@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "4 10 * * *"
+    - cron: "52 3 * * *"
 
 jobs:
   sign:
@@ -74,7 +74,8 @@ jobs:
           pip install playwright requests PySocks
           playwright install chromium
           pip install "hcaptcha-challenger @ git+https://github.com/Sliverkiss/hcaptcha.git@main"
-          python -c "import hcaptcha_challenger; print('[INFO] hcaptcha-challenger import OK')"
+          pip install pyyaml
+          python -c "from hcaptcha_challenger import AgentV, AgentConfig; print('[INFO] hcaptcha-challenger import OK')"
 
       - name: 下载并解压扩展
         run: |
