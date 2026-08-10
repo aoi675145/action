@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "50 10 * * *"
+    - cron: "52 3 * * *"
 
 jobs:
   sign:
@@ -70,9 +70,11 @@ jobs:
 
       - name: 安装 Playwright 及 Python 库
         run: |
-          pip install -q playwright requests PySocks
+          python -m pip install -U pip
+          pip install playwright requests PySocks
           playwright install chromium
-          pip install -q "hcaptcha-challenger @ git+https://github.com/Sliverkiss/hcaptcha.git@main"
+          pip install "hcaptcha-challenger @ git+https://github.com/Sliverkiss/hcaptcha.git@main"
+          python -c "import hcaptcha_challenger; print('[INFO] hcaptcha-challenger import OK')"
 
       - name: 下载并解压扩展
         run: |
@@ -80,7 +82,15 @@ jobs:
 
           wget -q -O scripts/extensions/buster/buster.zip \
             https://github.com/dessant/buster/releases/download/v3.4.0/buster_captcha_solver_for_humans-3.4.0-chrome.zip
-          7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
+          7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked >/dev/null
+          BUSTER_EXT=$(find scripts/extensions/buster/unpacked -name manifest.json -print -quit | xargs dirname)
+          if [ "$BUSTER_EXT" != "scripts/extensions/buster/unpacked" ]; then
+            mkdir -p scripts/extensions/buster/unpacked_flat
+            cp -r "$BUSTER_EXT"/. scripts/extensions/buster/unpacked_flat/
+            rm -rf scripts/extensions/buster/unpacked
+            mv scripts/extensions/buster/unpacked_flat scripts/extensions/buster/unpacked
+          fi
+          ls scripts/extensions/buster/unpacked/manifest.json
 
       - name: 安装并启动代理
         env:
