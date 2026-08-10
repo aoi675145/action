@@ -27,7 +27,7 @@ jobs:
           sparse-checkout: |
             scripts/weirdhost/weirdhost.py
             scripts/weirdhost/logs.txt
-            setup_proxy.sh.sh
+            scripts/setup_proxy.sh.sh
           sparse-checkout-cone-mode: false
 
       - name: 检查是否需要续期
@@ -89,7 +89,7 @@ jobs:
             echo "❌ 未配置 WEIRDHOST_PROXY_NODE，必须使用代理"
             exit 1
           fi
-          NODE_LINK="$WEIRDHOST_PROXY_NODE" bash private-repo/setup_proxy.sh.sh
+          NODE_LINK="$WEIRDHOST_PROXY_NODE" bash private-repo/scripts/setup_proxy.sh.sh
 
       - name: 运行续期脚本
         if: steps.check_renew.outputs.need_renew == 'true'
