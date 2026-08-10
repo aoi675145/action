@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "28 10 * * *"
+    - cron: "52 3 * * *"
 
 jobs:
   sign:
@@ -36,7 +36,7 @@ jobs:
           curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -o v8.py \
-            "https://raw.githubusercontent.com/aoi675145/vps8/main/v8.py"
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/vps8/v8.py"
           echo "[INFO] ✅ v8.py 已下载 ($(wc -l < v8.py) 行)"
 
           echo "[INFO] 拉取服务到期缓存..."
