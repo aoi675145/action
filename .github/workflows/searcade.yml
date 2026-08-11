@@ -2,8 +2,8 @@ name: searcade 保活
 
 on:
   schedule:
-    # 每 4 天跑一次，UTC 18:17 = 北京时间 次日 02:17（凌晨，错开整点）
-    - cron: '17 18 */4 * *'
+    # 每 3 天跑一次，UTC 18:17 = 北京时间 次日 02:17（凌晨，错开整点）
+    - cron: '17 18 */3 * *'
   workflow_dispatch:
 
 jobs:
@@ -36,7 +36,7 @@ jobs:
           test -s searcade.py && echo "✅ searcade.py 拉取成功"
           head -5 searcade.py
 
-      - name: 🚀 Run login script
+      - name: 🚀 Run keepalive script
         env:
           SEARCADE: ${{ secrets.SEARCADE }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
