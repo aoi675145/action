@@ -1,4 +1,4 @@
-name: searcade Auto Login
+name: searcade 保活
 
 on:
   schedule:
