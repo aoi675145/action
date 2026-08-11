@@ -36,6 +36,20 @@ jobs:
           test -s searcade.py && echo "✅ searcade.py 拉取成功"
           head -5 searcade.py
 
+          # 同时拉取代理脚本 setup_proxy.sh
+          curl -fsSL \
+            -H "Authorization: token ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.v3.raw" \
+            -o setup_proxy.sh \
+            https://api.github.com/repos/aoi675145/scripts/contents/scripts/setup_proxy.sh.sh
+          test -s setup_proxy.sh && echo "✅ setup_proxy.sh 拉取成功"
+
+      - name: ⚙️ 设置代理
+        env:
+          SEARCADE_PROXY: ${{ secrets.SEARCADE_PROXY }}
+        run: |
+          NODE_LINK="$SEARCADE_PROXY" bash setup_proxy.sh
+
       - name: 🚀 Run keepalive script
         env:
           SEARCADE: ${{ secrets.SEARCADE }}
@@ -53,3 +67,9 @@ jobs:
           path: |
             screenshots/*.png
             screenshots/*.html
+
+      # 🧹 清理代理进程和临时文件
+      - name: 🧹 Cleanup proxy
+        if: always()
+        run: |
+          pkill -f sing-box || true
