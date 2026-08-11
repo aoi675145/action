@@ -22,6 +22,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y xvfb
           pip install --upgrade pip
+          pip install seleniumbase requests pyvirtualdisplay
 
       - name: 拉取私库脚本
         env:
