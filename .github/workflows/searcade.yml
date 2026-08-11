@@ -1,0 +1,55 @@
+name: searcade Auto Login
+
+on:
+  schedule:
+    # 每 4 天跑一次，UTC 18:17 = 北京时间 次日 02:17（凌晨，错开整点）
+    - cron: '17 18 */4 * *'
+  workflow_dispatch:
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: 📦 Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          pip install --upgrade pip
+
+      # 🔑 从私库 aoi675145/scripts 拉取最新 searcade.py（用 REPO_TOKEN 鉴权）
+      - name: 📥 Pull searcade.py from private repo
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          curl -fsSL \
+            -H "Authorization: token ${REPO_TOKEN}" \
+            -H "Accept: application/vnd.github.v3.raw" \
+            -o searcade.py \
+            https://api.github.com/repos/aoi675145/scripts/contents/scripts/searcade/searcade.py
+          test -s searcade.py && echo "✅ searcade.py 拉取成功"
+          head -5 searcade.py
+
+      - name: 🚀 Run login script
+        env:
+          SEARCADE: ${{ secrets.SEARCADE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          python searcade.py
+
+      # 📸 上传截图 + HTML（无论成功或失败）
+      - name: 📸 Upload debug artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: searcade-debug
+          path: |
+            screenshots/*.png
+            screenshots/*.html
