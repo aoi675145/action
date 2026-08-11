@@ -2,7 +2,7 @@ name: FenixHost 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '57 12 11 8 *' # 自动更新下次运行时间
+    - cron: '30 16 * * *' # 自动更新下次运行时间
 jobs:
   renew:
     runs-on: ubuntu-latest
@@ -37,7 +37,6 @@ jobs:
       - name: 执行续期
         env:
           PYTHONIOENCODING: utf-8
-          FENIX_SERVICE_IDS: ${{ secrets.FENIX_SERVICE_IDS }}
           IS_PROXY: ${{ env.IS_PROXY }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
           TG_BOT: ${{ secrets.TG_BOT }}
