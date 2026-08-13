@@ -34,26 +34,16 @@ jobs:
             scripts/setup_proxy.sh.sh
           sparse-checkout-cone-mode: false
 
-      - name: 安装系统依赖
+      - name: 安装依赖并准备扩展
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y google-chrome-stable xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full jq
-
-      - name: 安装 Python 库
-        run: |
           pip install -q seleniumbase 'requests[socks]'
-
-      - name: 安装 ChromeDriver
-        run: seleniumbase install chromedriver
-
-      - name: 下载并解压扩展
-        run: |
+          seleniumbase install chromedriver
           mkdir -p scripts/extensions/nopecha scripts/extensions/buster
-
           wget -q -O scripts/extensions/nopecha/chromium.zip \
             https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
           7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
-
           wget -q -O scripts/extensions/buster/buster.zip \
             https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
           7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
@@ -67,9 +57,6 @@ jobs:
             exit 1
           fi
           NODE_LINK="$VPSFREE_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
-
-      - name: 清理旧截图
-        run: rm -rf screenshots
 
       - name: 执行 VPSFREE 续期
         env:
@@ -89,31 +76,6 @@ jobs:
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
-
-      - name: 保存截图到私库
-        if: always()
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          if [ ! -d screenshots ] || [ -z "$(ls -A screenshots 2>/dev/null)" ]; then
-            echo "[截图] screenshots 目录不存在或为空，跳过"
-            exit 0
-          fi
-          echo "[截图] 克隆私库 aoi675145/scripts，保存截图..."
-          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
-          mkdir -p scripts-cache/scripts/vpsfree/screenshots
-          cp -f screenshots/*.png scripts-cache/scripts/vpsfree/screenshots/
-          cd scripts-cache
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A scripts/vpsfree/screenshots/
-          if [ -z "$(git status --porcelain -- scripts/vpsfree/screenshots/)" ]; then
-            echo "[截图] 截图无变化，跳过提交"
-            exit 0
-          fi
-          git commit -m "更新 VPSFREE 截图 $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          git push
-          echo "[截图] 截图已保存到私库 scripts/vpsfree/screenshots/"
 
       - name: 提取下次运行时间
         id: extract_next_run
