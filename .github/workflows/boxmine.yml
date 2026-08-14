@@ -3,7 +3,7 @@ name: BoxMine AFK
 on:
   workflow_dispatch:
   schedule:
-    - cron: '16 21 14 8 *'
+    - cron: '31 23 15 8 *'
 permissions:
   actions: write
 
