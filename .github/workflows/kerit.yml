@@ -23,31 +23,12 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: Interval Check (Strict 3-day cycle)
-        id: check
-        run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "run=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          DAYS=$(( $(date -u +%s) / 86400 ))
-          REMAINDER=$(( $DAYS % 3 ))
-          if [ $REMAINDER -eq 2 ]; then
-            echo "Today is the scheduled day. Starting workflow..."
-            echo "run=true" >> $GITHUB_OUTPUT
-          else
-            echo "Not today. Skipping (Current remainder: $REMAINDER, Target: 2)."
-            echo "run=false" >> $GITHUB_OUTPUT
-          fi
-
       - name: 设置 Python 环境
-        if: steps.check.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: 安装系统依赖
-        if: steps.check.outputs.run == 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -58,13 +39,11 @@ jobs:
             scrot
 
       - name: 安装 Python 依赖和 UC 驱动
-        if: steps.check.outputs.run == 'true'
         run: |
           pip install --quiet seleniumbase requests
           sbase get uc_driver >/dev/null
 
       - name: 安装并启动 Xray 代理
-        if: steps.check.outputs.run == 'true'
         env:
           KERIT_PROXY: ${{ secrets.KERIT_PROXY }}
         run: |
@@ -285,7 +264,6 @@ jobs:
           exit 1
 
       - name: 运行续期脚本
-        if: steps.check.outputs.run == 'true'
         id: run_renew
         env:
           KERITCLOUD: ${{ secrets.KERITCLOUD }}
@@ -313,7 +291,7 @@ jobs:
           git diff --cached --quiet || (git commit -m "auto: cron $next_cron" && git push)
 
       - name: 上传失败日志和截图
-        if: failure() && steps.check.outputs.run == 'true'
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: kerit-failure-${{ github.run_id }}
