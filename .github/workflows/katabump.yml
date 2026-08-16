@@ -3,7 +3,7 @@ name: Katabump 续期
 on:  
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为固定日期（北京 09:23）
-    - cron: "23 1 20 8 *"
+    - cron: "23 1 18 8 *"
   workflow_dispatch:  # 允许手动触发
 
 permissions:
@@ -379,7 +379,7 @@ jobs:
         run: |
           # 进入私库中对应的目录运行脚本
           cd scripts/katabump
-          python katabump.py
+          python -u katabump.py
 
       - name: 修改 cron
         if: always()
