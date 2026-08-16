@@ -1,9 +1,14 @@
-name: Katabump 续期 
+name: Katabump 续期
 
 on:  
   schedule:
-    - cron: '01 1 * * *'  
+    # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为固定日期（北京 09:23）
+    - cron: "23 1 18 8 *"
   workflow_dispatch:  # 允许手动触发
+
+permissions:
+  actions: write
+  contents: write
 
 jobs:
   auto_renew_katabump:
@@ -403,6 +408,24 @@ jobs:
           # 进入私库中对应的目录运行脚本
           cd scripts/katabump
           python katabump.py
+
+      - name: 修改 cron
+        if: always()
+        run: |
+          NEXT_FILE=$(find . -name next_run.txt | head -1)
+          if [ -z "$NEXT_FILE" ]; then
+            echo "next_run.txt 不存在，跳过 cron 更新"
+            exit 0
+          fi
+          next_cron=$(tr -d '\n\r' < "$NEXT_FILE")
+          echo "cron: $next_cron"
+          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
+          cd cron_repo
+          sed -i "s/- cron: \".*\"/- cron: \"$next_cron\"/" .github/workflows/katabump.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/katabump.yml
+          git diff --cached --quiet || (git commit -m "auto: cron $next_cron" && git push)
 
       - name: 清理运行记录
         if: always()
