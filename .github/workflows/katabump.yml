@@ -15,29 +15,7 @@ jobs:
     runs-on: ubuntu-22.04
     
     steps:
-      - name: 检查运行周期
-        id: check
-        run: |
-          # 如果是手动触发，则跳过检查直接运行
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "run=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          # 计算当前 Unix 天数 (UTC)
-          DAYS=$(( $(date -u +%s) / 86400 ))
-          REMAINDER=$(( $DAYS % 4 ))
-          
-          if [ $REMAINDER -eq 1 ]; then
-            echo "Today is the scheduled day. Starting workflow..."
-            echo "run=true" >> $GITHUB_OUTPUT
-          else
-            echo "Not today. Skipping (Current remainder: $REMAINDER, Target: 1)."
-            echo "run=false" >> $GITHUB_OUTPUT
-          fi
-          
       - name: 拉取私库脚本
-        if: steps.check.outputs.run == 'true'
         uses: actions/checkout@v4
         with:
           repository: 'aoi675145/scripts'
@@ -45,7 +23,6 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }} 
 
       - name: 安装 Python
-        if: steps.check.outputs.run == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -53,7 +30,6 @@ jobs:
           cache-dependency-path: scripts/katabump/requirements.txt
 
       - name: 安装依赖
-        if: steps.check.outputs.run == 'true'
         run: |
           # 进入私库中对应的目录安装依赖
           cd scripts/katabump
@@ -68,7 +44,6 @@ jobs:
           fi
           
       - name: 获取浏览器版本
-        if: steps.check.outputs.run == 'true'
         id: get_version
         run: |
           CHROME_VERSION=$(chromium-browser --version 2>/dev/null | grep -oE 'Chromium\s[0-9]+' | grep -oE '[0-9]+')
@@ -83,11 +58,9 @@ jobs:
           echo "CHROME_VERSION=$CHROME_VERSION" >> $GITHUB_ENV
 
       - name: 启动虚拟显示
-        if: steps.check.outputs.run == 'true'
         run: Xvfb :99 -ac &
 
       - name: 安装并启动代理
-        if: steps.check.outputs.run == 'true'
         env:
           Katabump_PROXY_NODE: ${{ secrets.Katabump_PROXY_NODE }}
         run: |
@@ -395,7 +368,6 @@ jobs:
           exit 0
 
       - name: 执行续期
-        if: steps.check.outputs.run == 'true'
         env:
           Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
