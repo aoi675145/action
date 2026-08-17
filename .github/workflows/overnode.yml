@@ -2,7 +2,7 @@ name: OverNode 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '25 7 17 8 *' # 自动更新下次运行时间
+    - cron: '5 6 19 8 *' # 自动更新下次运行时间
 jobs:
   renew:
     runs-on: ubuntu-latest
