@@ -28,7 +28,7 @@ sudo mv xray-bin/xray /usr/local/bin/xray
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
-          keep_minimum_runs: 6
+          keep_minimum_runs: 4
 ```
 
 ---
