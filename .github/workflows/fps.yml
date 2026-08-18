@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 初始值: 每天 UTC 02:00; 每次运行后自动更新为"到期前 15~20 小时"
-    - cron: '5 15 18 8 *'
+    - cron: '12 14 19 8 *'
 env:
   SCRIPTS_REPO: aoi675145/scripts
   SCRIPTS_DIR: scripts/fps
