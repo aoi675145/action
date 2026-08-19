@@ -1,4 +1,4 @@
-name: VPS8 签到 
+﻿name: VPS8 签到 
 
 on:
   workflow_dispatch:
@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "20 2 20 8 *"
+    - cron: "6 2 * * *"
 
 jobs:
   sign:
@@ -48,30 +48,6 @@ jobs:
           else
             echo "[INFO] 私库尚无缓存文件，首次运行"
           fi
-
-      - name: 安装系统依赖
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y --no-install-recommends xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
-
-      - name: 安装 Python 库
-        run: |
-          pip install -q seleniumbase requests
-
-      - name: 安装 ChromeDriver
-        run: seleniumbase install chromedriver
-
-      - name: 下载并解压扩展
-        run: |
-          mkdir -p scripts/extensions/nopecha scripts/extensions/buster
-
-          wget -q -O scripts/extensions/nopecha/chromium.zip \
-            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
-          7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
-
-          wget -q -O scripts/extensions/buster/buster.zip \
-            https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
-          7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
 
       - name: 安装并启动代理
         env:
@@ -120,6 +96,8 @@ jobs:
               if curl -x http://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
                 echo "[INFO] ✅ Hysteria2 代理连接成功"
                 echo "PROXY_SOCKS5=http://127.0.0.1:1080" >> $GITHUB_ENV
+                echo "http_proxy=http://127.0.0.1:1080" >> $GITHUB_ENV
+                echo "https_proxy=http://127.0.0.1:1080" >> $GITHUB_ENV
                 exit 0
               fi
               echo "[WARN] Hysteria2 尝试 $i/5..."
@@ -419,6 +397,8 @@ jobs:
             if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
               echo "[INFO] ✅ 代理连接成功"
               echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
+              echo "http_proxy=http://127.0.0.1:10809" >> $GITHUB_ENV
+              echo "https_proxy=http://127.0.0.1:10809" >> $GITHUB_ENV
               exit 0
             fi
             echo "[WARN] 尝试 $i/5..."
@@ -429,6 +409,36 @@ jobs:
           echo "--- Xray 日志 ---"
           cat xray.log
           exit 1
+
+      - name: 安装系统依赖
+        run: |
+          if [ -n "${http_proxy}" ]; then
+            echo "[INFO] apt 走代理: ${http_proxy}"
+            sudo env http_proxy="$http_proxy" https_proxy="$https_proxy" apt-get update -qq
+            sudo env http_proxy="$http_proxy" https_proxy="$https_proxy" apt-get install -y --no-install-recommends xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y --no-install-recommends xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
+          fi
+
+      - name: 安装 Python 库
+        run: |
+          pip install -q seleniumbase requests
+
+      - name: 安装 ChromeDriver
+        run: seleniumbase install chromedriver
+
+      - name: 下载并解压扩展
+        run: |
+          mkdir -p scripts/extensions/nopecha scripts/extensions/buster
+
+          wget -q -O scripts/extensions/nopecha/chromium.zip \
+            https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
+          7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
+
+          wget -q -O scripts/extensions/buster/buster.zip \
+            https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
+          7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
 
       - name: 清理旧截图
         run: rm -rf screenshots
