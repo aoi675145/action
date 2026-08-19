@@ -1,0 +1,74 @@
+name: Tranger 开机保活
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+    types: [nezha-offline]
+
+jobs:
+  start:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/tranger/tranger.py
+            scripts/setup_proxy.sh.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 校验代理配置
+        env:
+          FIREBASE_PROXY: ${{ secrets.FIREBASE_PROXY }}
+        run: |
+          if [ -z "$FIREBASE_PROXY" ]; then
+            echo "❌ 必须配置 FIREBASE_PROXY（强制代理模式）"
+            exit 1
+          fi
+
+      - name: 设置代理 (sing-box)
+        env:
+          FIREBASE_PROXY: ${{ secrets.FIREBASE_PROXY }}
+        run: |
+          NODE_LINK="$FIREBASE_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+
+      - name: 安装 Python 依赖
+        run: pip install 'requests[socks]'
+
+      - name: 执行开机
+        env:
+          PYTHONIOENCODING: utf-8
+          FIREBASE_AUTH: ${{ secrets.FIREBASE_AUTH }}
+          FIREBASE_REFRESH_TOKEN: ${{ secrets.FIREBASE_REFRESH_TOKEN }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+          IS_PROXY: ${{ env.IS_PROXY }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+        working-directory: private-repo/scripts/tranger
+        run: |
+          set -o pipefail
+          python tranger.py 2>&1 | tee tranger.log
+
+      - name: 清理代理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-config.json sing-box.log
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 4
