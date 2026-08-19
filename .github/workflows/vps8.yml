@@ -410,7 +410,7 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 修复 apt 源（绕过卡死的 azure 镜像，兼容 ubuntu-22.04/24.04）
+      - name: 修复 apt 源
         run: |
           # jammy: 旧式 /etc/apt/sources.list；noble: deb822 的 ubuntu.sources
           # 两种都整体重写为官方 https 源，不再依赖 azure 镜像
