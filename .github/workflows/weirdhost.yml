@@ -71,7 +71,7 @@ jobs:
           fi
           NODE_LINK="$WEIRDHOST_PROXY_NODE" bash private-repo/scripts/setup_proxy.sh.sh
 
-      - name: 修复 apt 源（绕过卡死的 azure 镜像）
+      - name: 修复 apt 源
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
           # 直接整体重写 ubuntu.sources 为官方 https 源（deb822 格式），
