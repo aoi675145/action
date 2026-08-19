@@ -410,14 +410,43 @@ jobs:
           cat xray.log
           exit 1
 
+      - name: 修复 apt 源（绕过卡死的 azure 镜像，兼容 ubuntu-22.04/24.04）
+        run: |
+          # jammy: 旧式 /etc/apt/sources.list；noble: deb822 的 ubuntu.sources
+          # 两种都整体重写为官方 https 源，不再依赖 azure 镜像
+          if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
+            sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null <<'EOF'
+          Types: deb
+          URIs: https://archive.ubuntu.com/ubuntu/
+          Suites: noble noble-updates noble-backports
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+          Types: deb
+          URIs: https://security.ubuntu.com/ubuntu/
+          Suites: noble-security
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          else
+            sudo tee /etc/apt/sources.list > /dev/null <<'EOF'
+          deb https://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse
+          deb https://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse
+          deb https://archive.ubuntu.com/ubuntu/ jammy-backports main restricted universe multiverse
+          deb https://security.ubuntu.com/ubuntu/ jammy-security main restricted universe multiverse
+          EOF
+          fi
+          sudo rm -f /etc/apt/apt-mirrors.txt
+
       - name: 安装系统依赖
         run: |
+          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
           if [ -n "${http_proxy}" ]; then
             echo "[INFO] apt 走代理: ${http_proxy}"
-            sudo env http_proxy="$http_proxy" https_proxy="$https_proxy" apt-get update -qq
+            sudo env http_proxy="$http_proxy" https_proxy="$https_proxy" apt-get update -qq $APT_OPTS
             sudo env http_proxy="$http_proxy" https_proxy="$https_proxy" apt-get install -y --no-install-recommends xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
           else
-            sudo apt-get update -qq
+            sudo apt-get update -qq $APT_OPTS
             sudo apt-get install -y --no-install-recommends xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
           fi
 

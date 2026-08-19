@@ -71,10 +71,30 @@ jobs:
           fi
           NODE_LINK="$WEIRDHOST_PROXY_NODE" bash private-repo/scripts/setup_proxy.sh.sh
 
+      - name: 修复 apt 源（绕过卡死的 azure 镜像）
+        if: steps.check_renew.outputs.need_renew == 'true'
+        run: |
+          # 直接整体重写 ubuntu.sources 为官方 https 源（deb822 格式），
+          # 不再依赖 mirror+file:///etc/apt/apt-mirrors.txt（azure 镜像，经常超时）
+          sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null <<'EOF'
+          Types: deb
+          URIs: https://archive.ubuntu.com/ubuntu/
+          Suites: noble noble-updates noble-backports
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+
+          Types: deb
+          URIs: https://security.ubuntu.com/ubuntu/
+          Suites: noble-security
+          Components: main restricted universe multiverse
+          Signed-By: /usr/share/keyrings/ubuntu-archive-keyring.gpg
+          EOF
+          sudo rm -f /etc/apt/apt-mirrors.txt
+
       - name: 安装系统依赖
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
-          sudo apt-get -o Acquire::http::Proxy=http://127.0.0.1:1081 -o Acquire::https::Proxy=http://127.0.0.1:1081 update
+          sudo apt-get -o Acquire::http::Proxy=http://127.0.0.1:1081 -o Acquire::https::Proxy=http://127.0.0.1:1081 -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update
           sudo apt-get -o Acquire::http::Proxy=http://127.0.0.1:1081 -o Acquire::https::Proxy=http://127.0.0.1:1081 install -y xvfb x11-utils xdotool scrot fonts-nanum fonts-noto-cjk jq
 
       - name: 安装 Python 依赖
