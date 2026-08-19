@@ -28,18 +28,18 @@ jobs:
 
       - name: 校验代理配置
         env:
-          FIREBASE_PROXY: ${{ secrets.FIREBASE_PROXY }}
+          TRANGER_PROXY: ${{ secrets.TRANGER_PROXY }}
         run: |
-          if [ -z "$FIREBASE_PROXY" ]; then
-            echo "❌ 必须配置 FIREBASE_PROXY（强制代理模式）"
+          if [ -z "$TRANGER_PROXY" ]; then
+            echo "❌ 必须配置 TRANGER_PROXY（强制代理模式）"
             exit 1
           fi
 
       - name: 设置代理 (sing-box)
         env:
-          FIREBASE_PROXY: ${{ secrets.FIREBASE_PROXY }}
+          TRANGER_PROXY: ${{ secrets.TRANGER_PROXY }}
         run: |
-          NODE_LINK="$FIREBASE_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+          NODE_LINK="$TRANGER_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
 
       - name: 安装 Python 依赖
         run: pip install 'requests[socks]'
@@ -47,8 +47,8 @@ jobs:
       - name: 执行开机
         env:
           PYTHONIOENCODING: utf-8
-          FIREBASE_AUTH: ${{ secrets.FIREBASE_AUTH }}
-          FIREBASE_REFRESH_TOKEN: ${{ secrets.FIREBASE_REFRESH_TOKEN }}
+          TRANGER_AUTH: ${{ secrets.TRANGER_AUTH }}
+          TRANGER_REFRESH_TOKEN: ${{ secrets.TRANGER_REFRESH_TOKEN }}
           TG_BOT: ${{ secrets.TG_BOT }}
           IS_PROXY: ${{ env.IS_PROXY }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
