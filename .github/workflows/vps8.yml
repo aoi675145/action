@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "55 0 21 8 *"
+    - cron: "6 2 * * *"
 
 jobs:
   sign:
@@ -452,12 +452,13 @@ jobs:
         run: |
           pip install -q seleniumbase requests
 
-      - name: 安装 ChromeDriver
+      - name: 安装 Chrome for Testing 与 ChromeDriver
         run: |
-          google-chrome --version
-          rm -rf ~/.cache/selenium
+          echo "[系统 Chrome]" && (google-chrome --version || true)
+          rm -rf ~/.cache/selenium ~/chrome
+          seleniumbase install chrome
           seleniumbase install chromedriver
-          chromedriver --version
+          echo "[CfT 驱动]" && chromedriver --version
 
       - name: 下载并解压扩展
         run: |
