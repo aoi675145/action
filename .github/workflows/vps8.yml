@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "21 0 21 8 *"
+    - cron: "6 2 * * *"
 
 jobs:
   sign:
@@ -478,6 +478,26 @@ jobs:
           wget -q -O scripts/extensions/buster/buster.zip \
             https://github.com/dessant/buster/releases/download/v3.1.3/buster_captcha_solver_for_humans-3.1.3-chrome.zip
           7z x -y scripts/extensions/buster/buster.zip -oscripts/extensions/buster/unpacked
+
+      - name: 诊断 Chrome 启动
+        run: |
+          echo "=== 缺失依赖检查 ==="
+          CFT=$(readlink -f /usr/bin/google-chrome)
+          ldd "$CFT" 2>/dev/null | grep "not found" || echo "无缺失库"
+          echo "=== 裸启动测试（无扩展） ==="
+          xvfb-run -a google-chrome --no-sandbox --disable-gpu --user-data-dir=/tmp/t1 --dump-dom about:blank 2>&1 | head -20 || echo "[裸启动退出码 $?]"
+          echo "=== 带扩展启动测试（nopecha+buster） ==="
+          NOPE=$(echo scripts/extensions/nopecha/unpacked/*/)
+          BUST=$(echo scripts/extensions/buster/unpacked/*/)
+          echo "扩展路径: $NOPE , $BUST"
+          xvfb-run -a google-chrome --no-sandbox --disable-gpu --user-data-dir=/tmp/t2 \
+            --load-extension="$NOPE,$BUST" --enable-logging=stderr --v=0 --dump-dom about:blank 2>&1 | head -40 || echo "[双扩展退出码 $?]"
+          echo "=== 单独 nopecha ==="
+          xvfb-run -a google-chrome --no-sandbox --disable-gpu --user-data-dir=/tmp/t3 \
+            --load-extension="$NOPE" --dump-dom about:blank 2>&1 | head -20 && echo "nopecha OK" || echo "[nopecha 退出码 $?]"
+          echo "=== 单独 buster ==="
+          xvfb-run -a google-chrome --no-sandbox --disable-gpu --user-data-dir=/tmp/t4 \
+            --load-extension="$BUST" --dump-dom about:blank 2>&1 | head -20 && echo "buster OK" || echo "[buster 退出码 $?]"
 
       - name: 清理旧截图
         run: rm -rf screenshots
