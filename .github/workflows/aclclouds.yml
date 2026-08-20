@@ -2,7 +2,7 @@ name:  ACLClouds 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '22 5 * * *' # 下一个: 2026-08-21 05:22 UTC / 2026-08-21 13:22 北京时间 (兜底方案)
+    - cron: '45 9 13 8 *' # 下一个: 2026-08-13 09:45 UTC / 2026-08-13 17:45 北京时间 (到期前1天执行)
 
 jobs:
   run_renewal:
@@ -372,6 +372,7 @@ jobs:
           else
             git -C scripts_repo commit -m "🚀 auto: 更新 cookies"
             git -C scripts_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/scripts.git
+            git -C scripts_repo pull --rebase --autostash || true
             git -C scripts_repo push
           fi
 
