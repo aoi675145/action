@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "6 1 21 8 *"
+    - cron: "6 2 * * *"
 
 jobs:
   sign:
@@ -510,6 +510,8 @@ jobs:
           NOPECHA_KEY: ${{ secrets.NOPECHA_KEY }}
           PROXY_HTTP: ${{ env.PROXY_SOCKS5 }}
           VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
+          no_proxy: localhost,127.0.0.1
+          NO_PROXY: localhost,127.0.0.1
         run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py
 
       - name: 保存截图到私库
