@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "6 2 21 8 *"
+    - cron: "6 2 * * *"
 
 jobs:
   sign:
@@ -455,7 +455,11 @@ jobs:
       - name: 安装 Chrome for Testing 与 ChromeDriver
         run: |
           echo "[系统 Chrome]" && (google-chrome --version || true)
-          rm -rf ~/.cache/selenium ~/chrome
+          # 品牌版 Chrome(137+) 已封锁 --load-extension，卸载它让 SeleniumBase 改用 CfT
+          sudo apt-get remove -y google-chrome-stable > /dev/null 2>&1 || true
+          sudo rm -f /usr/bin/google-chrome /usr/bin/google-chrome-stable
+          hash -r
+          rm -rf ~/.cache/selenium
           seleniumbase install chrome
           seleniumbase install chromedriver
           echo "[CfT 驱动]" && chromedriver --version
