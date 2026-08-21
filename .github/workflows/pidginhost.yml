@@ -289,7 +289,6 @@ jobs:
 
       - name: 运行保活/续期脚本
         env:
-          PIDGIN_SERVER_ID:  ${{ secrets.PIDGIN_SERVER_ID }}
           PIDGIN_COOKIE_FILE: cookies.txt
           PIDGINHOST:        ${{ secrets.PIDGINHOST }}
           TG_BOT_TOKEN:      ${{ secrets.TG_BOT_TOKEN }}
