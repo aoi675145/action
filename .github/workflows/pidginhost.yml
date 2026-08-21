@@ -287,10 +287,11 @@ jobs:
 
           fail "代理连接失败"
 
-      - name: 运行续期脚本
+      - name: 运行保活/续期脚本
         env:
           PIDGIN_SERVER_ID:  ${{ secrets.PIDGIN_SERVER_ID }}
           PIDGIN_COOKIE_FILE: cookies.txt
+          PIDGINHOST:        ${{ secrets.PIDGINHOST }}
           TG_BOT_TOKEN:      ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:        ${{ secrets.TG_CHAT_ID }}
           PROXY_URL:         ${{ env.PROXY_URL }}
