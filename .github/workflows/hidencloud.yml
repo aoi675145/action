@@ -3,7 +3,7 @@ name: HidenCloud 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '23 3 27 8 *'   # 自动更新下次运行时间
+    - cron: '50 3 3 9 *' # 2026-09-04 到期，提前一天 09-03 03:50 UTC 运行
 
 permissions:
   actions: write
@@ -131,7 +131,10 @@ jobs:
                      -m "下次运行: $NEXT_DATE UTC" \
                      -m "Cron: $NEW_CRON" \
                      -m "到期时间: $DUE_DATE"
-          git push
+
+          # 拉取远程最新并 rebase，避免并发推送冲突
+          git pull --rebase origin main || true
+          git push origin main || git push --force-with-lease origin main
 
           echo "::notice::✅ Cron 更新成功"
 
