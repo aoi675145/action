@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为固定日期（北京 09:23）
-    - cron: "23 1 27 8 *"
+    - cron: "23 1 28 8 *"
 
 permissions:
   actions: write
