@@ -1,13 +1,14 @@
-name: XServer 续期
+name: XServer 续期 (sing-box)
 
 on:
   schedule:
-    - cron: '54 12 28 8 *'  # 自动更新下次运行时间
+    - cron: '28 0 30 8 *'  # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
   extend-server:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - name: 拉取私有仓库
@@ -26,206 +27,17 @@ jobs:
         run: |
           pip install httpx
 
-      - name: 配置代理节点
+      - name: 配置代理节点 (sing-box)
         env:
-          XSERVER_1_XARY: ${{ secrets.XSERVER_1_XARY }}
-          XSERVER_2_XARY: ${{ secrets.XSERVER_2_XARY }}
-          XSERVER_3_XARY: ${{ secrets.XSERVER_3_XARY }}
-          XSERVER_4_XARY: ${{ secrets.XSERVER_4_XARY }}
-          XSERVER_5_XARY: ${{ secrets.XSERVER_5_XARY }}
-          XSERVER_6_XARY: ${{ secrets.XSERVER_6_XARY }}
-          XSERVER_7_XARY: ${{ secrets.XSERVER_7_XARY }}
-          XSERVER_8_XARY: ${{ secrets.XSERVER_8_XARY }}
-          XSERVER_9_XARY: ${{ secrets.XSERVER_9_XARY }}
-          XSERVER_10_XARY: ${{ secrets.XSERVER_10_XARY }}
+          XSERVER_PROXY: ${{ secrets.XSERVER_PROXY }}
         run: |
-          set -e
-          echo "⬇️ 下载 Xray..."
-          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
-          echo "📦 解压..."
-          mkdir -p xray-bin
-          unzip -oq Xray-linux-64.zip -d xray-bin
-          chmod +x xray-bin/xray
-          sudo mv xray-bin/xray /usr/local/bin/xray
-          echo "✅ Xray $(xray version | head -1)"
-
-          echo "⚙️ 生成代理配置..."
-          python - <<'PY'
-          import base64, json, os
-          from urllib.parse import parse_qs, unquote, urlparse
-
-          def to_bool(v): return str(v).lower() in {"1","true","yes","on"}
-
-          def build_stream(network, security, query, host):
-              stream = {"network": network or "tcp", "security": "none"}
-              if security and security != "none":
-                  stream["security"] = security
-              if security == "tls":
-                  tls_settings = {
-                      "serverName": query.get("sni", [host])[0] or host,
-                      "allowInsecure": True,
-                  }
-                  alpn = query.get("alpn", [""])[0]
-                  if alpn:
-                      tls_settings["alpn"] = [s.strip() for s in alpn.split(",") if s.strip()]
-                  stream["tlsSettings"] = tls_settings
-              elif security == "reality":
-                  reality_settings = {"serverName": query.get("sni", [host])[0] or host}
-                  fp = query.get("fp", [""])[0] or query.get("fingerprint", [""])[0]
-                  if fp:
-                      reality_settings["fingerprint"] = fp
-                  pbk = query.get("pbk", [""])[0] or query.get("publicKey", [""])[0]
-                  if pbk:
-                      reality_settings["publicKey"] = pbk
-                  sid = query.get("sid", [""])[0] or query.get("shortId", [""])[0]
-                  if sid:
-                      reality_settings["shortId"] = sid
-                  spx = query.get("spx", [""])[0] or query.get("spiderX", [""])[0]
-                  if spx:
-                      reality_settings["spiderX"] = spx
-                  stream["realitySettings"] = reality_settings
-              if network == "ws":
-                  ws_host = query.get("host", [host])[0]
-                  stream["wsSettings"] = {
-                      "path": unquote(query.get("path", ["/"])[0] or "/"),
-                      "headers": {"Host": ws_host} if ws_host else {},
-                  }
-              elif network == "grpc":
-                  stream["grpcSettings"] = {
-                      "serviceName": query.get("serviceName", [""])[0],
-                      "multiMode": to_bool(query.get("mode", [""])[0] == "multi"),
-                  }
-              return stream
-
-          def parse_vless(url):
-              p = urlparse(url)
-              q = parse_qs(p.query)
-              host, port, uuid = p.hostname, p.port, p.username
-              if not host or not port or not uuid:
-                  raise SystemExit("VLESS 格式无效")
-              user = {"id": uuid, "encryption": "none"}
-              flow = q.get("flow", [""])[0]
-              if flow: user["flow"] = flow
-              network = q.get("type", ["tcp"])[0]
-              security = q.get("security", ["none"])[0]
-              return {
-                  "protocol": "vless",
-                  "settings": {"vnext": [{"address": host, "port": port, "users": [user]}]},
-                  "streamSettings": build_stream(network, security, q, host),
-              }
-
-          def parse_vmess(url):
-              payload = url[len("vmess://"):].strip() + "=" * (-len(url[len("vmess://"):].strip()) % 4)
-              try:
-                  c = json.loads(base64.urlsafe_b64decode(payload).decode("utf-8"))
-              except Exception as e:
-                  raise SystemExit(f"VMess 解析失败: {e}")
-              host, port, uuid = c.get("add"), int(c.get("port", 0)), c.get("id")
-              if not host or not port or not uuid:
-                  raise SystemExit("VMess 格式无效")
-              network = c.get("net", "tcp")
-              security = "tls" if str(c.get("tls", "")).lower() == "tls" else "none"
-              query = {
-                  "path": [c.get("path", "/")],
-                  "host": [c.get("host", host)],
-                  "sni": [c.get("sni", host)],
-              }
-              if c.get("alpn"): query["alpn"] = [c["alpn"]]
-              if c.get("fp"): query["fp"] = [c["fp"]]
-              return {
-                  "protocol": "vmess",
-                  "settings": {"vnext": [{"address": host, "port": port, "users": [{"id": uuid, "alterId": int(c.get("aid", 0) or 0), "security": c.get("scy", "auto") or "auto"}]}]},
-                  "streamSettings": build_stream(network, security, query, host),
-              }
-
-          configured = []
-          for i in range(1, 11):
-              node = os.environ.get(f"XSERVER_{i}_XARY", "").strip()
-              if not node:
-                  continue
-              if node.startswith("vless://"):
-                  outbound = parse_vless(node)
-              elif node.startswith("vmess://"):
-                  outbound = parse_vmess(node)
-              else:
-                  print(f"⚠️ XSERVER_{i}_XARY 不支持的格式，跳过")
-                  continue
-              port = 7890 + i
-              config = {
-                  "log": {"loglevel": "warning"},
-                  "inbounds": [{"tag": "http-in", "port": port, "listen": "127.0.0.1", "protocol": "http", "settings": {}}],
-                  "outbounds": [{"tag": "proxy", **outbound}, {"tag": "direct", "protocol": "freedom", "settings": {}}],
-                  "routing": {"domainStrategy": "AsIs", "rules": [{"type": "field", "inboundTag": ["http-in"], "outboundTag": "proxy"}]},
-              }
-              with open(f"xray-{i}.json", "w") as f:
-                  json.dump(config, f, ensure_ascii=True, indent=2)
-              configured.append((i, port))
-              print(f"  ✅ 账号 {i} → 127.0.0.1:{port}")
-
-          if not configured:
-              raise SystemExit("没有成功生成任何账号代理配置")
-          with open("xray-accounts.txt", "w") as f:
-              for i, port in configured:
-                  f.write(f"{i} {port}\n")
-          with open("xray-start.sh", "w") as f:
-              f.write("#!/usr/bin/env bash\nset -e\n")
-              for i, port in configured:
-                  f.write(f"xray run -c xray-{i}.json > xray-{i}.log 2>&1 &\n")
-          PY
-
-          echo "🚀 启动代理..."
-          chmod +x xray-start.sh
-          ./xray-start.sh
-          sleep 3
-
-          echo "🔍 检查代理进程..."
-          if pgrep -x xray > /dev/null 2>&1; then
-              echo "✅ Xray 进程数: $(pgrep -x xray | wc -l)"
-          else
-              echo "❌ Xray 进程未运行！检查日志："
-              for f in xray-*.log; do
-                  [ -f "$f" ] && echo "--- $f ---" && cat "$f"
-              done
-              exit 1
-          fi
-          echo "🔍 逐账号连通性测试..."
-          proxy_failed=0
-          while read -r i port; do
-              if curl -fsS -o /dev/null --max-time 10 -x "http://127.0.0.1:$port" https://api.ipify.org; then
-                  echo "  ✅ 账号 $i 代理正常"
-              else
-                  echo "  ❌ 账号 $i 代理不可用，日志如下："
-                  [ -f "xray-$i.log" ] && cat "xray-$i.log"
-                  proxy_failed=1
-              fi
-          done < xray-accounts.txt
-          if [ "$proxy_failed" -ne 0 ]; then
-              echo "❌ 存在不可用的账号代理，停止续期"
-              exit 1
-          fi
+          bash scripts/xserver/setup_singbox.sh
 
       - name: 运行续期脚本
         env:
-          XSERVER_1: ${{ secrets.XSERVER_1 }}
-          XSERVER_2: ${{ secrets.XSERVER_2 }}
-          XSERVER_3: ${{ secrets.XSERVER_3 }}
-          XSERVER_4: ${{ secrets.XSERVER_4 }}
-          XSERVER_5: ${{ secrets.XSERVER_5 }}
-          XSERVER_6: ${{ secrets.XSERVER_6 }}
-          XSERVER_7: ${{ secrets.XSERVER_7 }}
-          XSERVER_8: ${{ secrets.XSERVER_8 }}
-          XSERVER_9: ${{ secrets.XSERVER_9 }}
-          XSERVER_10: ${{ secrets.XSERVER_10 }}
-          XSERVER_1_XARY: ${{ secrets.XSERVER_1_XARY }}
-          XSERVER_2_XARY: ${{ secrets.XSERVER_2_XARY }}
-          XSERVER_3_XARY: ${{ secrets.XSERVER_3_XARY }}
-          XSERVER_4_XARY: ${{ secrets.XSERVER_4_XARY }}
-          XSERVER_5_XARY: ${{ secrets.XSERVER_5_XARY }}
-          XSERVER_6_XARY: ${{ secrets.XSERVER_6_XARY }}
-          XSERVER_7_XARY: ${{ secrets.XSERVER_7_XARY }}
-          XSERVER_8_XARY: ${{ secrets.XSERVER_8_XARY }}
-          XSERVER_9_XARY: ${{ secrets.XSERVER_9_XARY }}
-          XSERVER_10_XARY: ${{ secrets.XSERVER_10_XARY }}
+          PYTHONIOENCODING: utf-8
+          XSERVER: ${{ secrets.XSERVER }}
+          XSERVER_PROXY: ${{ secrets.XSERVER_PROXY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ACCOUNTS_TO_RENEW: ALL
@@ -300,6 +112,12 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TG_CHAT_ID}" \
             --data-urlencode "text=${MSG}"
+
+      - name: 清理代理进程
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box-*.json sing-box-*.log sing-box
 
       - name: 清理旧运行
         if: always()
