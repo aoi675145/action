@@ -2,7 +2,7 @@ name:  ACLClouds 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '9 15 * * *' # 下一个: 2026-08-29 15:09 UTC / 2026-08-29 23:09 北京时间 (兜底方案)
+    - cron: '45 9 13 8 *' # 下一个: 2026-08-13 09:45 UTC / 2026-08-13 17:45 北京时间 (到期前1天执行)
 
 jobs:
   run_renewal:
@@ -396,13 +396,13 @@ jobs:
               with open(date_file, 'r', encoding='utf-8') as f:
                   content = f.read()
               
-              match = re.search(r'(\d+)\s*[dj]\s*(\d+)\s*h', content, re.IGNORECASE)
-              if match:
-                  days = int(match.group(1))
-                  hours = int(match.group(2))
-                  
+              match_d = re.search(r'(\d+)\s*[dj]', content, re.IGNORECASE)
+              match_h = re.search(r'(\d+)\s*h', content, re.IGNORECASE)
+              days = int(match_d.group(1)) if match_d else 0
+              hours = int(match_h.group(1)) if match_h else 0
+
+              if days or hours:
                   expire_time = now_utc + timedelta(days=days, hours=hours)
-                  
                   target_date = expire_time - timedelta(days=1)
 
           if target_date and target_date > now_utc:
