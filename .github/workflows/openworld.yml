@@ -5,6 +5,11 @@ on:
   schedule:
     - cron: '26 1 */5 * *' # 每5天 UTC 1:26 (北京时间 9:26),自行调整
 
+# 同一时刻只允许一个续期 run，避免并发提交 cookies.txt 互相顶掉
+concurrency:
+  group: openworld-renew
+  cancel-in-progress: false
+
 jobs:
   renew:
     runs-on: ubuntu-latest
@@ -16,6 +21,8 @@ jobs:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: private-repo
+          # 完整历史，便于推送前 rebase 到远端最新提交
+          fetch-depth: 0
           sparse-checkout: |
             scripts/openworld/openworld.py
             scripts/openworld/cookies.txt
@@ -33,14 +40,14 @@ jobs:
         run: |
           NODE_LINK="$Openworld_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
 
-      - name: 🛠️ 安装依赖
+      - name: 安装依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb fonts-noto-cjk
           pip install playwright requests ddddocr Pillow 'requests[socks]' websocket-client
           playwright install --with-deps chromium
 
-      - name: 🚀 运行 Openworld 续期脚本
+      - name: 运行 Openworld 续期脚本
         env:
           PYTHONIOENCODING: utf-8
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
@@ -54,7 +61,7 @@ jobs:
           set -o pipefail
           xvfb-run --auto-servernum python3 openworld.py 2>&1 | tee renew.log
 
-      - name: 📤 提交更新的 cookies.txt 回私库
+      - name: 提交更新的 cookies.txt 回私库
         if: success()
         working-directory: private-repo
         run: |
@@ -66,18 +73,30 @@ jobs:
             exit 0
           fi
           git commit -m "chore(openworld): update cookies.txt [skip ci]"
-          git push https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/aoi675145/scripts.git HEAD:main
 
-      - name: 📸 上传调试截图
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-screenshots
-          path: |
-            *.png
-            *.gif
-          if-no-files-found: ignore
-          retention-days: 3
+          PUSH_URL="https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/aoi675145/scripts.git"
+          PUSH_OK=""
+          for i in 1 2 3; do
+            # 推送前先同步远端（其他 run 可能已推过 cookies.txt），避免 non-fast-forward
+            git fetch origin main
+            if ! git rebase -X ours origin/main; then
+              echo "⚠️ rebase 失败，重试 $i/3"
+              git rebase --abort 2>/dev/null || true
+              sleep 5
+              continue
+            fi
+            if git push "$PUSH_URL" HEAD:main; then
+              PUSH_OK=1
+              break
+            fi
+            echo "⚠️ 推送被拒绝（远端有新提交），重试 $i/3"
+            sleep 5
+          done
+          if [ -z "$PUSH_OK" ]; then
+            echo "❌ 重试 3 次后仍未推送成功"
+            exit 1
+          fi
+          echo "✅ cookies.txt 已推送到私库"
 
       - name: 清理代理进程和临时文件
         if: always()
