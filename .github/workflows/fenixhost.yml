@@ -2,7 +2,7 @@ name: FenixHost 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '21 14 29 8 *' # 自动更新下次运行时间
+    - cron: '45 17 7 9 *' # 自动更新下次运行时间
 jobs:
   renew:
     runs-on: ubuntu-latest
