@@ -270,6 +270,13 @@ jobs:
           cat xray.log
           exit 1
 
+      - name: 🚫 屏蔽广告域名
+        run: |
+          for domain in pagead2.googlesyndication.com googleads.g.doubleclick.net www.googleadservices.com ep2.adtrafficquality.google 5gvci.com nap5k.com n6wxm.com; do
+            echo "0.0.0.0 $domain" | sudo tee -a /etc/hosts > /dev/null
+            echo "🚫 已屏蔽 $domain"
+          done
+
       - name: 🚀 运行 OriHost Python 脚本
         id: run_renew
         working-directory: scripts_repo/scripts/orihost
