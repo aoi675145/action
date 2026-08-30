@@ -3,7 +3,7 @@ name: VPSFREE 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '35 11 31 8 *' # 自动更新下次运行时间
+    - cron: '35 11 05 9 *' # 自动更新下次运行时间
 
 jobs:
   renew:
