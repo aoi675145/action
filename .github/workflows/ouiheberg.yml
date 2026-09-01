@@ -219,7 +219,6 @@ jobs:
           TG_BOT: ${{ secrets.TG_BOT }}
         run: |
           set -o pipefail
-          echo "执行脚本 SHA-256: $(sha256sum scripts/ouiheberg/ouiheberg.py | cut -d' ' -f1)"
           python3 scripts/ouiheberg/ouiheberg.py 2>&1 | tee ouiheberg-renew.log
 
       - name: 提取续期到期时间
