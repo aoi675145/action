@@ -2,7 +2,7 @@ name: OuiHeberg 续期 A
 
 on:
   schedule:
-    - cron: '17 1 2 9 *' # 自动更新：到期日当天运行
+    - cron: '17 1 * * *'
   workflow_dispatch:
 
 permissions:
@@ -17,7 +17,7 @@ jobs:
   renew-server-A:
     name: OuiHeberg 续期_A
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: 拉取私库 OuiHeberg 脚本
         uses: actions/checkout@v4
@@ -197,12 +197,20 @@ jobs:
 
       - name: 安装 Python 依赖和 UC 驱动
         run: |
-          python3 -m pip install --disable-pip-version-check 'requests[socks]' websocket-client python-socks seleniumbase
+          python3 -m pip install --disable-pip-version-check \
+            'requests[socks]>=2.32,<3' \
+            'websocket-client>=1.8,<2' \
+            'python-socks>=2.7,<3' \
+            'seleniumbase>=4.42,<5' \
+            'selenium>=4.35,<5'
           seleniumbase install uc_driver >/tmp/uc-driver-install.log 2>&1 || {
             cat /tmp/uc-driver-install.log
             exit 1
           }
           echo "✅ SeleniumBase UC 驱动已准备完成"
+          echo "Chrome: $(google-chrome --version 2>/dev/null || google-chrome-stable --version 2>/dev/null || true)"
+          echo "ChromeDriver: $(chromedriver --version 2>/dev/null || true)"
+          python3 -c 'import seleniumbase, selenium; print(f"SeleniumBase: {seleniumbase.__version__}"); print(f"Selenium: {selenium.__version__}")'
 
       - name: 执行 OuiHeberg 续期
         env:
