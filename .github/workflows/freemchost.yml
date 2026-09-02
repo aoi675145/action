@@ -3,7 +3,7 @@ name: Freemchost 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '39 0 * * *'
+    - cron: '16 0 * * *'
 
 permissions:
   actions: write

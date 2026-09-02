@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 每天北京时间 08:14（UTC 00:14）运行
-    - cron: "18 0 * * *"
+    - cron: "47 0 * * *"
 
 permissions:
   actions: write
