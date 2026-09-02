@@ -2,7 +2,7 @@ name: OuiHeberg 续期 A
 
 on:
   schedule:
-    - cron: '17 1 * * *'
+    - cron: '17 1 2 10 *' # 自动更新：到期日当天运行
   workflow_dispatch:
 
 permissions:
