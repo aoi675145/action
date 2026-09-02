@@ -33,21 +33,6 @@ jobs:
       - name: 安装依赖
         run: pip install --quiet "requests[socks]" websocket-client PySocks python-socks
 
-      - name: 校验必填 Secrets
-        env:
-          DISCORD_TOKEN_A: ${{ secrets.DISCORD_TOKEN_A }}
-          BOXMINE_PROXY:   ${{ secrets.BOXMINE_PROXY }}
-        run: |
-          if [ -z "$DISCORD_TOKEN_A" ]; then
-            echo "❌ DISCORD_TOKEN_A 未配置"
-            exit 1
-          fi
-          if [ -z "$BOXMINE_PROXY" ]; then
-            echo "❌ BOXMINE_PROXY 未配置"
-            exit 1
-          fi
-          echo "✅ 必填 Secrets 校验通过"
-
       - name: 配置 AFK 代理
         env:
           BOXMINE_PROXY: ${{ secrets.BOXMINE_PROXY }}
