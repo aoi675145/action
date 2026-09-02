@@ -2,7 +2,7 @@ name: SAP 保活
 
 on:
   schedule:
-    - cron: "28 1 */10 * *"   # 每10天运行一次（UTC 1点）
+    - cron: "50 1 */10 * *"   # 每10天运行一次（UTC 1点）
   workflow_dispatch:
 
 jobs:
