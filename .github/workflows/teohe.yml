@@ -3,7 +3,7 @@ name: TeoHeberg 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '6 0 * * *'
+    - cron: '33 0 * * *'
 
 jobs:
   run:

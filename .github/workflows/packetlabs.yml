@@ -2,7 +2,7 @@ name: Packetlabs 自动续期
 
 on:
   schedule:
-    - cron: '42 0 * * *'
+    - cron: '17 1 * * *'
   workflow_dispatch:
 
 jobs:
