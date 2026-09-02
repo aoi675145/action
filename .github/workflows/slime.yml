@@ -2,7 +2,7 @@ name: Slime Coins
 
 on:
   schedule:
-    - cron: '16 1 */2 * *'  # 北京时间 09:16，每两天一次
+    - cron: '15 1 */2 * *'  # 北京时间 09:16，每两天一次
   workflow_dispatch:
 
 permissions:
