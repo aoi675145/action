@@ -3,7 +3,7 @@ name: searcade 保活
 on:
   schedule:
     # 每 3 天跑一次，UTC 01:17 = 北京时间 09:17
-    - cron: '25 1 */3 * *'
+    - cron: '30 1 */3 * *'
   workflow_dispatch:
 
 jobs:
