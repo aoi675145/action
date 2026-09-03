@@ -34,7 +34,20 @@ jobs:
         env:
           EKNODES_PROXY: ${{ secrets.EKNODES_PROXY }}
         run: |
+          if [ -z "${EKNODES_PROXY:-}" ]; then
+            echo "❌ EKNODES_PROXY 未配置，已禁止直连，工作流终止"
+            exit 1
+          fi
+          echo "✅ 已检测到 EKNODES_PROXY，开始配置强制代理"
           NODE_LINK="$EKNODES_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+
+      - name: 验证代理环境
+        run: |
+          if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then
+            echo "❌ 代理脚本未生成有效的代理环境变量，已禁止继续运行"
+            exit 1
+          fi
+          echo "✅ 代理环境验证成功"
 
       - name: 安装 Python 依赖
         run: pip install 'requests[socks]'
