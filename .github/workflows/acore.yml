@@ -33,13 +33,6 @@ jobs:
           pip install seleniumbase 'requests[socks]'
           sudo apt-get install -y xvfb
 
-      - name: 🔧 修复 DNS
-        run: |
-          sudo systemctl stop systemd-resolved 2>/dev/null || true
-          sudo systemctl disable systemd-resolved 2>/dev/null || true
-          sudo rm -f /etc/resolv.conf
-          echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
-
       - name: 🌐 安装并启动代理
         env:
           ACORE_PROXY: ${{ secrets.ACORE_PROXY }}
