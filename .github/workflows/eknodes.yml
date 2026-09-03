@@ -43,6 +43,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           EKNODES: ${{ secrets.EKNODES }}
+          EKNODES_COOKIE_FILE: cookies.txt
           TG_BOT: ${{ secrets.TG_BOT }}
           IS_PROXY: ${{ env.IS_PROXY }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
@@ -50,6 +51,21 @@ jobs:
         run: |
           set -o pipefail
           python eknodes.py 2>&1 | tee renew.log
+
+      - name: 提交 Cookie 更新
+        if: success()
+        working-directory: private-repo
+        run: |
+          git config user.name "GitHub Actions"
+          git config user.email "actions@github.com"
+          if [[ -f scripts/eknodes/cookies.txt ]] && [[ -n $(git status --short scripts/eknodes/cookies.txt) ]]; then
+            git add scripts/eknodes/cookies.txt
+            git commit -m "Auto-update EkNodes auth session [skip ci]"
+            git pull --rebase origin main
+            git push origin HEAD:main
+          else
+            echo "Cookie 未生成或无变化，跳过提交"
+          fi
 
       - name: 清理代理进程和临时文件
         if: always()
