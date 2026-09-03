@@ -3,7 +3,7 @@ name: Openworld 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '35 1 */5 * *' # 每5天 UTC 1:26 (北京时间 9:26),自行调整
+    - cron: '26 1 */5 * *' # 每5天 UTC 1:26 (北京时间 9:26),自行调整
 
 # 同一时刻只允许一个续期 run，避免并发提交 cookies.txt 互相顶掉
 concurrency:
@@ -44,7 +44,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb fonts-noto-cjk
-          pip install playwright requests ddddocr Pillow 'requests[socks]' websocket-client
+          pip install playwright requests ddddocr Pillow 'requests[socks]' websocket-client opencv-python-headless
           playwright install --with-deps chromium
 
       - name: 运行 Openworld 续期脚本
@@ -56,6 +56,8 @@ jobs:
           HEADLESS: "true"
           IS_PROXY: ${{ env.IS_PROXY }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
+          # 定时触发=续期+检查开机；手动触发=仅检查状态+开机，不续期
+          START_ONLY: ${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}
         working-directory: private-repo/scripts/openworld
         run: |
           set -o pipefail
