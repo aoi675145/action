@@ -3,8 +3,7 @@ name: EkNodes 续期
 on:
   workflow_dispatch:
   schedule:
-    # 每 2 天运行一次（UTC），可自行调整
-    - cron: "0 3 */2 * *"
+    - cron: "55 1 */5 * *"
 
 concurrency:
   group: eknodes-renew
