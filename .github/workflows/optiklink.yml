@@ -420,7 +420,7 @@ jobs:
           DISCORD_TOKEN_K:   ${{ secrets.DISCORD_TOKEN_K }}
           TG_BOT:            ${{ secrets.TG_BOT }}
           GOST_PROXY:        ${{ env.LOCAL_PROXY }}
-        run: python scripts/optikLink/py/optiklink.py
+        run: python scripts/optikLink/optiklink.py
 
       - name: 发送失败通知
         if: failure() && steps.keepalive.outcome == 'failure'
