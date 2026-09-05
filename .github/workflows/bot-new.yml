@@ -3,7 +3,7 @@ name: Bot-New 续期
 on:
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为固定日期（北京 09:17）
-    - cron: "17 1 5 9 *"
+    - cron: "17 1 8 9 *"
   workflow_dispatch:
 
 jobs:
