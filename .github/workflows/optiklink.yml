@@ -16,16 +16,18 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 安装 Python
-        uses: actions/setup-python@v5
+      - name: 安装 Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.12'
+          node-version: '22'
 
-      - name: 安装 Playwright
-        run: |
-          pip install --upgrade pip
-          pip install playwright
-          python -m playwright install --with-deps chromium
+      - name: 安装依赖
+        working-directory: scripts/optikLink
+        run: npm install
+
+      - name: 安装 Playwright 浏览器
+        working-directory: scripts/optikLink
+        run: npx playwright install chromium --with-deps
 
       - name: 解析节点并启动 Xray 代理
         env:
@@ -416,12 +418,13 @@ jobs:
 
       - name: 运行保活脚本
         id: keepalive
+        working-directory: scripts/optikLink
         env:
           DISCORD_TOKEN_K:   ${{ secrets.DISCORD_TOKEN_K }}
           OPTIKLINK:     ${{ secrets.OPTIKLINK }}
           TG_BOT:            ${{ secrets.TG_BOT }}
           GOST_PROXY:        ${{ env.LOCAL_PROXY }}
-        run: python scripts/optikLink/optiklink.py
+        run: npx playwright test
 
       - name: 发送失败通知
         if: failure() && steps.keepalive.outcome == 'failure'
@@ -477,7 +480,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: failure-screenshots
-          path: test-results/
+          path: scripts/optikLink/test-results/
           retention-days: 7
 
       - name: 清理运行记录
