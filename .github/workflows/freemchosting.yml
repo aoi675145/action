@@ -1,0 +1,122 @@
+name: FMCH Coins
+
+on:
+  # schedule:
+    # ⏸️ 自动跑暂停：等 Packet blocked 修复验证后再恢复（手动 dispatch 不受影响）
+    # 00:05 UTC = 08:05 北京时间（额度 00:00 UTC 重置）
+    # - cron: "5 0 * * *"
+  workflow_dispatch:
+    inputs:
+      rounds:
+        description: "轮数安全上限（自动跑满 15/15 后提前停）"
+        required: false
+        default: "20"
+
+jobs:
+  claim:
+    name: 执行领奖
+    runs-on: ubuntu-latest
+    timeout-minutes: 330
+    permissions:
+      contents: write
+      actions: write
+
+    steps:
+      - name: 📥 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/freemchosting/freemchosting.py
+            scripts/setup_proxy.sh.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 🐍 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 📦 安装系统依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb tzdata
+          sudo timedatectl set-timezone America/Denver 2>/dev/null || true
+          # filelock 3.32.5 起对同线程嵌套 FileLock 抛 Deadlock，会打断
+          # SeleniumBase UC 模式的 pyautogui.lock 获取；脚本启动时会给
+          # pyautogui.lock 打 is_singleton 单例补丁，这里固定 3.32.5
+          # 以免后续版本行为再变。
+          python -m pip install --disable-pip-version-check --no-cache-dir "filelock==3.32.5" seleniumbase
+
+      - name: 🌐 设置代理 (sing-box)
+        env:
+          FMCH_PROXY: ${{ secrets.FMCH_PROXY }}
+        run: |
+          NODE_LINK="$FMCH_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+
+      - name: 检查脚本代理出口
+        run: |
+          if [ -z "${PROXY_SERVER}" ]; then
+            echo "[ERROR] PROXY_SERVER 为空，禁止直连"
+            exit 1
+          fi
+
+          echo "[INFO] 检查代理出口 IP..."
+          curl -fsS --max-time 20 --proxy "${PROXY_SERVER}" https://api.ipify.org 2>/dev/null | python3 -c "
+          import sys
+          ip = sys.stdin.read().strip()
+          parts = ip.split('.')
+          if len(parts) == 4:
+              print(f'[INFO] 代理出口 IP: {parts[0]}.xxx.xxx.{parts[3]}')
+          elif len(ip) > 8:
+              print(f'[INFO] 代理出口 IP: {ip[:4]}***{ip[-4:]}')
+          else:
+              print('[INFO] 代理出口 IP: ***')
+          "
+
+          echo "[INFO] 检查 FreemcHosting 可访问..."
+          STATUS=$(curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://dash.freemchosting.com/ 2>/dev/null | head -1)
+          echo "[INFO] $STATUS"
+
+      - name: 🚀 运行领奖脚本
+        env:
+          FMCH: ${{ secrets.FMCH }}
+          FMCH_COOKIES_B64: ${{ secrets.FMCH_COOKIES_B64 }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          FMCH_PROXY: ${{ env.PROXY_SERVER }}
+          MAX_ROUNDS: ${{ github.event.inputs.rounds || '20' }}
+          # 时区与出口 IP 对齐：loot 反 VPN 检测会比对浏览器时区与
+          # IP 归属地（run8 时 CI 是 UTC，日本 IP 差 9 小时，本地
+          # Asia/Shanghai 差 1 小时能过）
+          TZ: America/Denver
+        working-directory: private-repo/scripts/freemchosting
+        run: |
+          set -o pipefail
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x2400x24" python freemchosting.py 2>&1 | tee claim.log
+
+      - name: 🧹 清理代理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-config.json sing-box.log
+
+      - name: 📦 上传运行日志
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: claim-log-${{ github.run_number }}
+          path: |
+            private-repo/scripts/freemchosting/claim.log
+            private-repo/scripts/freemchosting/screenshots/
+
+      - name: 🧹 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 5
