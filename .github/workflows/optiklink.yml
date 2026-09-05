@@ -5,7 +5,7 @@ on:
   workflow_dispatch:
 jobs:
   keepalive:
-    name: 执行保活 (Python)
+    name: 执行保活
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
