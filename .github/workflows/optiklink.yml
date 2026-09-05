@@ -1,7 +1,7 @@
 name: OptikLink-Keep
 on:
   schedule:
-    - cron: '25 1 */2 * *'
+    - cron: '23 1 */2 * *'
   workflow_dispatch:
 jobs:
   keepalive:
@@ -16,18 +16,16 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 安装 Node.js
-        uses: actions/setup-node@v4
+      - name: 安装 Python
+        uses: actions/setup-python@v5
         with:
-          node-version: '22'
+          python-version: '3.12'
 
-      - name: 安装依赖
-        working-directory: scripts/optikLink
-        run: npm install
-
-      - name: 安装 Playwright 浏览器
-        working-directory: scripts/optikLink
-        run: npx playwright install chromium --with-deps
+      - name: 安装 Playwright
+        run: |
+          pip install --upgrade pip
+          pip install playwright
+          python -m playwright install --with-deps chromium
 
       - name: 解析节点并启动 Xray 代理
         env:
@@ -64,8 +62,6 @@ jobs:
               f.write("tls:\n")
               f.write(f"  sni: {json.dumps(sni)}\n")
               f.write(f"  insecure: {'true' if insecure else 'false'}\n")
-              f.write("socks5:\n")
-              f.write("  listen: 127.0.0.1:10808\n")
           print(f"[INFO] Hysteria2 -> {parsed.hostname[:2]}***{parsed.hostname[-2:]}:{parsed.port}")
           PYEOF
 
@@ -95,7 +91,7 @@ jobs:
           unzip -oq Xray-linux-64.zip -d xray-bin
           chmod +x xray-bin/xray
           sudo mv xray-bin/xray /usr/local/bin/xray
-          
+
           # 2. 运行 Python 脚本解析节点并生成配置文件
           python3 << 'PYEOF'
           import os, sys, json, base64
@@ -155,12 +151,12 @@ jobs:
                   host_port, params_str = rest.split("?", 1)
               else:
                   host_port, params_str = rest, ""
-              
+
               if ":" in host_port:
                   address, port = host_port.rsplit(":", 1)
               else:
                   address, port = host_port, "443"
-              
+
               params = parse_qs(params_str)
               security = params.get("security", ["none"])[0]
               network = params.get("type", ["tcp"])[0]
@@ -171,9 +167,9 @@ jobs:
               sid = params.get("sid", [""])[0]
               host = params.get("host", [sni])[0]
               path = unquote(params.get("path", ["/"])[0])
-              
+
               print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
-              
+
               outbound = {
                   "protocol": "vless",
                   "settings": {
@@ -188,10 +184,10 @@ jobs:
                       "security": security
                   }
               }
-              
+
               if flow:
                   outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
-              
+
               if security == "reality":
                   rs = {
                       "serverName": sni,
@@ -207,18 +203,17 @@ jobs:
                       "fingerprint": fp,
                       "allowInsecure": False
                   }
-              
+
               if network == "ws":
                   outbound["streamSettings"]["wsSettings"] = {
                       "path": path,
                       "headers": {"Host": host}
                   }
               elif network == "grpc":
-                  service_name = params.get("serviceName", [""])[0]
                   outbound["streamSettings"]["grpcSettings"] = {
                       "serviceName": service_name
                   }
-              
+
               config["outbounds"].append(outbound)
 
           elif protocol == "vmess":
@@ -231,7 +226,7 @@ jobs:
               except Exception as e:
                   print(f"[ERROR] VMess 解析失败: {e}")
                   sys.exit(1)
-              
+
               address = vm.get("add", "")
               port = int(vm.get("port", 443))
               uuid = vm.get("id", "")
@@ -242,9 +237,9 @@ jobs:
               host = vm.get("host", address)
               path = vm.get("path", "/")
               fp = vm.get("fp", "chrome")
-              
+
               print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
-              
+
               outbound = {
                   "protocol": "vmess",
                   "settings": {
@@ -259,20 +254,24 @@ jobs:
                       "security": "tls" if tls == "tls" else "none"
                   }
               }
-              
+
               if tls == "tls":
                   outbound["streamSettings"]["tlsSettings"] = {
                       "serverName": sni,
                       "fingerprint": fp,
                       "allowInsecure": False
                   }
-              
+
               if network == "ws":
                   outbound["streamSettings"]["wsSettings"] = {
                       "path": path,
                       "headers": {"Host": host}
                   }
-              
+              elif network == "grpc":
+                  outbound["streamSettings"]["grpcSettings"] = {
+                      "serviceName": service_name
+                  }
+
               config["outbounds"].append(outbound)
 
           elif protocol == "trojan":
@@ -281,21 +280,21 @@ jobs:
                   host_port, params_str = rest.split("?", 1)
               else:
                   host_port, params_str = rest, ""
-              
+
               if ":" in host_port:
                   address, port = host_port.rsplit(":", 1)
               else:
                   address, port = host_port, "443"
-              
+
               params = parse_qs(params_str)
               sni = params.get("sni", [address])[0]
               network = params.get("type", ["tcp"])[0]
               host = params.get("host", [sni])[0]
               path = unquote(params.get("path", ["/"])[0])
               fp = params.get("fp", ["chrome"])[0]
-              
+
               print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
-              
+
               outbound = {
                   "protocol": "trojan",
                   "settings": {
@@ -315,13 +314,17 @@ jobs:
                       }
                   }
               }
-              
+
               if network == "ws":
                   outbound["streamSettings"]["wsSettings"] = {
                       "path": path,
                       "headers": {"Host": host}
                   }
-              
+              elif network == "grpc":
+                  outbound["streamSettings"]["grpcSettings"] = {
+                      "serviceName": service_name
+                  }
+
               config["outbounds"].append(outbound)
 
           elif protocol == "ss":
@@ -337,7 +340,7 @@ jobs:
                           padding = 4 - len(decoded_userinfo) % 4
                           if padding != 4:
                               decoded_userinfo += "=" * padding
-                          decoded_userinfo = base64.urlsafe_b64decode(decoded_userinfo).decode("utf-8")
+                          decoded = base64.urlsafe_b64decode(decoded_userinfo).decode("utf-8")
                       method, password = decoded_userinfo.split(":", 1)
                   else:
                       raw = content.split("#", 1)[0].split("?", 1)[0]
@@ -362,7 +365,7 @@ jobs:
                   "settings": {
                       "servers": [{
                           "address": address,
-                          "port": int(port),
+                          "port": port,
                           "method": method,
                           "password": password
                       }]
@@ -413,13 +416,12 @@ jobs:
 
       - name: 运行保活脚本
         id: keepalive
-        working-directory: scripts/optikLink
         env:
           DISCORD_TOKEN_K:   ${{ secrets.DISCORD_TOKEN_K }}
           OPTIKLINK:     ${{ secrets.OPTIKLINK }}
           TG_BOT:            ${{ secrets.TG_BOT }}
           GOST_PROXY:        ${{ env.LOCAL_PROXY }}
-        run: npx playwright test
+        run: python scripts/optikLink/optiklink.py
 
       - name: 发送失败通知
         if: failure() && steps.keepalive.outcome == 'failure'
@@ -475,7 +477,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: failure-screenshots
-          path: scripts/optikLink/test-results/
+          path: test-results/
           retention-days: 7
 
       - name: 清理运行记录
