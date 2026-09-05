@@ -30,6 +30,7 @@ jobs:
           path: private-repo
           sparse-checkout: |
             scripts/freemchosting/freemchosting.py
+            scripts/freemchosting/cookies.txt
             scripts/setup_proxy.sh.sh
           sparse-checkout-cone-mode: false
 
@@ -82,7 +83,6 @@ jobs:
       - name: 🚀 运行领奖脚本
         env:
           FMCH: ${{ secrets.FMCH }}
-          FMCH_COOKIES_B64: ${{ secrets.FMCH_COOKIES_B64 }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           FMCH_PROXY: ${{ env.PROXY_SERVER }}
@@ -96,20 +96,25 @@ jobs:
           set -o pipefail
           xvfb-run --auto-servernum --server-args="-screen 0 1280x2400x24" python freemchosting.py 2>&1 | tee claim.log
 
+      - name: 💾 回写 cookies.txt 到私库
+        if: always()
+        working-directory: private-repo
+        run: |
+          git config user.name "fmch-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add scripts/freemchosting/cookies.txt
+          if git diff --cached --quiet; then
+            echo "cookies.txt 无变化，跳过提交"
+          else
+            git commit -m "chore: refresh fmch session cookies [skip ci]"
+            git push
+          fi
+
       - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
-
-      - name: 📦 上传运行日志
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: claim-log-${{ github.run_number }}
-          path: |
-            private-repo/scripts/freemchosting/claim.log
-            private-repo/scripts/freemchosting/screenshots/
 
       - name: 🧹 清理运行记录
         if: always()
