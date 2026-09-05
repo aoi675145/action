@@ -1,11 +1,11 @@
-name: OptikLink-Keep
+name: OptikLink-Keep-Py
 on:
   schedule:
     - cron: '23 1 */2 * *'
   workflow_dispatch:
 jobs:
   keepalive:
-    name: 执行保活
+    name: 执行保活 (Python)
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -16,18 +16,16 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 安装 Node.js
-        uses: actions/setup-node@v4
+      - name: 安装 Python
+        uses: actions/setup-python@v5
         with:
-          node-version: '22'
+          python-version: '3.12'
 
-      - name: 安装依赖
-        working-directory: scripts/optikLink
-        run: npm install
-
-      - name: 安装 Playwright 浏览器
-        working-directory: scripts/optikLink
-        run: npx playwright install chromium --with-deps
+      - name: 安装 Playwright
+        run: |
+          pip install --upgrade pip
+          pip install playwright
+          python -m playwright install --with-deps chromium
 
       - name: 解析节点并启动 Xray 代理
         env:
@@ -418,13 +416,11 @@ jobs:
 
       - name: 运行保活脚本
         id: keepalive
-        working-directory: scripts/optikLink
         env:
           DISCORD_TOKEN_K:   ${{ secrets.DISCORD_TOKEN_K }}
-          OPTIKLINK:     ${{ secrets.OPTIKLINK }}
           TG_BOT:            ${{ secrets.TG_BOT }}
           GOST_PROXY:        ${{ env.LOCAL_PROXY }}
-        run: npx playwright test
+        run: python scripts/optikLink/py/optiklink.py
 
       - name: 发送失败通知
         if: failure() && steps.keepalive.outcome == 'failure'
@@ -444,7 +440,7 @@ jobs:
 
           const text = [
             '🎮 OptikLink 保活通知',
-            '📊 执行结果: ❌ GitHub Actions 执行失败',
+            '📊 执行结果: ❌ GitHub Actions 执行失败 (Python)',
             `🔗 运行日志: ${process.env.RUN_URL}`,
           ].join('\n');
 
@@ -479,8 +475,8 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: failure-screenshots
-          path: scripts/optikLink/test-results/
+          name: failure-screenshots-py
+          path: test-results/
           retention-days: 7
 
       - name: 清理运行记录
