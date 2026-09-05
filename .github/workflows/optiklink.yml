@@ -1,4 +1,4 @@
-name: OptikLink-Keep-Py
+name: OptikLink-Keep
 on:
   schedule:
     - cron: '23 1 */2 * *'
