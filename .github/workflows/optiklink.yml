@@ -26,6 +26,7 @@ jobs:
           pip install --upgrade pip
           pip install playwright
           python -m playwright install --with-deps chromium
+          sudo apt-get update && sudo apt-get install -y xvfb
 
       - name: 解析节点并启动 Xray 代理
         env:
@@ -420,7 +421,7 @@ jobs:
           DISCORD_TOKEN_K:   ${{ secrets.DISCORD_TOKEN_K }}
           TG_BOT:            ${{ secrets.TG_BOT }}
           GOST_PROXY:        ${{ env.LOCAL_PROXY }}
-        run: python scripts/optikLink/optiklink.py
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/optikLink/optiklink.py
 
       - name: 发送失败通知
         if: failure() && steps.keepalive.outcome == 'failure'
