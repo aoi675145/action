@@ -1,10 +1,10 @@
 name: FMCH Coins
 
 on:
-  # schedule:
-    # ⏸️ 自动跑暂停：等 Packet blocked 修复验证后再恢复（手动 dispatch 不受影响）
-    # 00:05 UTC = 08:05 北京时间（额度 00:00 UTC 重置）
-    # - cron: "5 0 * * *"
+  schedule:
+    # 北京时间每天 10:05（UTC 02:05）；GitHub 定时可能有几分钟延迟
+    - cron: "5 2 * * *"
+
   workflow_dispatch:
     inputs:
       rounds:
@@ -14,7 +14,7 @@ on:
 
 jobs:
   claim:
-    name: 执行领奖
+    name: 金币领取
     runs-on: ubuntu-latest
     timeout-minutes: 330
     permissions:
