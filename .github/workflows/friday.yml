@@ -1,0 +1,128 @@
+name: Friday 续期
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 0 * * *' # 自动更新下次运行时间
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: write
+      contents: write
+
+    steps:
+      - name: 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/friday/friday.py
+            scripts/setup_proxy.sh.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 拉取工作流仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/action
+          token: ${{ secrets.REPO_TOKEN }}
+          path: action_repo
+          sparse-checkout: |
+            .github/workflows/friday.yml
+          sparse-checkout-cone-mode: false
+
+      - name: 设置 Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: 设置代理 (sing-box)
+        env:
+          FRIDAY_PROXY: ${{ secrets.FRIDAY_PROXY }}
+        run: |
+          if [ -z "$FRIDAY_PROXY" ]; then
+            echo "::error::FRIDAY_PROXY 未配置，本工作流不允许直连"
+            exit 1
+          fi
+          NODE_LINK="$FRIDAY_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+
+      - name: 安装 Python 依赖
+        run: pip install 'requests[socks]'
+
+      - name: 执行续期
+        env:
+          PYTHONIOENCODING: utf-8
+          FRIDAY: ${{ secrets.FRIDAY }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+          IS_PROXY: ${{ env.IS_PROXY }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+        working-directory: private-repo/scripts/friday
+        run: |
+          set -o pipefail
+          python friday.py 2>&1 | tee renew.log
+
+      - name: 自动修改下一次运行时间
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          WORKFLOW_FILE: action_repo/.github/workflows/friday.yml
+        run: |
+          python3 << 'EOF'
+          import re, os
+          from datetime import datetime, timedelta
+          workflow_file = os.environ.get("WORKFLOW_FILE")
+          date_file = 'private-repo/scripts/friday/next_time.txt'
+          now = datetime.utcnow()
+          target = None
+          if os.path.exists(date_file):
+              with open(date_file, 'r', encoding='utf-8') as f:
+                  content = f.read().strip()
+              try:
+                  target = datetime.strptime(content, "%Y-%m-%d %H:%M")
+              except ValueError:
+                  pass
+          if not target or target <= now:
+              target = now + timedelta(hours=1)
+          new_cron = f"{target.minute} {target.hour} {target.day} {target.month} *"
+          bj = target + timedelta(hours=8)
+          next_date_str = f"{target.strftime('%Y-%m-%d %H:%M')} UTC / {bj.strftime('%Y-%m-%d %H:%M')} 北京时间"
+          try:
+              with open(workflow_file, 'r', encoding='utf-8') as f:
+                  content = f.read()
+              new_content = re.sub(
+                  r"- cron: '.*?'.*",
+                  f"- cron: '{new_cron}' # 下一个: {next_date_str}",
+                  content, count=1
+              )
+              with open(workflow_file, 'w', encoding='utf-8') as f:
+                  f.write(new_content)
+              print(f"✅ 已更新下次运行: {new_cron} ({next_date_str})")
+          except Exception as e:
+              print(f"❌ 修改 yml 失败: {e}")
+              exit(1)
+          EOF
+          git -C action_repo config user.name "github-actions[bot]"
+          git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C action_repo add .github/workflows/friday.yml
+          git -C action_repo commit -m "🚀 auto: 精准锁定 Friday 续期下次运行" || echo "无 Cron 变更需要提交"
+          git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
+          git -C action_repo push --force
+
+      - name: 清理代理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-config.json sing-box.log
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 4
