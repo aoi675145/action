@@ -3,7 +3,7 @@ name: hnhost 签到
 on:
   workflow_dispatch:
   schedule:
-    - cron: '36 2 * * *'
+    - cron: '36 0 * * *'
 
 permissions:
   actions: write
@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
 
       - name: 安装依赖
-        run: pip install --quiet 'requests[socks]'
+        run: pip install --quiet 'requests[socks]' seleniumbase
 
       - name: 安装并启动代理
         env:
@@ -288,7 +288,7 @@ jobs:
 
       - name: 运行签到脚本
         env:
-          DISCORD_TOKEN:                ${{ secrets.DISCORD_TOKEN }}
+          HNHOST:                       ${{ secrets.HNHOST }}
           TG_BOT_TOKEN:                 ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:                   ${{ secrets.TG_CHAT_ID }}
           PROXY_URL:                    ${{ env.PROXY_URL }}
