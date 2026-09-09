@@ -74,8 +74,6 @@ jobs:
       - name: 修复 apt 源
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
-          # 直接整体重写 ubuntu.sources 为官方 https 源（deb822 格式），
-          # 不再依赖 mirror+file:///etc/apt/apt-mirrors.txt（azure 镜像，经常超时）
           sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null <<'EOF'
           Types: deb
           URIs: https://archive.ubuntu.com/ubuntu/
@@ -94,14 +92,16 @@ jobs:
       - name: 安装系统依赖
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
-          sudo apt-get -o Acquire::http::Proxy=http://127.0.0.1:1081 -o Acquire::https::Proxy=http://127.0.0.1:1081 -o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15 update
-          sudo apt-get -o Acquire::http::Proxy=http://127.0.0.1:1081 -o Acquire::https::Proxy=http://127.0.0.1:1081 install -y xvfb x11-utils xdotool scrot fonts-nanum fonts-noto-cjk jq
+          # apt 直连 GitHub runner 内置源即可（前面已改写为官方 https 源），
+          # 不走 sing-box 代理——代理只给浏览器访问 weirdhost 用
+          sudo apt-get -o Acquire::Retries=3 update
+          sudo apt-get install -y xvfb xdotool fonts-noto-cjk jq
 
       - name: 安装 Python 依赖
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
-          python -m pip install --proxy http://127.0.0.1:1081 --upgrade pip
-          pip install --proxy http://127.0.0.1:1081 seleniumbase aiohttp pynacl
+          # pip 直连 pypi，不走代理
+          pip install seleniumbase aiohttp pynacl
 
       - name: 屏蔽广告域名
         if: steps.check_renew.outputs.need_renew == 'true'
