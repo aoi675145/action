@@ -2,7 +2,7 @@ name: Friday 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 0 * * *' # 自动更新下次运行时间
+    - cron: '3 5 9 9 *' # 下一个: 2026-09-09 05:03 UTC / 2026-09-09 13:03 北京时间
 
 jobs:
   renew:
