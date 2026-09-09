@@ -293,7 +293,8 @@ jobs:
           TG_CHAT_ID:                   ${{ secrets.TG_CHAT_ID }}
           PROXY_URL:                    ${{ env.PROXY_URL }}
           PYTHONUNBUFFERED:             1
-        run: python scripts/hnhost/main.py
+        # xvfb 虚拟显示器跑有头浏览器，UC 模式过 CF 需要（与参考项目一致）
+        run: xvfb-run -a python scripts/hnhost/main.py
 
       - name: 清理运行记录
         if: always()
