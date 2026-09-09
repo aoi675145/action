@@ -1,8 +1,10 @@
 name: Friday 续期
+
 on:
-  workflow_dispatch:
   schedule:
-    - cron: '26 10 9 9 *' # 下一个: 2026-09-09 10:26 UTC / 2026-09-09 18:26 北京时间
+    # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为固定日期（北京 09:23）
+    - cron: "23 1 11 9 *"
+  workflow_dispatch:  # 允许手动触发
 
 jobs:
   renew:
@@ -64,52 +66,24 @@ jobs:
           set -o pipefail
           python friday.py 2>&1 | tee renew.log
 
-      - name: 自动修改下一次运行时间
+      - name: 修改 cron
         if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          WORKFLOW_FILE: action_repo/.github/workflows/friday.yml
         run: |
-          python3 << 'EOF'
-          import re, os
-          from datetime import datetime, timedelta
-          workflow_file = os.environ.get("WORKFLOW_FILE")
-          date_file = 'private-repo/scripts/friday/next_time.txt'
-          now = datetime.utcnow()
-          target = None
-          if os.path.exists(date_file):
-              with open(date_file, 'r', encoding='utf-8') as f:
-                  content = f.read().strip()
-              try:
-                  target = datetime.strptime(content, "%Y-%m-%d %H:%M")
-              except ValueError:
-                  pass
-          if not target or target <= now:
-              target = now + timedelta(hours=1)
-          new_cron = f"{target.minute} {target.hour} {target.day} {target.month} *"
-          bj = target + timedelta(hours=8)
-          next_date_str = f"{target.strftime('%Y-%m-%d %H:%M')} UTC / {bj.strftime('%Y-%m-%d %H:%M')} 北京时间"
-          try:
-              with open(workflow_file, 'r', encoding='utf-8') as f:
-                  content = f.read()
-              new_content = re.sub(
-                  r"- cron: '.*?'.*",
-                  f"- cron: '{new_cron}' # 下一个: {next_date_str}",
-                  content, count=1
-              )
-              with open(workflow_file, 'w', encoding='utf-8') as f:
-                  f.write(new_content)
-              print(f"✅ 已更新下次运行: {new_cron} ({next_date_str})")
-          except Exception as e:
-              print(f"❌ 修改 yml 失败: {e}")
-              exit(1)
-          EOF
+          NEXT_FILE=private-repo/scripts/friday/next_run.txt
+          if [ ! -f "$NEXT_FILE" ]; then
+            echo "next_run.txt 不存在，跳过 cron 更新"
+            exit 0
+          fi
+          next_cron=$(tr -d '\n\r' < "$NEXT_FILE")
+          echo "cron: $next_cron"
+          git -C action_repo remote set-url origin https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/aoi675145/action.git
+          git -C action_repo fetch origin
+          git -C action_repo reset --hard origin/main
+          sed -i "s/- cron: \".*\"/- cron: \"$next_cron\"/" action_repo/.github/workflows/friday.yml
           git -C action_repo config user.name "github-actions[bot]"
           git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
           git -C action_repo add .github/workflows/friday.yml
-          git -C action_repo commit -m "🚀 auto: 精准锁定 Friday 续期下次运行" || echo "无 Cron 变更需要提交"
-          git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
-          git -C action_repo push --force
+          git -C action_repo diff --cached --quiet || (git -C action_repo commit -m "auto: cron $next_cron" && git -C action_repo push --quiet && echo "✅ Cron 已更新")
 
       - name: 清理代理进程和临时文件
         if: always()
