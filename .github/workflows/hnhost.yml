@@ -26,7 +26,7 @@ jobs:
           python-version: '3.11'
 
       - name: 安装依赖
-        run: pip install --quiet 'requests[socks]' seleniumbase
+        run: pip install --quiet 'requests[socks]'
 
       - name: 安装并启动代理
         env:
@@ -288,13 +288,12 @@ jobs:
 
       - name: 运行签到脚本
         env:
-          HNHOST:                       ${{ secrets.HNHOST }}
+          DISCORD_TOKEN:                ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN:                 ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:                   ${{ secrets.TG_CHAT_ID }}
           PROXY_URL:                    ${{ env.PROXY_URL }}
           PYTHONUNBUFFERED:             1
-        # xvfb 虚拟显示器跑有头浏览器，UC 模式过 CF 需要（与参考项目一致）
-        run: xvfb-run -a python scripts/hnhost/main.py
+        run: python scripts/hnhost/main.py
 
       - name: 清理运行记录
         if: always()
