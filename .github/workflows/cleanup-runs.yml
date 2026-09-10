@@ -2,11 +2,11 @@ name: Cleanup
 
 on:
   schedule:
-    - cron: '0 3 */10 * *'   # 每月 1、11、21 日的 UTC 3 点（北京时间 11 点）跑一次，约每 10 天清理一次
-  workflow_dispatch:          # 支持在 Actions 页面手动触发（第一次建议手动跑，清掉存量）
+    - cron: '0 3 */10 * *'  
+  workflow_dispatch:         
 
 permissions:
-  actions: write              # 删除运行记录所需的权限，用仓库自带 GITHUB_TOKEN 即可
+  actions: write             
   contents: read
 
 jobs:
