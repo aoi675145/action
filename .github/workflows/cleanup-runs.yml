@@ -1,0 +1,46 @@
+name: 清理历史运行记录
+
+on:
+  schedule:
+    - cron: '0 3 */10 * *'   # 每月 1、11、21 日的 UTC 3 点（北京时间 11 点）跑一次，约每 10 天清理一次
+  workflow_dispatch:        # 支持在 Actions 页面手动触发（第一次建议手动跑，清掉存量）
+
+permissions:
+  actions: write            # 删除运行记录所需的最小权限，用仓库自带 GITHUB_TOKEN 即可，无需个人 token
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 删除 15 天前的运行记录
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cutoff=$(date -u -d "15 days ago" +%Y-%m-%dT%H:%M:%SZ)
+          echo "将删除 $cutoff 之前的运行记录..."
+
+          ids=$(gh run list --repo "$REPO" \
+                 --json databaseId,createdAt,status --limit 1000 \
+               | jq -r --arg cutoff "$cutoff" '
+                   .[]
+                   | select(.createdAt < $cutoff and
+                            (.status == "completed" or .status == "failure" or .status == "cancelled" or .status == "skipped"))
+                   | .databaseId')
+
+          total=$(printf '%s' "$ids" | grep -c . || true)
+          echo "共 $total 条待删除"
+
+          deleted=0
+          while IFS= read -r id; do
+            [ -z "$id" ] && continue
+            if gh api -X DELETE "repos/$REPO/actions/runs/$id" --retry 3 --retry-delay 2 >/dev/null 2>&1; then
+              deleted=$((deleted+1))
+            else
+              echo "  删除失败（明天会重试）: run id $id"
+            fi
+            sleep 1
+          done <<< "$ids"
+
+          echo "完成: 成功删除 $deleted / $total 条"
