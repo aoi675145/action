@@ -107,7 +107,9 @@ jobs:
             echo "cookies.txt 无变化，跳过提交"
           else
             git commit -m "chore: refresh fmch session cookies [skip ci]"
-            git push
+            # 多 workflow 并发回写同一私库：先拉再推，冲突时重试一次
+            git pull --rebase origin main || true
+            git push || (git pull --rebase origin main && git push)
           fi
 
       - name: 🧹 清理代理进程和临时文件
