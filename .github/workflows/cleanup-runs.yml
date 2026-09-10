@@ -1,12 +1,13 @@
-name: 清理历史运行记录
+name: Cleanup
 
 on:
   schedule:
     - cron: '0 3 */10 * *'   # 每月 1、11、21 日的 UTC 3 点（北京时间 11 点）跑一次，约每 10 天清理一次
-  workflow_dispatch:        # 支持在 Actions 页面手动触发（第一次建议手动跑，清掉存量）
+  workflow_dispatch:          # 支持在 Actions 页面手动触发（第一次建议手动跑，清掉存量）
 
 permissions:
-  actions: write            # 删除运行记录所需的最小权限，用仓库自带 GITHUB_TOKEN 即可，无需个人 token
+  actions: write              # 删除运行记录所需的权限，用仓库自带 GITHUB_TOKEN 即可
+  contents: read
 
 jobs:
   cleanup:
@@ -25,22 +26,32 @@ jobs:
                  --json databaseId,createdAt,status --limit 1000 \
                | jq -r --arg cutoff "$cutoff" '
                    .[]
-                   | select(.createdAt < $cutoff and
-                            (.status == "completed" or .status == "failure" or .status == "cancelled" or .status == "skipped"))
+                   | select(.createdAt < $cutoff and .status == "completed")
                    | .databaseId')
 
-          total=$(printf '%s' "$ids" | grep -c . || true)
+          total=$(printf '%s\n' "$ids" | grep -c . || true)
           echo "共 $total 条待删除"
 
           deleted=0
           while IFS= read -r id; do
             [ -z "$id" ] && continue
-            if gh api -X DELETE "repos/$REPO/actions/runs/$id" --retry 3 --retry-delay 2 >/dev/null 2>&1; then
+            if err=$(gh api -X DELETE "repos/$REPO/actions/runs/$id" --silent 2>&1); then
               deleted=$((deleted+1))
             else
-              echo "  删除失败（明天会重试）: run id $id"
+              echo "  删除失败: run id $id — $err"
             fi
             sleep 1
           done <<< "$ids"
 
           echo "完成: 成功删除 $deleted / $total 条"
+
+      - name: Kamikaze (自毁本次运行记录)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          echo "任务完成，后台延迟自毁本次运行记录..."
+          # API 不能直接删除 in_progress 的记录，
+          # 用 nohup 挂后台延迟 3 秒执行，趁工作流已判定完成、Runner 还没销毁的间隙完成自杀
+          nohup bash -c "sleep 3 && gh api -X DELETE /repos/$REPO/actions/runs/$RUN_ID --silent" > /dev/null 2>&1 &
