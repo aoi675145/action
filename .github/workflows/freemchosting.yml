@@ -69,7 +69,7 @@ jobs:
           ip = sys.stdin.read().strip()
           parts = ip.split('.')
           if len(parts) == 4:
-              print(f'[INFO] 代理出口 IP: {parts[0]}.xxx.xxx.{parts[3]}')
+              print(f'[INFO] 代理出口 IP: {parts[0]}.{parts[1]}.xxx.xxx')
           elif len(ip) > 8:
               print(f'[INFO] 代理出口 IP: {ip[:4]}***{ip[-4:]}')
           else:
