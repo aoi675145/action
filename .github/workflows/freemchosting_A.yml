@@ -87,7 +87,8 @@ jobs:
           FMCH_A: ${{ secrets.FMCH_A }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          FMCH_PROXY: ${{ env.PROXY_SERVER }}
+          # sing-box 输出 PROXY_SERVER；脚本按后缀读 FMCH_PROXY_A
+          FMCH_PROXY_A: ${{ env.PROXY_SERVER }}
           MAX_ROUNDS: ${{ github.event.inputs.rounds || '20' }}
           # 时区与出口 IP 对齐：loot 反 VPN 检测会比对浏览器时区与
           # IP 归属地
