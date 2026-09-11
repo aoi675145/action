@@ -2,7 +2,7 @@ name: Acore 续期
 
 on:
   schedule:
-    - cron: '49 12 11 9 *'   # 自动更新下次运行时间
+    - cron: '48 12 12 9 *'   # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
