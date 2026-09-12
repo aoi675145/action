@@ -2,7 +2,7 @@ name: Acore 续期
 
 on:
   schedule:
-    - cron: '48 12 12 9 *'   # 自动更新下次运行时间
+    - cron: '7 2 4 9 *'   # 自动更新下次运行时间
   workflow_dispatch:
 
 jobs:
@@ -31,7 +31,8 @@ jobs:
       - name: 📦 安装依赖
         run: |
           pip install seleniumbase 'requests[socks]'
-          sudo apt-get install -y xvfb
+          sudo apt-get update
+          sudo apt-get install -y xvfb xdotool
 
       - name: 🌐 安装并启动代理
         env:
@@ -314,7 +315,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ACORE_PROXY: ${{ env.PROXY_SERVER }}
-        run: xvfb-run python scripts_repo/scripts/acore/acore.py 2>&1 | tee renew.log
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts_repo/scripts/acore/acore.py 2>&1 | tee renew.log; exit ${PIPESTATUS[0]}
 
       - name: 提取到期时间
         id: extract_due
