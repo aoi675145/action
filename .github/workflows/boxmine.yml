@@ -3,7 +3,8 @@ name: BoxMine AFK
 on:
   workflow_dispatch:
   schedule:
-    - cron: '36 22 8 9 *'
+    - cron: '30 4 * * *'
+
 permissions:
   actions: write
 
@@ -57,17 +58,13 @@ jobs:
           rm -rf sing-box sing-box-config.json sing-box.log sing-box.tar.gz sing-box-*.tar.gz
 
       - name: 更新下次 AFK 调度
-        if: success()
+        if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           NEXT_CRON: ${{ steps.afk.outputs.cron }}
           WORKFLOW_REF: ${{ github.workflow_ref }}
           TARGET_REPO: ${{ github.repository }}
         run: |
-          if [ -z "$NEXT_CRON" ]; then
-            echo "⚠️ 未获取到下次 AFK 时间，保留现有调度"
-            exit 0
-          fi
           python3 - <<'PYEOF'
           import base64
           import json
@@ -78,7 +75,14 @@ jobs:
           token = os.environ["REPO_TOKEN"]
           repo = os.environ["TARGET_REPO"]
           workflow_ref = os.environ["WORKFLOW_REF"]
-          cron = os.environ["NEXT_CRON"]
+          cron = os.environ.get("NEXT_CRON", "").strip()
+          if not cron and os.path.exists("boxmine_cron.json"):
+              # 失败步骤的 outputs 可能不透传，从脚本落盘的 json 兜底读取
+              with open("boxmine_cron.json", encoding="utf-8") as handle:
+                  cron = json.load(handle).get("cron", "")
+          if not cron:
+              print("⚠️ 未获取到下次 AFK 时间，保留现有调度")
+              raise SystemExit(0)
           marker = f"{repo}/"
           path_ref = workflow_ref.split(marker, 1)[1]
           path = path_ref.rsplit("@", 1)[0]
