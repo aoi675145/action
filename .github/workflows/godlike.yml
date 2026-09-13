@@ -1,7 +1,7 @@
 name: Godlike 续期
 on:
   schedule:
-    - cron: '0 */3 * * *'
+    - cron: '5 2 * * *'  # UTC 02:05 = 北京时间每天 10:05
   workflow_dispatch:
 
 jobs:
@@ -64,18 +64,9 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           IS_PROXY: ${{ env.IS_PROXY }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
-          DEBUG: "1"  # 诊断完成后改成 "0" 或删除本行
         run: |
           set -o pipefail
           python main.py 2>&1 | tee renew.log
-
-      - name: 上传调试截图
-        if: always()
-        continue-on-error: true
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-screenshots
-          path: debug/*.png
 
       - name: 清理代理进程和临时文件
         if: always()
