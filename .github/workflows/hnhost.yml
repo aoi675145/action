@@ -292,8 +292,58 @@ jobs:
           TG_BOT_TOKEN:                 ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:                   ${{ secrets.TG_CHAT_ID }}
           PROXY_URL:                    ${{ env.PROXY_URL }}
+          SESSION_FILE:                 scripts/hnhost/hnhost_session.json
           PYTHONUNBUFFERED:             1
         run: python scripts/hnhost/main.py
+
+      - name: 回写会话缓存
+        if: always()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          python3 - <<'PYEOF'
+          import base64, json, os, urllib.request, urllib.error
+
+          path = "scripts/hnhost/hnhost_session.json"
+          if not os.path.exists(path):
+              print("ℹ️ 无会话缓存文件，跳过回写")
+              raise SystemExit(0)
+          with open(path, "rb") as f:
+              content = f.read()
+          token = os.environ["REPO_TOKEN"]
+          api = f"https://api.github.com/repos/aoi675145/scripts/contents/{path}"
+          headers = {
+              "Authorization": f"Bearer {token}",
+              "Accept": "application/vnd.github+json",
+              "X-GitHub-Api-Version": "2022-11-28",
+              "User-Agent": "hnhost-session-cache",
+          }
+          sha = None
+          try:
+              with urllib.request.urlopen(urllib.request.Request(api, headers=headers), timeout=30) as r:
+                  sha = json.load(r)["sha"]
+          except urllib.error.HTTPError as e:
+              if e.code != 404:
+                  raise
+          payload = {
+              "message": "Update hnhost session cache",
+              "content": base64.b64encode(content).decode("ascii"),
+          }
+          if sha:
+              payload["sha"] = sha
+          req = urllib.request.Request(api, data=json.dumps(payload).encode(),
+                                       headers={**headers, "Content-Type": "application/json"},
+                                       method="PUT")
+          try:
+              with urllib.request.urlopen(req, timeout=30):
+                  print("✅ 会话缓存已回写私库")
+          except urllib.error.HTTPError as e:
+              # 409 = 内容未变化，属正常
+              if e.code == 409:
+                  print("ℹ️ 会话缓存无变化")
+              else:
+                  print(f"⚠️ 回写失败 HTTP {e.code}: {e.read()[:200]}")
+          PYEOF
 
       - name: 清理运行记录
         if: always()
