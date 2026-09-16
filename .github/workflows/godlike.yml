@@ -1,7 +1,8 @@
 name: Godlike 续期
 on:
   schedule:
-    - cron: '5 2 * * *'  # UTC 02:05 = 北京时间每天 10:05
+    # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC）
+    - cron: "5 2 * * *"
   workflow_dispatch:
 
 jobs:
@@ -67,6 +68,23 @@ jobs:
         run: |
           set -o pipefail
           python main.py 2>&1 | tee renew.log
+
+      - name: 修改 cron
+        if: always()
+        run: |
+          if [ ! -f next_run.txt ]; then
+            echo "next_run.txt 不存在，跳过 cron 更新"
+            exit 0
+          fi
+          next_cron=$(tr -d '\n\r' < next_run.txt)
+          echo "cron: $next_cron"
+          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
+          cd cron_repo
+          sed -i "s|- cron: \".*\"|- cron: \"$next_cron\"|" .github/workflows/godlike.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/godlike.yml
+          git diff --cached --quiet || (git commit -m "auto: cron $next_cron" && git push)
 
       - name: 清理代理进程和临时文件
         if: always()
