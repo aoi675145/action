@@ -26,7 +26,10 @@ jobs:
           python-version: '3.11'
 
       - name: 安装依赖
-        run: pip install --quiet 'requests[socks]'
+        run: |
+          pip install --quiet seleniumbase 'requests[socks]'
+          sudo apt-get update -y
+          sudo apt-get install -y xvfb xdotool
 
       - name: 安装并启动代理
         env:
@@ -294,7 +297,7 @@ jobs:
           PROXY_URL:                    ${{ env.PROXY_URL }}
           SESSION_FILE:                 scripts/hnhost/hnhost_session.json
           PYTHONUNBUFFERED:             1
-        run: python scripts/hnhost/main.py
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/hnhost/main.py
 
       - name: 回写会话缓存
         if: always()
