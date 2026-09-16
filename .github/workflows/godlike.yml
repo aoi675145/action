@@ -2,7 +2,7 @@ name: Godlike 续期
 on:
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC）
-    - cron: "5 2 * * *"
+    - cron: "2 8 17 9 *"
   workflow_dispatch:
 
 jobs:
