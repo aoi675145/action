@@ -293,6 +293,9 @@ jobs:
           TG_CHAT_ID:                   ${{ secrets.TG_CHAT_ID }}
           PROXY_URL:                    ${{ env.PROXY_URL }}
           SESSION_FILE:                 scripts/hnhost/hnhost_session.json
+          # 留空用脚本默认窄 scope；如需恢复原站抓包的完整 scope，
+          # 在仓库 Variables 里加 HNHOST_SCOPE=identify email guilds guilds.join
+          HNHOST_SCOPE:                 ${{ vars.HNHOST_SCOPE }}
           PYTHONUNBUFFERED:             1
         run: python scripts/hnhost/main.py
 
