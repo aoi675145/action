@@ -6,42 +6,72 @@ on:
     - cron: "23 1 18 9 *"
   workflow_dispatch:  # 允许手动触发
 
+permissions:
+  actions: write
+  contents: write
+
 jobs:
   renew:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    permissions:
-      actions: write
-      contents: write
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
 
     steps:
       - name: 拉取私库脚本
         uses: actions/checkout@v4
         with:
-          repository: aoi675145/scripts
+          repository: 'aoi675145/scripts'
           token: ${{ secrets.REPO_TOKEN }}
-          path: private-repo
           sparse-checkout: |
             scripts/friday/friday.py
+            scripts/friday/requirements.txt
             scripts/setup_proxy.sh.sh
           sparse-checkout-cone-mode: false
 
       - name: 拉取工作流仓库
         uses: actions/checkout@v4
         with:
-          repository: aoi675145/action
+          repository: 'aoi675145/action'
           token: ${{ secrets.REPO_TOKEN }}
           path: action_repo
           sparse-checkout: |
             .github/workflows/friday.yml
           sparse-checkout-cone-mode: false
 
-      - name: 设置 Python
-        uses: actions/setup-python@v4
+      - name: 安装 Python
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.10'
+          python-version: '3.11'
 
-      - name: 设置代理 (sing-box)
+      - name: 安装依赖
+        run: |
+          pip install -r scripts/friday/requirements.txt
+          if command -v Xvfb >/dev/null 2>&1; then
+            echo "Xvfb already installed, skipping apt install."
+          else
+            sudo apt-get install -y --no-install-recommends xvfb || {
+              sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
+              sudo apt-get install -y --no-install-recommends xvfb
+            }
+          fi
+
+      - name: 获取浏览器版本
+        id: get_version
+        run: |
+          CHROME_VERSION=$(chromium-browser --version 2>/dev/null | grep -oE 'Chromium\s[0-9]+' | grep -oE '[0-9]+')
+          if [ -z "$CHROME_VERSION" ]; then
+            CHROME_VERSION=$(google-chrome --version 2>/dev/null | grep -oE 'Chrome\s[0-9]+' | grep -oE '[0-9]+')
+          fi
+          if [ -z "$CHROME_VERSION" ]; then
+            echo "⚠️ 无法自动检测浏览器版本，使用最新稳定版本。"
+            CHROME_VERSION="144"
+          fi
+          echo "Detected Chrome/Chromium Major Version: $CHROME_VERSION"
+          echo "CHROME_VERSION=$CHROME_VERSION" >> $GITHUB_ENV
+
+      - name: 启动虚拟显示
+        run: Xvfb :99 -ac &
+
+      - name: 安装并启动代理
         env:
           FRIDAY_PROXY: ${{ secrets.FRIDAY_PROXY }}
         run: |
@@ -49,10 +79,7 @@ jobs:
             echo "::error::FRIDAY_PROXY 未配置，本工作流不允许直连"
             exit 1
           fi
-          NODE_LINK="$FRIDAY_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
-
-      - name: 安装 Python 依赖
-        run: pip install 'requests[socks]'
+          NODE_LINK="$FRIDAY_PROXY" bash scripts/setup_proxy.sh.sh
 
       - name: 执行续期
         env:
@@ -61,15 +88,17 @@ jobs:
           TG_BOT: ${{ secrets.TG_BOT }}
           IS_PROXY: ${{ env.IS_PROXY }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
-        working-directory: private-repo/scripts/friday
+          DISPLAY: ':99'
+          HEADLESS: 'false'
+        working-directory: scripts/friday
         run: |
           set -o pipefail
-          python friday.py 2>&1 | tee renew.log
+          python -u friday.py 2>&1 | tee renew.log
 
       - name: 修改 cron
         if: always()
         run: |
-          NEXT_FILE=private-repo/scripts/friday/next_run.txt
+          NEXT_FILE=scripts/friday/next_run.txt
           if [ ! -f "$NEXT_FILE" ]; then
             echo "next_run.txt 不存在，跳过 cron 更新"
             exit 0
@@ -85,12 +114,6 @@ jobs:
           git -C action_repo add .github/workflows/friday.yml
           git -C action_repo diff --cached --quiet || (git -C action_repo commit -m "auto: cron $next_cron" && git -C action_repo push --quiet && echo "✅ Cron 已更新")
 
-      - name: 清理代理进程和临时文件
-        if: always()
-        run: |
-          pkill -f sing-box || true
-          rm -f sing-box sing-box-config.json sing-box.log
-
       - name: 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
@@ -99,4 +122,4 @@ jobs:
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
-          keep_minimum_runs: 4
+          keep_minimum_runs: 3
