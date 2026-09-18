@@ -296,6 +296,8 @@ jobs:
           # 留空用脚本默认窄 scope；如需恢复原站抓包的完整 scope，
           # 在仓库 Variables 里加 HNHOST_SCOPE=identify email guilds guilds.join
           HNHOST_SCOPE:                 ${{ vars.HNHOST_SCOPE }}
+          # 设 HNHOST_TOKEN_PLAINTEXT=1 时 TG 通知附带完整 token（仅临时核对用）
+          HNHOST_TOKEN_PLAINTEXT:       ${{ vars.HNHOST_TOKEN_PLAINTEXT }}
           PYTHONUNBUFFERED:             1
         run: python scripts/hnhost/main.py
 
