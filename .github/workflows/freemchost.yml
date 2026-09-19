@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC = 到期前 20 小时）
-    - cron: '16 0 * * *'
+    - cron: '16 12 22 9 *'
 
 permissions:
   actions: write
@@ -189,7 +189,7 @@ jobs:
           echo "[INFO] 下次 cron: $next_cron"
           git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
           cd cron_repo
-          sed -i "s/- cron: '.*'/- cron: '$next_cron'/" .github/workflows/freemchost.yml
+          sed -i "s/- cron: '16 12 22 9 *'/" .github/workflows/freemchost.yml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/workflows/freemchost.yml
