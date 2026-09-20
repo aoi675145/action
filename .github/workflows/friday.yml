@@ -3,7 +3,7 @@ name: Friday 续期
 on:
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为固定日期（北京 09:23）
-    - cron: "23 1 21 9 *"
+    - cron: "23 1 22 9 *"
   workflow_dispatch:  # 允许手动触发
 
 permissions:
@@ -23,7 +23,6 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           sparse-checkout: |
             scripts/friday/friday.py
-            scripts/friday/requirements.txt
             scripts/setup_proxy.sh.sh
           sparse-checkout-cone-mode: false
 
@@ -37,41 +36,20 @@ jobs:
             .github/workflows/friday.yml
           sparse-checkout-cone-mode: false
 
-      - name: 安装 Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: 安装依赖
+      - name: 安装系统依赖
         run: |
-          pip install -r scripts/friday/requirements.txt
-          if command -v Xvfb >/dev/null 2>&1; then
-            echo "Xvfb already installed, skipping apt install."
-          else
-            sudo apt-get install -y --no-install-recommends xvfb || {
-              sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
-              sudo apt-get install -y --no-install-recommends xvfb
-            }
-          fi
+          sudo apt-get update
+          sudo apt-get install -y xvfb tzdata
 
-      - name: 获取浏览器版本
-        id: get_version
+      - name: 安装 Python 依赖
+        # filelock 3.32.5 起对同线程嵌套 FileLock 抛 Deadlock，会打断
+        # SeleniumBase UC 模式的 pyautogui.lock 获取；脚本启动时会给
+        # pyautogui.lock 打 is_singleton 单例补丁，这里固定版本以免行为再变。
         run: |
-          CHROME_VERSION=$(chromium-browser --version 2>/dev/null | grep -oE 'Chromium\s[0-9]+' | grep -oE '[0-9]+')
-          if [ -z "$CHROME_VERSION" ]; then
-            CHROME_VERSION=$(google-chrome --version 2>/dev/null | grep -oE 'Chrome\s[0-9]+' | grep -oE '[0-9]+')
-          fi
-          if [ -z "$CHROME_VERSION" ]; then
-            echo "⚠️ 无法自动检测浏览器版本，使用最新稳定版本。"
-            CHROME_VERSION="144"
-          fi
-          echo "Detected Chrome/Chromium Major Version: $CHROME_VERSION"
-          echo "CHROME_VERSION=$CHROME_VERSION" >> $GITHUB_ENV
+          python -m pip install --disable-pip-version-check --no-cache-dir \
+            "filelock==3.32.5" seleniumbase 'requests[socks]'
 
-      - name: 启动虚拟显示
-        run: Xvfb :99 -ac &
-
-      - name: 安装并启动代理
+      - name: 设置代理 (sing-box)
         env:
           FRIDAY_PROXY: ${{ secrets.FRIDAY_PROXY }}
         run: |
@@ -86,14 +64,13 @@ jobs:
           PYTHONIOENCODING: utf-8
           FRIDAY: ${{ secrets.FRIDAY }}
           TG_BOT: ${{ secrets.TG_BOT }}
-          IS_PROXY: ${{ env.IS_PROXY }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
-          DISPLAY: ':99'
-          HEADLESS: 'false'
         working-directory: scripts/friday
         run: |
           set -o pipefail
-          python -u friday.py 2>&1 | tee renew.log
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x900x24" \
+            python -u friday.py 2>&1 | tee renew.log
+        continue-on-error: true
 
       - name: 修改 cron
         if: always()
@@ -113,6 +90,13 @@ jobs:
           git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
           git -C action_repo add .github/workflows/friday.yml
           git -C action_repo diff --cached --quiet || (git -C action_repo commit -m "auto: cron $next_cron" && git -C action_repo push --quiet && echo "✅ Cron 已更新")
+
+      - name: 清理临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-config.json sing-box.log
+          find scripts/friday -maxdepth 1 -name "*.png" -delete 2>/dev/null || true
 
       - name: 清理运行记录
         if: always()
