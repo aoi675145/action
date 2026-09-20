@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       rounds:
-        description: "轮数安全上限（自动跑满后提前停）"
+        description: "轮数安全上限（领满今日额度后自动提前停）"
         required: false
         default: "20"
 
