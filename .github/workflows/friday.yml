@@ -37,9 +37,15 @@ jobs:
           sparse-checkout-cone-mode: false
 
       - name: 安装系统依赖
+        # SeleniumBase UC 模式的 GUI 点击依赖 pyautogui -> MouseInfo -> tkinter，
+        # Linux runner 上缺 python3-tk 会在点击时直接抛错；scrot / xdotool
+        # 供 UC 截图定位使用（SeleniumBase 官方 UC 文档要求）。
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb tzdata
+          sudo apt-get install -y \
+            xvfb tzdata \
+            python3-tk python3-dev \
+            scrot x11-utils xdotool
 
       - name: 安装 Python 依赖
         # filelock 3.32.5 起对同线程嵌套 FileLock 抛 Deadlock，会打断
