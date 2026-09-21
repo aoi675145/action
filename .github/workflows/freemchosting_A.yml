@@ -18,7 +18,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 330
     permissions:
-      contents: write
+      # 只需 actions: write 给删除历史运行记录用；原先的 contents: write
+      # 是给回写 cookies.txt 用的，cookie 机制已移除，一并收紧权限
       actions: write
 
     steps:
@@ -30,8 +31,6 @@ jobs:
           path: private-repo
           sparse-checkout: |
             scripts/freemchosting/freemchosting.py
-            scripts/freemchosting/cookies.txt
-            scripts/freemchosting/cookies_A.txt
             scripts/setup_proxy.sh.sh
           sparse-checkout-cone-mode: false
 
@@ -97,22 +96,6 @@ jobs:
         run: |
           set -o pipefail
           xvfb-run --auto-servernum --server-args="-screen 0 1280x2400x24" python freemchosting.py 2>&1 | tee claim_A.log
-
-      - name: 💾 回写 cookies_A.txt 到私库
-        if: always()
-        working-directory: private-repo
-        run: |
-          git config user.name "fmch-bot"
-          git config user.email "actions@users.noreply.github.com"
-          git add scripts/freemchosting/cookies_A.txt
-          if git diff --cached --quiet; then
-            echo "cookies_A.txt 无变化，跳过提交"
-          else
-            git commit -m "chore: refresh fmch session cookies (account A) [skip ci]"
-            # 多 workflow 并发回写同一私库：先拉再推，冲突时重试一次
-            git pull --rebase origin main || true
-            git push || (git pull --rebase origin main && git push)
-          fi
 
       - name: 🧹 清理代理进程和临时文件
         if: always()
