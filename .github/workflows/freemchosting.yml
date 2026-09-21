@@ -18,8 +18,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 330
     permissions:
-      # 只需 actions: write 给删除历史运行记录用；原先的 contents: write
-      # 是给回写 cookies.txt 用的，cookie 机制已移除，一并收紧权限
+      # contents 只读：checkout 用的是 REPO_TOKEN，但删除运行记录的动作
+      # 仍需读权限；原 contents: write 是给回写 cookies.txt 用的，cookie
+      # 机制已移除，收紧为只读
+      contents: read
       actions: write
 
     steps:
