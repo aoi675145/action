@@ -38,7 +38,7 @@ jobs:
       run: |
         seleniumbase install chromedriver
 
-    - name: 配置代理（sing-box 共享脚本）
+    - name: 配置代理（sing-box）
       env:
         Justrunmy_ROXY_NODE: ${{ secrets.Justrunmy_ROXY_NODE }}
         TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -123,14 +123,6 @@ jobs:
         else
           echo "Cookie 无变化，跳过提交。"
         fi
-
-    - name: 上传调试截图
-      if: always()
-      uses: actions/upload-artifact@v4
-      with:
-        name: justrun-debug
-        path: artifacts/
-        retention-days: 5
 
     - name: 清理 sing-box
       if: always()
