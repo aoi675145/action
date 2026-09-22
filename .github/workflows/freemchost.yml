@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC = 到期前 20 小时）
-    - cron: '16 12 22 9 *'
+    - cron: '16 0 * * *'
 
 permissions:
   actions: write
@@ -188,8 +188,22 @@ jobs:
           next_cron=$(tr -d '\n\r' < next_run.txt)
           echo "[INFO] 下次 cron: $next_cron"
           git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
+          python3 - <<'PYEOF'
+          import re, sys
+          from pathlib import Path
+
+          cron = Path("next_run.txt").read_text(encoding="utf-8").strip()
+          if not re.fullmatch(r"\d{1,2} \d{1,2} \d{1,2} \d{1,2} \*", cron):
+              sys.exit(f"[ERROR] next_run.txt 内容异常: {cron!r}")
+          path = Path("cron_repo/.github/workflows/freemchost.yml")
+          src = path.read_text(encoding="utf-8")
+          new, n = re.subn(r"- cron: .*", f"- cron: '{cron}'", src, count=1)
+          if n != 1:
+              sys.exit("[ERROR] 未找到 cron 行，未做修改")
+          path.write_text(new, encoding="utf-8")
+          print(f"[INFO] ✅ cron 已更新: {cron}")
+          PYEOF
           cd cron_repo
-          sed -i "s/- cron: '16 12 22 9 *'/" .github/workflows/freemchost.yml
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/workflows/freemchost.yml
