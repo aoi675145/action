@@ -4,11 +4,17 @@ on:
   workflow_dispatch:
   schedule:
     # 初始值: 每天 UTC 02:00; 每次运行后自动更新为"到期前 15~20 小时"
-    - cron: '0 12 24 9 *'
+    - cron: '0 2 * * *'
+
 env:
   SCRIPTS_REPO: aoi675145/scripts
   SCRIPTS_DIR: scripts/fps
   SCRIPTS_BRANCH: main
+
+# 和保活任务共用同一把锁, 避免两个工作流同时回写 cookies.txt
+concurrency:
+  group: fps-ms-session
+  cancel-in-progress: false
 
 jobs:
   renew:
