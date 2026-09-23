@@ -11,11 +11,6 @@ env:
   SCRIPTS_DIR: scripts/fps
   SCRIPTS_BRANCH: main
 
-# 和保活任务共用同一把锁, 避免两个工作流同时回写 cookies.txt
-concurrency:
-  group: fps-ms-session
-  cancel-in-progress: false
-
 jobs:
   renew:
     name: 执行续期
@@ -101,19 +96,13 @@ jobs:
           fi
 
           RAW="https://raw.githubusercontent.com/${SCRIPTS_REPO}/${SCRIPTS_BRANCH}/${SCRIPTS_DIR}"
-          echo "📥 拉取 fps.ms 脚本与会话..."
+          echo "📥 拉取 fps.ms 脚本..."
           curl -sSf -H "Authorization: token $REPO_TOKEN" -o fps.py "$RAW/fps.py"
           if [ ! -s fps.py ]; then
             echo "❌ 拉取 fps.py 失败（检查 REPO_TOKEN / 路径）"
             exit 1
           fi
           echo "✅ fps.py 已拉取 ($(wc -c < fps.py) bytes)"
-
-          if ! curl -sSf -H "Authorization: token $REPO_TOKEN" -o cookies.txt "$RAW/cookies.txt"; then
-            echo "⚠️ 私库无 cookies.txt，将使用 DISCORD_TOKEN 重建会话"
-          else
-            echo "✅ cookies.txt 已拉取 ($(wc -c < cookies.txt) bytes)"
-          fi
 
           echo "🚀 启动 fps.ms 自动续期"
           python fps.py 2>&1 | tee renew.log
@@ -183,29 +172,6 @@ jobs:
               pass
           print(f"✅ Cron 已更新：{cron}（UTC）")
           PYEOF
-
-      - name: 更新cookies.txt
-        if: ${{ always() && env.PROXY_SERVER != '' }}
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          if [ ! -s cookies.txt ]; then
-            echo "⚠️ 无 cookies.txt，跳过上传"
-            exit 0
-          fi
-          API="https://api.github.com/repos/${SCRIPTS_REPO}/contents/${SCRIPTS_DIR}/cookies.txt"
-          AUTH="Authorization: token $REPO_TOKEN"
-          SHA=$(curl -s -H "$AUTH" -H "Accept: application/vnd.github+json" "$API" | jq -r '.sha // empty')
-          B64=$(base64 -w0 cookies.txt)
-          if [ -n "$SHA" ]; then
-            echo "{\"message\":\"update: cookies.txt [skip ci]\",\"content\":\"$B64\",\"sha\":\"$SHA\"}" > /tmp/upd.json
-            curl -sSf -X PUT -H "$AUTH" -H "Accept: application/vnd.github+json" -d @/tmp/upd.json "$API" > /dev/null
-            echo "✅ cookies.txt 已更新"
-          else
-            echo "{\"message\":\"create: cookies.txt [skip ci]\",\"content\":\"$B64\"}" > /tmp/up.json
-            curl -sSf -X PUT -H "$AUTH" -H "Accept: application/vnd.github+json" -d @/tmp/up.json "$API" > /dev/null
-            echo "✅ cookies.txt 已创建"
-          fi
 
       - name: 清理运行进程和临时文件
         if: always()
