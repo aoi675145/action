@@ -62,7 +62,8 @@ jobs:
         fi
 
         # 调用私库共享脚本启动 sing-box（与工作区其他项目一致）
-        chmod +x scripts/setup_proxy.sh.sh
+        # 直接用 bash 执行，不再 chmod：给被跟踪文件改权限位会产生
+        # “未暂存修改”，会卡住后面提交步骤的 rebase。
         NODE_LINK="$Justrunmy_ROXY_NODE" bash scripts/setup_proxy.sh.sh || {
           notify_fail "代理启动失败，已禁止直连"
           exit 1
@@ -112,14 +113,32 @@ jobs:
       run: |
         git config --global user.name "GitHub Actions"
         git config --global user.email "actions@github.com"
-        
+
+        # 提交前先把本次运行产生的文件从工作区清掉。
+        # 这些文件一旦被误提交进仓库，每次运行都会被改写，
+        # 变成“未暂存修改”，导致后面的 rebase 直接拒绝执行。
+        rm -rf scripts/justrunmy/artifacts scripts/justrunmy/__pycache__
+        rm -f sing-box sing-box-config.json sing-box.log sing-box-*.tar.gz
+
         # 👇 检查和提交的也是带实际路径的 cookie.txt
         if [[ -n $(git status -s scripts/justrunmy/cookie.txt) ]]; then
           echo "检测到 Cookie 更新，正在提交..."
           git add scripts/justrunmy/cookie.txt
           git commit -m "Auto-update auth cookie [skip ci]"
-          git pull --rebase origin main
-          git push
+
+          # 列一下残留改动（只打印路径，不含内容）。空 = 仓库干净；
+          # 有输出 = 仓库里存在被跟踪的生成物／权限位变动，这就是 rebase 报错的真凶。
+          echo "--- 工作区残留状态 ---"
+          git status --porcelain || true
+
+          if git push; then
+            echo "✅ Cookie 更新已推送"
+          else
+            echo "推送被拒，拉取远端 ${GITHUB_REF_NAME} 后重试..."
+            # --autostash：把残留改动临时收起，rebase 完再放回，避免再被卡住
+            git -c rebase.autoStash=true pull --rebase origin "${GITHUB_REF_NAME}"
+            git push
+          fi
         else
           echo "Cookie 无变化，跳过提交。"
         fi
