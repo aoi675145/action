@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC = 到期前 46 小时）
-    - cron: '40 7 25 9 *'
+    - cron: '57 14 25 9 *'
 
 permissions:
   actions: write
