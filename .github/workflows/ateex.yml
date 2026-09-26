@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 初始兜底时间；每次运行后按 renewalstatus 自动更新为单次日期 Cron
-    - cron: "37 2 26 9 *"
+    - cron: "58 1 2 10 *"
 
 env:
   SCRIPTS_REPO: aoi675145/scripts
