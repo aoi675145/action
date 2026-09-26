@@ -3,7 +3,7 @@ name: FMCH Coins A
 on:
   schedule:
     # 北京时间每天 14:05（UTC 06:05）
-    - cron: "5 6 * * *"
+    - cron: "5 4 * * *"
 
   workflow_dispatch:
     inputs:
