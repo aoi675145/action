@@ -27,7 +27,7 @@ jobs:
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          echo "[INFO] 从私库拉取 bot.py 与 setup_proxy.sh.sh..."
+          echo "[INFO] 从私库拉取 bot.py 与 setup_proxy.sh..."
           curl -fsSL \
             -H "Authorization: Bearer ${REPO_TOKEN}" \
             -o bot.py \
