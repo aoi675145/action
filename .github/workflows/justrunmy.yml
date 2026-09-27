@@ -64,7 +64,7 @@ jobs:
         # 调用私库共享脚本启动 sing-box（与工作区其他项目一致）
         # 直接用 bash 执行，不再 chmod：给被跟踪文件改权限位会产生
         # “未暂存修改”，会卡住后面提交步骤的 rebase。
-        NODE_LINK="$Justrunmy_ROXY_NODE" bash scripts/setup_proxy.sh.sh || {
+        NODE_LINK="$Justrunmy_ROXY_NODE" bash scripts/setup_proxy.sh || {
           notify_fail "代理启动失败，已禁止直连"
           exit 1
         }

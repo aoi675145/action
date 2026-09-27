@@ -23,7 +23,7 @@ jobs:
           sparse-checkout: |
             scripts/eknodes/eknodes.py
             scripts/eknodes/cookies.txt
-            scripts/setup_proxy.sh.sh
+            scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
       - name: 设置 Python
@@ -40,7 +40,7 @@ jobs:
             exit 1
           fi
           echo "✅ 已检测到 EKNODES_PROXY，开始配置强制代理"
-          NODE_LINK="$EKNODES_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+          NODE_LINK="$EKNODES_PROXY" bash private-repo/scripts/setup_proxy.sh
 
       - name: 验证代理环境
         run: |

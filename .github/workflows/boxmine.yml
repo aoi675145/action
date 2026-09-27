@@ -36,8 +36,8 @@ jobs:
         env:
           BOXMINE_PROXY: ${{ secrets.BOXMINE_PROXY }}
         run: |
-          chmod +x scripts/setup_proxy.sh.sh
-          NODE_LINK="$BOXMINE_PROXY" bash scripts/setup_proxy.sh.sh
+          chmod +x scripts/setup_proxy.sh
+          NODE_LINK="$BOXMINE_PROXY" bash scripts/setup_proxy.sh
 
       - name: 运行 AFK 脚本
         id: afk

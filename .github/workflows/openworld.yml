@@ -26,7 +26,7 @@ jobs:
           sparse-checkout: |
             scripts/openworld/openworld.py
             scripts/openworld/cookies.txt
-            scripts/setup_proxy.sh.sh
+            scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
       - name: 设置 Python
@@ -38,7 +38,7 @@ jobs:
         env:
           Openworld_PROXY: ${{ secrets.Openworld_PROXY }}
         run: |
-          NODE_LINK="$Openworld_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+          NODE_LINK="$Openworld_PROXY" bash private-repo/scripts/setup_proxy.sh
 
       - name: 安装依赖
         run: |

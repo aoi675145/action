@@ -23,7 +23,7 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           sparse-checkout: |
             scripts/friday/friday.py
-            scripts/setup_proxy.sh.sh
+            scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
       - name: 拉取工作流仓库
@@ -63,7 +63,7 @@ jobs:
             echo "::error::FRIDAY_PROXY 未配置，本工作流不允许直连"
             exit 1
           fi
-          NODE_LINK="$FRIDAY_PROXY" bash scripts/setup_proxy.sh.sh
+          NODE_LINK="$FRIDAY_PROXY" bash scripts/setup_proxy.sh
 
       - name: 执行续期
         env:

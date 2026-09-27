@@ -33,7 +33,7 @@ jobs:
           path: private-repo
           sparse-checkout: |
             scripts/freemchosting/freemchosting.py
-            scripts/setup_proxy.sh.sh
+            scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
       - name: 🐍 安装 Python
@@ -56,7 +56,7 @@ jobs:
         env:
           FMCH_PROXY: ${{ secrets.FMCH_PROXY }}
         run: |
-          NODE_LINK="$FMCH_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+          NODE_LINK="$FMCH_PROXY" bash private-repo/scripts/setup_proxy.sh
 
       - name: 检查脚本代理出口
         run: |
