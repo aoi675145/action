@@ -48,8 +48,8 @@ jobs:
             fail "HNHOST_PROXY_NODE 未配置（已禁止直连）"
           fi
 
-          chmod +x scripts/setup_proxy.sh.sh
-          NODE_LINK="$NODE_LINK" bash scripts/setup_proxy.sh.sh
+          chmod +x scripts/setup_proxy.sh
+          NODE_LINK="$NODE_LINK" bash scripts/setup_proxy.sh
 
           source "$GITHUB_ENV"
           if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then

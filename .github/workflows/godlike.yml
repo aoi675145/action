@@ -28,14 +28,14 @@ jobs:
               -o "$2"
           }
           fetch "godlike/main.py" main.py
-          fetch "setup_proxy.sh.sh" setup_proxy.sh.sh
-          for f in main.py setup_proxy.sh.sh; do
+          fetch "setup_proxy.sh" setup_proxy.sh
+          for f in main.py setup_proxy.sh; do
             if [ ! -s "$f" ]; then
               echo "[ERROR] 私库脚本 $f 拉取失败或为空"
               exit 1
             fi
           done
-          echo "[INFO] ✅ 已从私库拉取 main.py 和 setup_proxy.sh.sh"
+          echo "[INFO] ✅ 已从私库拉取 main.py 和 setup_proxy.sh"
 
       - name: 设置 Python
         uses: actions/setup-python@v5
@@ -55,7 +55,7 @@ jobs:
             echo "[ERROR] 未配置 GODLIKE_PROXY，本工作流必须走代理，拒绝直连"
             exit 1
           fi
-          NODE_LINK="$GODLIKE_PROXY" bash setup_proxy.sh.sh
+          NODE_LINK="$GODLIKE_PROXY" bash setup_proxy.sh
 
       - name: 运行续期脚本
         env:

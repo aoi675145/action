@@ -18,7 +18,7 @@ jobs:
           path: private-repo
           sparse-checkout: |
             scripts/tranger/tranger.py
-            scripts/setup_proxy.sh.sh
+            scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
       - name: 设置 Python
@@ -39,7 +39,7 @@ jobs:
         env:
           TRANGER_PROXY: ${{ secrets.TRANGER_PROXY }}
         run: |
-          NODE_LINK="$TRANGER_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+          NODE_LINK="$TRANGER_PROXY" bash private-repo/scripts/setup_proxy.sh
 
       - name: 安装 Python 依赖
         run: pip install 'requests[socks]'

@@ -27,7 +27,7 @@ jobs:
           path: private-repo
           sparse-checkout: |
             scripts/ateex/ateex.py
-            scripts/setup_proxy.sh.sh
+            scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
       - name: 设置 Python
@@ -43,7 +43,7 @@ jobs:
             echo "❌ 未配置 ATEEX_PROXY，已禁止直连"
             exit 1
           fi
-          NODE_LINK="$ATEEX_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+          NODE_LINK="$ATEEX_PROXY" bash private-repo/scripts/setup_proxy.sh
           source "$GITHUB_ENV"
           if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then
             echo "❌ 代理脚本未生成 PROXY_SERVER，禁止继续"

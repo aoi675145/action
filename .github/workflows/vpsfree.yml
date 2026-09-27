@@ -31,7 +31,7 @@ jobs:
           path: private-repo
           sparse-checkout: |
             scripts/vpsfree/vpsfree.py
-            scripts/setup_proxy.sh.sh
+            scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
       - name: 安装依赖并准备扩展
@@ -53,7 +53,7 @@ jobs:
             echo "::error::VPSFREE_PROXY 未配置（必填）"
             exit 1
           fi
-          NODE_LINK="$VPSFREE_PROXY" bash private-repo/scripts/setup_proxy.sh.sh
+          NODE_LINK="$VPSFREE_PROXY" bash private-repo/scripts/setup_proxy.sh
 
       - name: 执行 VPSFREE 续期
         env:

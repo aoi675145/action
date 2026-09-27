@@ -23,7 +23,7 @@ jobs:
           path: scripts_repo
           sparse-checkout: |
             scripts/treemc/treemc.py
-            scripts/setup_proxy.sh.sh
+            scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
       - name: 安装 Python
@@ -35,7 +35,7 @@ jobs:
         env:
           TREEMC_PROXY: ${{ secrets.TREEMC_PROXY }}
         run: |
-          NODE_LINK="$TREEMC_PROXY" bash scripts_repo/scripts/setup_proxy.sh.sh
+          NODE_LINK="$TREEMC_PROXY" bash scripts_repo/scripts/setup_proxy.sh
 
       - name: 安装 Python 依赖
         run: pip install --quiet 'requests[socks]'

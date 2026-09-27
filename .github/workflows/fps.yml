@@ -61,7 +61,7 @@ jobs:
           echo "🔗 正在配置强制代理..."
           curl -sSf -H "Authorization: token $REPO_TOKEN" \
             -o setup_proxy.sh \
-            "https://raw.githubusercontent.com/${SCRIPTS_REPO}/${SCRIPTS_BRANCH}/scripts/setup_proxy.sh.sh"
+            "https://raw.githubusercontent.com/${SCRIPTS_REPO}/${SCRIPTS_BRANCH}/scripts/setup_proxy.sh"
           if [ ! -s setup_proxy.sh ]; then
             echo "❌ 拉取代理脚本失败，禁止直连"
             exit 1
