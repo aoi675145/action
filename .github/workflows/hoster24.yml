@@ -49,6 +49,15 @@ jobs:
             scripts/hoster24/cookies.txt
           sparse-checkout-cone-mode: false
 
+      - name: 校验代理配置
+        env:
+          H24_PROXY: ${{ secrets.H24_PROXY }}
+        run: |
+          if [ -z "$H24_PROXY" ]; then
+            echo "❌ 必须配置 H24_PROXY（强制代理模式）"
+            exit 1
+          fi
+
       # 解析 NODE_LINK -> sing-box，本地起 socks5://127.0.0.1:1080 与
       # http://127.0.0.1:1081，并把本地代理地址写入 GITHUB_ENV（后续步骤自动可用）。
       # 代理失败会 exit 1，任务直接标红。
