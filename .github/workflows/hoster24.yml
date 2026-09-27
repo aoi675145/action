@@ -46,6 +46,7 @@ jobs:
           sparse-checkout: |
             scripts/hoster24/hoster24.py
             scripts/hoster24/setup_proxy.sh
+            scripts/hoster24/cookies.txt
           sparse-checkout-cone-mode: false
 
       # 解析 NODE_LINK -> sing-box，本地起 socks5://127.0.0.1:1080 与
@@ -66,7 +67,6 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}       # 下载 Release 资产 server.jar
-          H24_COOKIE: ${{ secrets.H24_COOKIE }}       # 浏览器复制的完整 Cookie 头
           H24_IDENT: ${{ secrets.H24_IDENT }}         # 服务器 ident（可选，脚本有默认值）
           H24_UA: ${{ secrets.H24_UA }}               # 与浏览器一致的 UA（可选但建议）
           H24_DIR: ${{ github.event.client_payload.dir || inputs.dir || '/' }}
@@ -88,6 +88,22 @@ jobs:
             echo "🌐 出口 IP: 获取失败"
           fi
           python hoster24.py "$ACTION" 2>&1 | tee hoster24.log
+
+      # 面板若在响应中续签 connect.sid，脚本会回写 cookies.txt；这里检测变化并提交回私库
+      - name: 回写续期 Cookie 到私库
+        if: always()
+        working-directory: private-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -f scripts/hoster24/cookies.txt ] && ! git diff --quiet scripts/hoster24/cookies.txt; then
+            git add scripts/hoster24/cookies.txt
+            git commit -m "chore(hoster24): 自动回写 connect.sid"
+            git push
+            echo "🍪 cookies.txt 已更新并推送"
+          else
+            echo "🍪 cookies.txt 无变化，跳过提交"
+          fi
 
       - name: 清理代理进程和临时文件
         if: always()
