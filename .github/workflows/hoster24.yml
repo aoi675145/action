@@ -1,0 +1,103 @@
+name: Hoster24 自动上传与开机
+
+# 手动触发；需要定时（如每 6 小时保活）时取消 schedule 注释（cron 为 UTC 时间）
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '动作'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - check    # 只读自检：Cookie/WS/上传通道/Release 资产
+          - status   # 查询当前状态
+          - upload   # 下载 Release 的 server.jar 并上传
+          - start    # 只开机并等到 running
+          - deploy   # 上传 -> 开机 -> 等 running
+      dir:
+        description: '服务器上的目标目录，server.jar 固定传根目录'
+        required: false
+        default: '/'
+      start_timeout:
+        description: '开机后等待 running 的最长时间（秒）'
+        required: false
+        default: '600'
+  # schedule:
+  #   - cron: '0 */6 * * *'
+
+concurrency:
+  group: hoster24-deploy
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      # 本仓库只放 workflow；实际脚本从私库 aoi675145/scripts 拉取
+      - name: 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/hoster24/hoster24.py
+            scripts/hoster24/setup_proxy.sh
+          sparse-checkout-cone-mode: false
+
+      # 解析 NODE_LINK -> sing-box，本地起 socks5://127.0.0.1:1080 与
+      # http://127.0.0.1:1081，并把 H24_PROXY 写入 GITHUB_ENV（后续步骤自动可用）。
+      # 代理失败会 exit 1，任务直接标红。
+      - name: 启动代理 (sing-box)
+        env:
+          NODE_LINK: ${{ secrets.NODE_LINK }}
+          # DIRECT_DOMAINS: 'example.com'   # 可选：命中域名直连不走代理
+        run: bash private-repo/scripts/hoster24/setup_proxy.sh
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 执行
+        env:
+          PYTHONIOENCODING: utf-8
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}       # 下载 Release 资产 server.jar
+          H24_COOKIE: ${{ secrets.H24_COOKIE }}       # 浏览器复制的完整 Cookie 头
+          H24_IDENT: ${{ secrets.H24_IDENT }}         # 服务器 ident（可选，脚本有默认值）
+          H24_UA: ${{ secrets.H24_UA }}               # 与浏览器一致的 UA（可选但建议）
+          H24_DIR: ${{ inputs.dir }}
+          H24_START_TIMEOUT: ${{ inputs.start_timeout }}
+          TG_BOT: ${{ secrets.TG_BOT }}               # Telegram 通知，格式 chat_id,token（可选）
+          # H24_PROXY 已由 setup_proxy.sh 写入 GITHUB_ENV，此处无需声明
+        working-directory: private-repo/scripts/hoster24
+        run: |
+          set -o pipefail
+          IP=$(curl -s -x "$H24_PROXY" --max-time 15 https://api.ipify.org || true)
+          if [ -n "$IP" ]; then
+            MASKED=$(printf '%s' "$IP" | awk -F'[.:]' '{if ($0 ~ /:/) print $1":"$2":****"; else print $1"."$2".x.x"}')
+            echo "🌐 出口 IP: $MASKED"
+          else
+            echo "🌐 出口 IP: 获取失败"
+          fi
+          python hoster24.py "${{ inputs.action }}" 2>&1 | tee hoster24.log
+
+      - name: 清理代理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-config.json sing-box.log
+          rm -f private-repo/scripts/hoster24/hoster24.log
+
+      # 运行日志含服务器信息，历史运行记录自动清理（保留最近 4 次）
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 4
