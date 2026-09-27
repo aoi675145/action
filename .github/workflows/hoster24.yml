@@ -6,8 +6,8 @@ on:
   workflow_dispatch:
     inputs:
       action:
-        description: '动作'
-        required: true
+        description: '动作（默认 start=保活开机，不用改）'
+        required: false
         default: 'start'
         type: choice
         options:
@@ -23,7 +23,7 @@ on:
       start_timeout:
         description: '开机后等待 running 的最长时间（秒）'
         required: false
-        default: '600'
+        default: '180'
   repository_dispatch:
     types: [hoster24]
 
