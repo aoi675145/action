@@ -1,19 +1,20 @@
 name: Hoster24 保活
 
-# 手动触发；需要定时（如每 6 小时保活）时取消 schedule 注释（cron 为 UTC 时间）
+# 保活工作流：外部系统通过 repository_dispatch 触发（event_type: hoster24），
+# 也可在 Actions 页手动触发。默认动作 start：在线自动跳过，离线自动开机。
 on:
   workflow_dispatch:
     inputs:
       action:
         description: '动作'
         required: true
-        default: 'deploy'
+        default: 'start'
         type: choice
         options:
+          - start    # 保活：在线跳过，离线开机并等到 running
           - check    # 只读自检：Cookie/WS/上传通道/Release 资产
           - status   # 查询当前状态
           - upload   # 下载 Release 的 server.jar 并上传
-          - start    # 只开机并等到 running
           - deploy   # 上传 -> 开机 -> 等 running
       dir:
         description: '服务器上的目标目录，server.jar 固定传根目录'
@@ -23,8 +24,8 @@ on:
         description: '开机后等待 running 的最长时间（秒）'
         required: false
         default: '600'
-  # schedule:
-  #   - cron: '0 */6 * * *'
+  repository_dispatch:
+    types: [hoster24]
 
 concurrency:
   group: hoster24-deploy
@@ -68,13 +69,16 @@ jobs:
           H24_COOKIE: ${{ secrets.H24_COOKIE }}       # 浏览器复制的完整 Cookie 头
           H24_IDENT: ${{ secrets.H24_IDENT }}         # 服务器 ident（可选，脚本有默认值）
           H24_UA: ${{ secrets.H24_UA }}               # 与浏览器一致的 UA（可选但建议）
-          H24_DIR: ${{ inputs.dir }}
-          H24_START_TIMEOUT: ${{ inputs.start_timeout }}
+          H24_DIR: ${{ github.event.client_payload.dir || inputs.dir || '/' }}
+          H24_START_TIMEOUT: ${{ github.event.client_payload.start_timeout || inputs.start_timeout || '600' }}
           TG_BOT: ${{ secrets.TG_BOT }}               # Telegram 通知，格式 chat_id,token（可选）
           # H24_PROXY 已由 setup_proxy.sh 写入 GITHUB_ENV，此处无需声明
         working-directory: private-repo/scripts/hoster24
         run: |
           set -o pipefail
+          # 外部触发(repository_dispatch)可带 client_payload.action，否则默认 start 保活
+          ACTION="${{ github.event.client_payload.action || inputs.action || 'start' }}"
+          echo "📋 动作: $ACTION"
           IP=$(curl -s -x "$H24_PROXY" --max-time 15 https://api.ipify.org || true)
           if [ -n "$IP" ]; then
             MASKED=$(printf '%s' "$IP" | awk -F'[.:]' '{if ($0 ~ /:/) print $1":"$2":****"; else print $1"."$2".x.x"}')
@@ -82,7 +86,7 @@ jobs:
           else
             echo "🌐 出口 IP: 获取失败"
           fi
-          python hoster24.py "${{ inputs.action }}" 2>&1 | tee hoster24.log
+          python hoster24.py "$ACTION" 2>&1 | tee hoster24.log
 
       - name: 清理代理进程和临时文件
         if: always()
