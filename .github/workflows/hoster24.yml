@@ -1,4 +1,4 @@
-name: Hoster24 自动上传与开机
+name: Hoster24 保活
 
 # 手动触发；需要定时（如每 6 小时保活）时取消 schedule 注释（cron 为 UTC 时间）
 on:
