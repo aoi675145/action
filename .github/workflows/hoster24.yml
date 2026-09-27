@@ -49,13 +49,13 @@ jobs:
           sparse-checkout-cone-mode: false
 
       # 解析 NODE_LINK -> sing-box，本地起 socks5://127.0.0.1:1080 与
-      # http://127.0.0.1:1081，并把 H24_PROXY 写入 GITHUB_ENV（后续步骤自动可用）。
+      # http://127.0.0.1:1081，并把本地代理地址写入 GITHUB_ENV（后续步骤自动可用）。
       # 代理失败会 exit 1，任务直接标红。
       - name: 启动代理 (sing-box)
         env:
-          NODE_LINK: ${{ secrets.NODE_LINK }}
-          # DIRECT_DOMAINS: 'example.com'   # 可选：命中域名直连不走代理
-        run: bash private-repo/scripts/hoster24/setup_proxy.sh
+          H24_PROXY: ${{ secrets.H24_PROXY }}   # 代理节点分享链接（vless:// 等）
+          # DIRECT_DOMAINS: 'example.com'       # 可选：命中域名直连不走代理
+        run: NODE_LINK="$H24_PROXY" bash private-repo/scripts/hoster24/setup_proxy.sh
 
       - name: 设置 Python
         uses: actions/setup-python@v5
@@ -72,7 +72,8 @@ jobs:
           H24_DIR: ${{ github.event.client_payload.dir || inputs.dir || '/' }}
           H24_START_TIMEOUT: ${{ github.event.client_payload.start_timeout || inputs.start_timeout || '600' }}
           TG_BOT: ${{ secrets.TG_BOT }}               # Telegram 通知，格式 chat_id,token（可选）
-          # H24_PROXY 已由 setup_proxy.sh 写入 GITHUB_ENV，此处无需声明
+          # 注意：此处不要声明 H24_PROXY（Secret 里是节点链接）；
+          # setup_proxy.sh 已把本地 socks 地址写入 GITHUB_ENV 的 H24_PROXY，自动生效
         working-directory: private-repo/scripts/hoster24
         run: |
           set -o pipefail
