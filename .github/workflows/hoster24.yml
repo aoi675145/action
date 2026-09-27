@@ -76,6 +76,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}       # 下载 Release 资产 server.jar
+          H24_DL_DIRECT: '1'                          # 资产下载直连 GitHub（仅此项；hoster24 流量仍走代理）
           H24_IDENT: ${{ secrets.H24_IDENT }}         # 服务器 ident（可选，脚本有默认值）
           H24_UA: ${{ secrets.H24_UA }}               # 与浏览器一致的 UA（可选但建议）
           H24_DIR: ${{ github.event.client_payload.dir || inputs.dir || '/' }}
