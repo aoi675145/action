@@ -1,0 +1,96 @@
+name: Ryft 续期
+
+on:
+  schedule:
+    # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为固定日期（北京 09:23）
+    # Ryft 登录即续期，周期 10 天（/api/config renewal_days），脚本自动安排在到期前
+    - cron: "23 1 8 10 *"
+  workflow_dispatch:  # 允许手动触发
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  auto_renew_ryft:
+    runs-on: ubuntu-22.04
+
+    steps:
+      - name: 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/ryft/ryft.py
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装系统与 Python 依赖
+        run: |
+          sudo apt-get update -qq
+          # google-chrome-stable runner 自带，显式安装兜底；jq 是 setup_proxy.sh 的依赖
+          sudo apt-get install -y --no-install-recommends google-chrome-stable xvfb fonts-noto-cjk jq || {
+            sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
+            sudo apt-get install -y --no-install-recommends google-chrome-stable xvfb fonts-noto-cjk jq
+          }
+          pip install -q seleniumbase "requests[socks]" pyautogui
+          # uc_driver 由 SeleniumBase UC 模式自动匹配下载，无需固定版本；缺失依赖 ryft.py 也会自装
+
+      - name: 设置代理 (sing-box)
+        env:
+          Ryft_PROXY_NODE: ${{ secrets.Ryft_PROXY_NODE }}
+        run: |
+          # 未配置节点时 setup_proxy.sh 自动走直连（IS_PROXY=false）
+          NODE_LINK="$Ryft_PROXY_NODE" bash private-repo/scripts/setup_proxy.sh
+
+      - name: 执行续期
+        env:
+          PYTHONIOENCODING: utf-8
+          Ryft_ACCOUNTS: ${{ secrets.Ryft_ACCOUNTS }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+          IS_PROXY: ${{ env.IS_PROXY }}
+        run: |
+          cd private-repo/scripts/ryft
+          xvfb-run -a --server-args="-screen 0 1280x800x24" python -u ryft.py
+
+      - name: 清理代理进程
+        if: always()
+        run: |
+          pkill -f sing-box || true
+
+      - name: 修改 cron
+        if: always()
+        run: |
+          NEXT_FILE=$(find . -name next_run.txt | head -1)
+          if [ -z "$NEXT_FILE" ]; then
+            echo "next_run.txt 不存在，跳过 cron 更新"
+            exit 0
+          fi
+          next_cron=$(tr -d '\n\r' < "$NEXT_FILE")
+          echo "cron: $next_cron"
+          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
+          cd cron_repo
+          sed -i "s/- cron: \".*\"/- cron: \"$next_cron\"/" .github/workflows/ryft.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/ryft.yml
+          git diff --cached --quiet || (git commit -m "auto: cron $next_cron" && git push)
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
