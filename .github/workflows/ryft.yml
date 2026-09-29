@@ -4,7 +4,7 @@ on:
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为固定日期（北京 09:23）
     # Ryft 登录即续期，周期 10 天（/api/config renewal_days），脚本自动安排在到期前
-    - cron: "23 1 8 10 *"
+    - cron: "23 1 30 9 *"
   workflow_dispatch:  # 允许手动触发
 
 permissions:
