@@ -47,17 +47,20 @@ jobs:
         env:
           Ryft_PROXY_NODE: ${{ secrets.Ryft_PROXY_NODE }}
         run: |
-          # 未配置节点时 setup_proxy.sh 自动走直连（IS_PROXY=false）
+          # 代理必填：Ryft/Discord 对数据中心 IP 风控严格，已禁用直连模式
+          if [ -z "$Ryft_PROXY_NODE" ]; then
+            echo "::error::Ryft_PROXY_NODE 未配置（必填，已禁用直连）"
+            exit 1
+          fi
           NODE_LINK="$Ryft_PROXY_NODE" bash private-repo/scripts/setup_proxy.sh
 
       - name: 执行续期
         env:
           PYTHONIOENCODING: utf-8
-          Ryft_ACCOUNTS: ${{ secrets.Ryft_ACCOUNTS }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
-          IS_PROXY: ${{ env.IS_PROXY }}
         run: |
           cd private-repo/scripts/ryft
           xvfb-run -a --server-args="-screen 0 1280x800x24" python -u ryft.py
