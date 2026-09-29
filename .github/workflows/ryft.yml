@@ -2,10 +2,10 @@ name: Ryft 续期
 
 on:
   schedule:
-    # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为固定日期（北京 09:23）
-    # Ryft 登录即续期，周期 10 天（/api/config renewal_days），脚本自动安排在到期前
-    - cron: "23 1 9 10 *"
-  workflow_dispatch:  # 允许手动触发
+    # 每 5 天一次（UTC 01:23 = 北京 09:23）。续期周期 10 天、登录即续期：
+    # */5 在月初重置只会让间隔变短（31 号后次月 1 号再跑），最长间隔恒为 5 天，跨月不会错过
+    - cron: "23 1 */5 * *"
+  workflow_dispatch:  # 允许手动 / API 触发
 
 permissions:
   actions: write
@@ -69,24 +69,6 @@ jobs:
         if: always()
         run: |
           pkill -f sing-box || true
-
-      - name: 修改 cron
-        if: always()
-        run: |
-          NEXT_FILE=$(find . -name next_run.txt | head -1)
-          if [ -z "$NEXT_FILE" ]; then
-            echo "next_run.txt 不存在，跳过 cron 更新"
-            exit 0
-          fi
-          next_cron=$(tr -d '\n\r' < "$NEXT_FILE")
-          echo "cron: $next_cron"
-          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
-          cd cron_repo
-          sed -i "s/- cron: \".*\"/- cron: \"$next_cron\"/" .github/workflows/ryft.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/ryft.yml
-          git diff --cached --quiet || (git commit -m "auto: cron $next_cron" && git push)
 
       - name: 清理运行记录
         if: always()
