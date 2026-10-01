@@ -3,7 +3,7 @@ name: HidenCloud 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '53 3 8 10 *'   # 自动更新下次运行时间
+    - cron: '53 3 8 10 *' # 2026-10-09 到期，提前一天 10-08 03:53 UTC 运行
 
 permissions:
   actions: write
@@ -50,6 +50,22 @@ jobs:
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
         working-directory: private-repo/scripts/hidencloud
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python3 hidencloud.py 2>&1 | tee renew.log
+
+      - name: 📤 兜底推送 cookies.txt
+        # 脚本内已自行 commit+push（origin 带 clone 时的 token）；
+        # 此步仅在脚本内推送失败（网络/冲突）时兜底重推，失败不影响主流程
+        if: always()
+        continue-on-error: true
+        run: |
+          cd private-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain scripts/hidencloud/cookies.txt)" ]; then
+            git add scripts/hidencloud/cookies.txt
+            git commit -m "🔄 自动更新 HidenCloud cookies（workflow 兜底）" || true
+          fi
+          git pull --rebase origin HEAD || true
+          git push origin HEAD
 
       - name: 📅 提取到期时间
         id: extract_due
