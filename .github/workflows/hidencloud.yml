@@ -3,7 +3,7 @@ name: HidenCloud 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '12 10 1 10 *'   # 自动更新下次运行时间
+    - cron: '50 3 3 9 *' # 2026-09-04 到期，提前一天 09-03 03:50 UTC 运行
 
 permissions:
   actions: write
@@ -23,10 +23,10 @@ jobs:
       - name: 🛠️ 安装系统依赖和 Python 依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xdotool scrot google-chrome-stable \
+          sudo apt-get install -y xvfb xdotool scrot gnome-screenshot google-chrome-stable \
             || (wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
                 && sudo apt-get install -y /tmp/chrome.deb)
-          pip install seleniumbase pyautogui python-xlib requests 'requests[socks]'
+          pip install seleniumbase pyautogui pillow python-xlib requests 'requests[socks]'
           
       - name: 📦 Clone 私库
         env:
