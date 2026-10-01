@@ -3,7 +3,7 @@ name: HidenCloud 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '59 12 1 10 *'   # 自动更新下次运行时间
+    - cron: '50 3 3 9 *' # 2026-09-04 到期，提前一天 09-03 03:50 UTC 运行
 
 permissions:
   actions: write
@@ -23,13 +23,9 @@ jobs:
       - name: 🛠️ 安装系统依赖和 Python 依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb xdotool scrot gnome-screenshot google-chrome-stable \
-            || (wget -qO /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb \
-                && sudo apt-get install -y /tmp/chrome.deb)
-          pip install seleniumbase pyautogui pillow python-xlib websocket-client requests 'requests[socks]'
-          # filelock 3.32.5 起对同线程嵌套 FileLock 抛 Deadlock，会打断 SB UC
-          # 模式的 pyautogui.lock 获取（freemchosting/Friday 生产验证的锁版）
-          python -m pip install "filelock==3.32.5"
+          sudo apt-get install -y xvfb
+          pip install patchright requests 'requests[socks]'
+          python -m patchright install --with-deps chrome
           
       - name: 📦 Clone 私库
         env:
@@ -57,7 +53,7 @@ jobs:
 
       - name: 📅 提取到期时间
         id: extract_due
-        if: success()
+        if: always()
         working-directory: private-repo/scripts/hidencloud
         run: |
           DUE_DATE=$(grep -oP '到期时间\(标准\): \K\d{4}-\d{2}-\d{2}' renew.log | tail -1 || echo "")
@@ -71,7 +67,7 @@ jobs:
           echo "::notice::📅 当前到期时间: $DUE_DATE"
 
       - name: 🔄 修改下次 Cron 时间
-        if: success() && steps.extract_due.outputs.skip_update != 'true'
+        if: always() && steps.extract_due.outputs.skip_update != 'true'
         run: |
           set -e
 
