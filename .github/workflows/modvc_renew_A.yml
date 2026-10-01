@@ -300,11 +300,11 @@ jobs:
             echo "::warning::可续期时间点已过，6 小时后重试"
           fi
 
-          NEXT_DATE=$(date -u -d "@$NEXT_EPOCH" +"%Y-%m-%d %H:%M")
-          NEXT_MINUTE=$(date -u -d "@$NEXT_EPOCH" +"%-M")
-          NEXT_HOUR=$(date -u -d "@$NEXT_EPOCH" +"%-H")
-          NEXT_DAY=$(date -u -d "@$NEXT_EPOCH" +"%-d")
-          NEXT_MONTH=$(date -u -d "@$NEXT_EPOCH" +"%-m")
+          NEXT_DATE=$(date -u -d "@$TARGET_EPOCH" +"%Y-%m-%d %H:%M")
+          NEXT_MINUTE=$(date -u -d "@$TARGET_EPOCH" +"%-M")
+          NEXT_HOUR=$(date -u -d "@$TARGET_EPOCH" +"%-H")
+          NEXT_DAY=$(date -u -d "@$TARGET_EPOCH" +"%-d")
+          NEXT_MONTH=$(date -u -d "@$TARGET_EPOCH" +"%-m")
           NEW_CRON="$NEXT_MINUTE $NEXT_HOUR $NEXT_DAY $NEXT_MONTH *"
 
           echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
