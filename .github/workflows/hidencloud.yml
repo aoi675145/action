@@ -43,7 +43,6 @@ jobs:
         id: run_renew
         env:
           HIDENCLOUD: ${{ secrets.HIDENCLOUD }}
-          HIDEN_COOKIES: ${{ secrets.HIDEN_COOKIES }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           IS_PROXY: ${{ env.IS_PROXY }}
