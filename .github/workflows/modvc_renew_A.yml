@@ -2,7 +2,7 @@ name: ModVC 续期  A
 
 on:
   schedule:
-    - cron: '0 0 3 10 *'  # 自动更新下次运行时间，到期前 5 天
+    - cron: '0 0 3 10 *'  # 首次运行后自动校准为下次可续期时间
   workflow_dispatch:
 
 permissions:
@@ -23,7 +23,7 @@ jobs:
           path: private
 
       - name: 📂 复制脚本到工作目录
-        run: cp private/scripts/modvc/modvc_renew_A.py modvc_renew_A.py
+        run: cp private/scripts/modvc/modvc_renew.py modvc_renew.py
 
       - name: 🐍 安装依赖
         run: pip install requests pysocks
@@ -258,46 +258,46 @@ jobs:
       - name: 🔄 执行自动续期
         id: run_renew
         env:
-          MODVC_REFRESH_TOKEN_A: ${{ secrets.MODVC_REFRESH_TOKEN_A }}
-          MODVC_ROXY_NODE_A: ${{ secrets.MODVC_ROXY_NODE_A }}
+          # 与主号共用同一份脚本：secrets 用 _A 后缀，env 变量名保持标准名
+          MODVC_REFRESH_TOKEN: ${{ secrets.MODVC_REFRESH_TOKEN_A }}
+          MODVC_ROXY_NODE: ${{ secrets.MODVC_ROXY_NODE_A }}
           MODVC_PROXY_URL: ${{ env.MODVC_PROXY_URL }}
           HTTP_PROXY: ${{ env.MODVC_PROXY_URL }}
           HTTPS_PROXY: ${{ env.MODVC_PROXY_URL }}
           TG_BOT: ${{ secrets.TG_BOT }}
         run: |
           set -o pipefail
-          python modvc_renew_A.py 2>&1 | tee renew.log
+          python modvc_renew.py 2>&1 | tee renew.log
 
-      - name: 提取到期时间
+      - name: 提取下次续期时间
         id: extract_due
-        if: success()
+        if: always()
         run: |
-          DUE_DATE=$(grep -oP '(到期时间|利用期限)[:：]\s*\K\d{4}-\d{2}-\d{2}' renew.log | tail -1 || echo "")
-          if [ -z "$DUE_DATE" ]; then
+          # 脚本在成功或"续期太早(429)"时都会输出 NEXT_RENEW_AT（已含 30 分钟缓冲）
+          NEXT_AT=$(grep -oP 'NEXT_RENEW_AT:\s*\K\S+' renew.log | tail -1 || echo "")
+          if [ -z "$NEXT_AT" ]; then
             echo "skip_update=true" >> $GITHUB_OUTPUT
-            echo "::warning::未能提取到期时间，跳过 Cron 更新"
+            echo "::warning::日志中无 NEXT_RENEW_AT，跳过 Cron 更新"
             exit 0
           fi
-          echo "due_date=$DUE_DATE" >> $GITHUB_OUTPUT
+          echo "next_at=$NEXT_AT" >> $GITHUB_OUTPUT
           echo "skip_update=false" >> $GITHUB_OUTPUT
-          echo "::notice::📅 当前到期时间: $DUE_DATE"
+          echo "::notice::⏰ 下次可续期时间: $NEXT_AT"
 
       - name: 修改下次 Cron 时间
-        if: success() && steps.extract_due.outputs.skip_update != 'true'
+        if: always() && steps.extract_due.outputs.skip_update != 'true'
         run: |
           set -e
 
-          DUE_DATE="${{ steps.extract_due.outputs.due_date }}"
-          echo "📅 当前到期时间: $DUE_DATE"
+          NEXT_AT="${{ steps.extract_due.outputs.next_at }}"
+          echo "⏰ 下次可续期时间: $NEXT_AT"
 
           CURRENT_EPOCH=$(date -u +%s)
-          TARGET_EPOCH=$(date -u -d "$DUE_DATE 00:00:00 UTC -5 days" +%s)
+          TARGET_EPOCH=$(date -u -d "$NEXT_AT" +%s)
 
-          if [ "$TARGET_EPOCH" -gt "$CURRENT_EPOCH" ]; then
-            NEXT_EPOCH="$TARGET_EPOCH"
-          else
-            NEXT_EPOCH=$((CURRENT_EPOCH + 6 * 3600))
-            echo "::warning::到期前 5 天时间点已过，6 小时后重试"
+          if [ "$TARGET_EPOCH" -le "$CURRENT_EPOCH" ]; then
+            TARGET_EPOCH=$((CURRENT_EPOCH + 6 * 3600))
+            echo "::warning::可续期时间点已过，6 小时后重试"
           fi
 
           NEXT_DATE=$(date -u -d "@$NEXT_EPOCH" +"%Y-%m-%d %H:%M")
@@ -329,7 +329,7 @@ jobs:
             exit 1
           fi
 
-          sed -i "${LINE_NUM}c\    - cron: '$NEW_CRON'  # 自动更新下次运行时间，到期前 5 天" "$WORKFLOW_FILE"
+          sed -i "${LINE_NUM}c\    - cron: '$NEW_CRON'  # 自动更新：下次可续期时间" "$WORKFLOW_FILE"
 
           if git diff --quiet "$WORKFLOW_FILE"; then
             echo "::notice::没有变化需要提交"
@@ -342,7 +342,7 @@ jobs:
           git commit -m "🔄 自动更新 ModVC 续期 Cron" \
                      -m "下次运行: $NEXT_DATE UTC" \
                      -m "Cron: $NEW_CRON" \
-                     -m "到期时间: $DUE_DATE"
+                     -m "下次可续期: $NEXT_AT"
           git push
 
           echo "::notice::✅ Cron 更新成功"
