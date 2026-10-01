@@ -4,7 +4,7 @@ on:
   schedule:
     # 每10天运行：1号、11号、21号 中午12:12 (北京时间)
     # UTC 时间 = 北京时间 - 8小时 = 04:12
-    - cron: '39 1 1,11,21 * *'
+    - cron: '12 4 1,11,21 * *'
   workflow_dispatch:
 
 jobs:
@@ -79,6 +79,18 @@ jobs:
                   if fp:
                       tls_settings["fingerprint"] = fp
                   stream["tlsSettings"] = tls_settings
+
+              if security == "reality":
+                  public_key = query.get("pbk", [""])[0] or query.get("publicKey", [""])[0]
+                  if not public_key:
+                      raise SystemExit("Reality 节点缺少 pbk (publicKey) 参数")
+                  stream["realitySettings"] = {
+                      "serverName": query.get("sni", [host])[0] or host,
+                      "fingerprint": query.get("fp", [""])[0] or query.get("fingerprint", [""])[0] or "chrome",
+                      "publicKey": public_key,
+                      "shortId": query.get("sid", [""])[0] or query.get("shortId", [""])[0] or "",
+                      "spiderX": query.get("spath", [""])[0] or query.get("spiderX", [""])[0] or "/",
+                  }
 
               if network == "ws":
                   ws_headers = {}
@@ -224,6 +236,33 @@ jobs:
           chmod +x xray-start.sh
           ./xray-start.sh
           sleep 3
+
+      - name: 验证代理出口
+        run: |
+          mask_ip() { sed -E 's/([0-9]+\.[0-9]+)\.[0-9]+\.[0-9]+/\1.**.**/g'; }
+          shopt -s nullglob
+          for cfg in xray-*.json; do
+            acct="${cfg#xray-}"; acct="${acct%.json}"
+            port=$((7890 + acct))
+            proxy="http://127.0.0.1:${port}"
+            masked=""
+
+            # 出口 IP（打码：只显示前两段）
+            ip=$(curl -x "${proxy}" -s --max-time 15 https://api.ipify.org || true)
+            if [ -n "$ip" ]; then
+              masked=$(echo "$ip" | mask_ip)
+              echo "账号 ${acct} 出口 IP: ${masked}"
+            fi
+
+            # 目标站点连通性
+            code=$(curl -x "${proxy}" -s -o /dev/null -w "%{http_code}" --max-time 20 https://betadash.lunes.host/login || true)
+            if [ -n "$code" ] && [ "$code" != "000" ]; then
+              echo "账号 ${acct} 目标站点连通正常 (HTTP ${code})"
+            else
+              echo "::warning::账号 ${acct} 代理异常（出口 IP: ${masked:-获取失败}，目标站点 HTTP ${code:-无响应}），xray-${acct}.log 末尾："
+              tail -n 50 "xray-${acct}.log" 2>/dev/null | mask_ip || true
+            fi
+          done
 
       - name: 执行保活
         env:
