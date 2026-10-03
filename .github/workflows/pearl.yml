@@ -72,6 +72,20 @@ jobs:
             exit 1
           fi
 
+          # 依赖清单也以私库为准：检出仓库的根目录不保证有 requirements.txt
+          echo "[INFO] 准备 Python 依赖清单..."
+          if [ -s requirements.txt ]; then
+            cp requirements.txt scripts/requirements.txt
+            echo "[INFO] 使用仓库根目录的 requirements.txt"
+          elif fetch "${RAW}/pearl/requirements.txt" scripts/requirements.txt \
+            && [ -s scripts/requirements.txt ]; then
+            echo "[INFO] 使用私库路径: scripts/pearl/requirements.txt"
+          else
+            printf 'requests\nPySocks\nDrissionPage\nxvfbwrapper\n' > scripts/requirements.txt
+            echo "[WARN] 私库中也取不到 requirements.txt，改用内置清单"
+          fi
+          cat scripts/requirements.txt
+
       - name: 安装系统依赖（Chrome + Xvfb）
         run: |
           sudo apt-get update
@@ -84,7 +98,7 @@ jobs:
         run: |
           set -o pipefail
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r scripts/requirements.txt
 
       - name: ⚙️ 设置代理 (sing-box)
         # PEARL_PROXY：节点链接（vless/vmess/trojan/hysteria2/tuic/anytls/ss/socks5）
