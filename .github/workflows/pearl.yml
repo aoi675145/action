@@ -1,0 +1,205 @@
+name: PearlNodes 自动续期
+
+on:
+  schedule:
+    # 占位值：每次运行后会由「🔄 自动修改下次 Cron」改成
+    # 「最早到期的那台往前 18 小时」对应的具体日期时间（UTC）。
+    # 这一版设成 10-03 18:00 UTC，两台窗口都开着，首次跑即可把它们对齐同步。
+    - cron: '0 18 3 10 *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  renew:
+    name: 执行续期脚本
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - name: 配置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 从私库拉取脚本
+        # pearl.py 按项目路径拉取；setup_proxy.sh 用私库里共用那份，不在本项目另存
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          set -o pipefail
+          mkdir -p scripts
+          RAW="https://raw.githubusercontent.com/aoi675145/scripts/main/scripts"
+
+          fetch() { # fetch <url> <dest>
+            curl -fsSL -H "Authorization: Bearer ${REPO_TOKEN}" -o "$2" "$1"
+          }
+
+          echo "[INFO] 从私库拉取 pearl.py..."
+          DOWNLOAD_FILE="$(mktemp)"
+          if fetch "${RAW}/pearl/pearl.py" "${DOWNLOAD_FILE}"; then
+            echo "[INFO] 使用私库路径: scripts/pearl/pearl.py"
+          elif fetch "${RAW}/Pearl/pearl.py" "${DOWNLOAD_FILE}"; then
+            echo "[WARN] 使用兼容路径: scripts/Pearl/pearl.py"
+          elif [ -s scripts/pearl.py ]; then
+            rm -f "${DOWNLOAD_FILE}"
+            echo "[WARN] 私库脚本下载失败，继续使用当前仓库中的 scripts/pearl.py"
+            echo "[INFO] ✅ pearl.py 已就绪 ($(wc -l < scripts/pearl.py) 行)"
+            DOWNLOAD_FILE=""
+          else
+            rm -f "${DOWNLOAD_FILE}"
+            echo "[ERROR] 私库及当前仓库中均未找到可用的 pearl.py"
+            exit 1
+          fi
+          if [ -n "${DOWNLOAD_FILE}" ]; then
+            test -s "${DOWNLOAD_FILE}"
+            mv "${DOWNLOAD_FILE}" scripts/pearl.py
+            echo "[INFO] ✅ pearl.py 已就绪 ($(wc -l < scripts/pearl.py) 行)"
+          fi
+
+          echo "[INFO] 从私库拉取共用代理脚本 setup_proxy.sh..."
+          if fetch "${RAW}/setup_proxy.sh" scripts/setup_proxy.sh && [ -s scripts/setup_proxy.sh ]; then
+            echo "[INFO] ✅ setup_proxy.sh 已就绪 ($(wc -l < scripts/setup_proxy.sh) 行)"
+          else
+            echo "[ERROR] 私库中未取到共用的 scripts/setup_proxy.sh"
+            exit 1
+          fi
+
+      - name: 安装系统依赖（Chrome + Xvfb）
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb curl gnupg
+          wget -q -O /tmp/google-chrome-stable_current_amd64.deb \
+            https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
+
+      - name: 安装 Python 依赖
+        run: |
+          set -o pipefail
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: ⚙️ 设置代理 (sing-box)
+        # PEARL_PROXY：节点链接（vless/vmess/trojan/hysteria2/tuic/anytls/ss/socks5）
+        # 未配置时脚本会打印「未配置代理，直连模式」并以 IS_PROXY=false 继续运行
+        env:
+          NODE_LINK: ${{ secrets.PEARL_PROXY }}
+        run: bash scripts/setup_proxy.sh
+
+      - name: 执行续期脚本
+        env:
+          PEARL: ${{ secrets.PEARL }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python -u scripts/pearl.py
+
+      - name: 💾 提交 Cookie 缓存
+        # 缓存能省掉下次的浏览器登录；保鲜期内直接复用，见脚本里的 COOKIE_MAX_AGE
+        if: always()
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "chore: update cookies.txt"
+          file_pattern: 'cookies.txt'
+
+      - name: 🔄 自动修改下次 Cron
+        # 参考 xserver：读脚本写出的 next_time.txt，改写本工作流的 cron 并提交。
+        # 内容是 UTC（GitHub 的 schedule 也按 UTC 解释），不需要再换算时区。
+        if: always()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+          WORKFLOW_REPO: ${{ github.repository }}
+        run: |
+          if [ ! -f next_time.txt ]; then
+            echo "⏭️ next_time.txt 不存在，跳过 cron 更新"
+            exit 0
+          fi
+
+          python3 << 'PYEOF'
+          import os
+          import re
+          import subprocess
+          from datetime import datetime
+
+          with open("next_time.txt") as f:
+              raw = f.read().strip()
+
+          m = re.search(r"(\d{4})\D+(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})", raw)
+          if not m:
+              print(f"❌ next_time.txt 解析失败: {raw!r}")
+              raise SystemExit(1)
+
+          target = datetime(int(m[1]), int(m[2]), int(m[3]), int(m[4]), int(m[5]))
+          new_cron = f"{target.minute} {target.hour} {target.day} {target.month} *"
+          info = target.strftime("%Y-%m-%d %H:%M UTC")
+          print(f"⏰ 下次运行: {info}")
+          print(f"📟 新 cron: {new_cron}")
+
+          token = os.environ["REPO_TOKEN"]
+          repo = os.environ["WORKFLOW_REPO"]
+          subprocess.run(
+              ["git", "clone", f"https://x-access-token:{token}@github.com/{repo}.git", "wf-repo"],
+              check=True, capture_output=True,
+          )
+          os.chdir("wf-repo")
+
+          wf = ".github/workflows/pearl.yml"
+          with open(wf) as f:
+              content = f.read()
+          new_content, count = re.subn(
+              r"- cron: '.*?'.*",
+              f"- cron: '{new_cron}'  # 自动更新下次运行时间",
+              content,
+              count=1,
+          )
+          if count == 0:
+              print("❌ 没在工作流里找到 cron 行")
+              raise SystemExit(1)
+          with open(wf, "w") as f:
+              f.write(new_content)
+
+          subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True, capture_output=True)
+          subprocess.run(
+              ["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"],
+              check=True, capture_output=True,
+          )
+          subprocess.run(["git", "add", wf], check=True, capture_output=True)
+          r = subprocess.run(
+              ["git", "commit", "-m", "🔄 自动更新 PearlNodes 续期 Cron", "-m", f"下次运行: {info}"],
+              capture_output=True, text=True,
+          )
+          if r.returncode == 0:
+              subprocess.run(["git", "push"], check=True, capture_output=True)
+              print("✅ Cron 更新成功")
+          else:
+              print("ℹ️ 无变更需提交")
+          PYEOF
+
+      - name: 📸 上传登录失败截图
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: login-screenshots
+          path: output/screenshots/*.png
+          retention-days: 3
+          if-no-files-found: ignore
+
+      - name: 🧽 清理代理进程
+        if: always()
+        run: pkill -f sing-box || true
+
+      - name: 清理历史运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
