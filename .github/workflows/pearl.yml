@@ -1,4 +1,4 @@
-name: PearlNodes 自动续期
+name: PearlNodes 续期
 
 on:
   schedule:
