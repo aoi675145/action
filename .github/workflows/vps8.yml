@@ -24,16 +24,7 @@ jobs:
         with:
           token: ${{ secrets.REPO_TOKEN }}
 
-      - name: 生成依赖清单（pip 缓存键）
-        run: printf 'seleniumbase\nrequests\nplaywright\nopencv-python\nmsgpack\ntyper\nmatplotlib\ngoogle-genai\nhttpx\nloguru\npydantic-settings\ntenacity\npytz\n' > requirements.txt
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: requirements.txt
-
-      - name: 从私库拉取脚本和到期缓存
+      - name: 准备（拉取脚本 / 生成依赖清单）
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -53,6 +44,14 @@ jobs:
           else
             echo "[INFO] 私库尚无缓存文件，首次运行"
           fi
+
+          printf 'seleniumbase\nrequests\nplaywright\nopencv-python\nmsgpack\ntyper\nmatplotlib\ngoogle-genai\nhttpx\nloguru\npydantic-settings\ntenacity\npytz\n' > requirements.txt
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
 
       - name: 安装并启动代理
         env:
@@ -413,8 +412,12 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 修复 apt 源
+      - name: 安装全部依赖（apt / pip / 解题器）
+        id: deps
         run: |
+          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
+          # ── apt 源修复 ──
           if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
             sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null <<'EOF'
           Types: deb
@@ -439,30 +442,32 @@ jobs:
           fi
           sudo rm -f /etc/apt/apt-mirrors.txt
 
-      - name: 安装系统依赖
-        run: |
+          # ── 系统依赖（GitHub Runner 直连 Ubuntu 官方源，不走代理；代理仅保留给浏览器）──
           APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
-          # GitHub Runner 直连 Ubuntu 官方源很快，不走代理（代理仅保留给浏览器）
           sudo apt-get update -qq $APT_OPTS
           sudo apt-get install -y --no-install-recommends xvfb fonts-noto-cjk p7zip-full
           # 预生成系统字体缓存，避免 Chrome 启动时刷 "Unable to revert mtime" 噪音
           sudo fc-cache -fs > /dev/null 2>&1 || true
 
-      - name: 安装 Python 库
-        run: |
+          # ── Python 依赖 ──
           pip install -q -r requirements.txt
 
-      - name: 准备 Chrome/ChromeDriver 缓存键
-        id: sbdrv
-        run: |
-          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+          # ── Chrome 缓存路径（供下一步缓存使用）──
           echo "path=$(python -c 'import seleniumbase,os;print(os.path.join(os.path.dirname(seleniumbase.__file__),"drivers"))')" >> "$GITHUB_OUTPUT"
+
+          # ── hcaptcha-challenger（自用 fork，固定版本）──
+          git clone --depth 1 https://github.com/aoi675145/hcaptcha.git hcaptcha-challenger
+          cd hcaptcha-challenger
+          git fetch --depth 1 origin d4da375916cde6bb85128eb8fc9859e1f06cacbc \
+            && git checkout --detach FETCH_HEAD \
+            || echo "[WARN] 固定 commit 获取失败，使用克隆时的 main HEAD"
+          git rev-parse HEAD
 
       - name: 恢复 Chrome for Testing 缓存
         uses: actions/cache@v4
         with:
-          path: ${{ steps.sbdrv.outputs.path }}
-          key: sb-drivers-${{ steps.sbdrv.outputs.week }}
+          path: ${{ steps.deps.outputs.path }}
+          key: sb-drivers-${{ steps.deps.outputs.week }}
           restore-keys: |
             sb-drivers-
 
@@ -483,19 +488,6 @@ jobs:
           hash -r
           seleniumbase install chromedriver
 
-      - name: 克隆 hcaptcha-challenger（固定版本）
-        run: |
-          git clone --depth 1 https://github.com/aoi675145/hcaptcha.git hcaptcha-challenger
-          cd hcaptcha-challenger
-          # 固定到当前 main HEAD，避免上游变动导致流程突然失效
-          git fetch --depth 1 origin d4da375916cde6bb85128eb8fc9859e1f06cacbc \
-            && git checkout --detach FETCH_HEAD \
-            || echo "[WARN] 固定 commit 获取失败，使用克隆时的 main HEAD"
-          git rev-parse HEAD
-
-      - name: 清理旧截图
-        run: rm -rf screenshots
-
       - name: 执行 VPS8 签到
         env:
           VPS8: ${{ secrets.VPS8 }}
@@ -507,7 +499,9 @@ jobs:
           PROXY_HTTP: ${{ env.PROXY_SOCKS5 }}
           VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
           NO_PROXY: localhost,127.0.0.1
-        run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py
+        run: |
+          rm -rf screenshots
+          xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py
 
       - name: 保存截图到私库
         if: always()
