@@ -500,8 +500,8 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: https://apihub.agnes-ai.com/v1
-          OPENAI_MODEL: agnes-3.0-flash
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL || 'https://apihub.agnes-ai.com/v1' }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'agnes-3.0-flash' }}
           PROXY_HTTP: ${{ env.PROXY_SOCKS5 }}
           VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
           NO_PROXY: localhost,127.0.0.1
