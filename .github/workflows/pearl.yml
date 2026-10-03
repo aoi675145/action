@@ -5,7 +5,7 @@ on:
     # 占位值：每次运行后会由「🔄 自动修改下次 Cron」改成
     # 「最早到期的那台往前 18 小时」对应的具体日期时间（UTC）。
     # 这一版设成 10-03 18:00 UTC，两台窗口都开着，首次跑即可把它们对齐同步。
-    - cron: '20 18 3 10 *'  # 自动更新下次运行时间
+    - cron: '0 18 3 10 *'
   workflow_dispatch:
 
 permissions:
@@ -81,7 +81,7 @@ jobs:
             && [ -s scripts/requirements.txt ]; then
             echo "[INFO] 使用私库路径: scripts/pearl/requirements.txt"
           else
-            printf 'requests\nPySocks\nDrissionPage\nxvfbwrapper\n' > scripts/requirements.txt
+            printf 'requests\nPySocks\nseleniumbase\nxvfbwrapper\n' > scripts/requirements.txt
             echo "[WARN] 私库中也取不到 requirements.txt，改用内置清单"
           fi
           cat scripts/requirements.txt
@@ -99,6 +99,8 @@ jobs:
           set -o pipefail
           python -m pip install --upgrade pip
           pip install -r scripts/requirements.txt
+          # UC 模式用的驱动，提前取好；取不到时 SeleniumBase 会自行下载
+          sbase get uc_driver || echo "[WARN] uc_driver 获取失败，UC 模式会自行下载"
 
       - name: ⚙️ 设置代理 (sing-box)
         # PEARL_PROXY：节点链接（vless/vmess/trojan/hysteria2/tuic/anytls/ss/socks5）
