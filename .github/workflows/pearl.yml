@@ -5,12 +5,12 @@ on:
     # 占位值：每次运行后会由「🔄 自动修改下次 Cron」改成
     # 「最早到期的那台往前 18 小时」对应的具体日期时间（UTC）。
     # 这一版设成 10-03 18:00 UTC，两台窗口都开着，首次跑即可把它们对齐同步。
-    - cron: '1 18 3 10 *'  # 自动更新下次运行时间
+    - cron: '0 18 3 10 *'
   workflow_dispatch:
 
 permissions:
   actions: write
-  contents: write
+  contents: read
 
 jobs:
   renew:
@@ -113,14 +113,6 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python -u scripts/pearl.py
-
-      - name: 💾 提交 Cookie 缓存
-        # 缓存能省掉下次的浏览器登录；保鲜期内直接复用，见脚本里的 COOKIE_MAX_AGE
-        if: always()
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "chore: update cookies.txt"
-          file_pattern: 'cookies.txt'
 
       - name: 🔄 自动修改下次 Cron
         # 参考 xserver：读脚本写出的 next_time.txt，改写本工作流的 cron 并提交。
