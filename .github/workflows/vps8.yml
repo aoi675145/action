@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "35 1 4 10 *"
+    - cron: "6 2 * * *"
 
 jobs:
   sign:
@@ -445,6 +445,8 @@ jobs:
           # GitHub Runner 直连 Ubuntu 官方源很快，不走代理（代理仅保留给浏览器）
           sudo apt-get update -qq $APT_OPTS
           sudo apt-get install -y --no-install-recommends xvfb fonts-noto-cjk p7zip-full
+          # 预生成系统字体缓存，避免 Chrome 启动时刷 "Unable to revert mtime" 噪音
+          sudo fc-cache -fs > /dev/null 2>&1 || true
 
       - name: 安装 Python 库
         run: |
@@ -483,7 +485,7 @@ jobs:
 
       - name: 克隆 hcaptcha-challenger（固定版本）
         run: |
-          git clone --depth 1 https://github.com/Sliverkiss/hcaptcha.git hcaptcha-challenger
+          git clone --depth 1 https://github.com/aoi675145/hcaptcha.git hcaptcha-challenger
           cd hcaptcha-challenger
           # 固定到当前 main HEAD，避免上游变动导致流程突然失效
           git fetch --depth 1 origin d4da375916cde6bb85128eb8fc9859e1f06cacbc \
@@ -500,8 +502,8 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL || 'https://apihub.agnes-ai.com/v1' }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'agnes-3.0-flash' }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           PROXY_HTTP: ${{ env.PROXY_SOCKS5 }}
           VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
           NO_PROXY: localhost,127.0.0.1
