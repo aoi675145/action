@@ -1,10 +1,8 @@
 name: PearlNodes 续期
 
 on:
-  # cron 由本工作流最后一步「自动修改下次 Cron」自动改写，
-  # 依据是脚本写出的 next_time.txt（UTC）。这里只是给个占位值。
   schedule:
-    - cron: '13 22 4 10 *'  # 自动更新下次运行时间
+    - cron: '13 22 4 10 *'
   workflow_dispatch:
 
 permissions:
@@ -30,7 +28,7 @@ jobs:
           python-version: '3.11'
 
       - name: 从私库拉取脚本
-        # pearl.py 按项目路径拉取；setup_proxy.sh 用私库里共用那份，不在本项目另存
+        # pearl.py comes from scripts/pearl/; setup_proxy.sh is the shared one.
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -42,66 +40,66 @@ jobs:
             curl -fsSL -H "Authorization: Bearer ${REPO_TOKEN}" -o "$2" "$1"
           }
 
-          echo "[INFO] 从私库拉取 pearl.py..."
+          echo "[INFO] pull pearl.py"
           DOWNLOAD_FILE="$(mktemp)"
           if fetch "${RAW}/pearl/pearl.py" "${DOWNLOAD_FILE}"; then
-            echo "[INFO] 使用私库路径: scripts/pearl/pearl.py"
+            echo "[INFO] source: scripts/pearl/pearl.py"
           elif fetch "${RAW}/Pearl/pearl.py" "${DOWNLOAD_FILE}"; then
-            echo "[WARN] 使用兼容路径: scripts/Pearl/pearl.py"
+            echo "[WARN] source: scripts/Pearl/pearl.py"
           elif [ -s scripts/pearl.py ]; then
             rm -f "${DOWNLOAD_FILE}"
-            echo "[WARN] 私库脚本下载失败，继续使用当前仓库中的 scripts/pearl.py"
-            echo "[INFO] ✅ pearl.py 已就绪 ($(wc -l < scripts/pearl.py) 行)"
+            echo "[WARN] private repo unreachable, keep scripts/pearl.py from this repo"
+            echo "[INFO] pearl.py ready ($(wc -l < scripts/pearl.py) lines)"
             DOWNLOAD_FILE=""
           else
             rm -f "${DOWNLOAD_FILE}"
-            echo "[ERROR] 私库及当前仓库中均未找到可用的 pearl.py"
+            echo "[ERROR] pearl.py not found"
             exit 1
           fi
           if [ -n "${DOWNLOAD_FILE}" ]; then
             test -s "${DOWNLOAD_FILE}"
             mv "${DOWNLOAD_FILE}" scripts/pearl.py
-            echo "[INFO] ✅ pearl.py 已就绪 ($(wc -l < scripts/pearl.py) 行)"
+            echo "[INFO] pearl.py ready ($(wc -l < scripts/pearl.py) lines)"
           fi
 
-          echo "[INFO] 从私库拉取共用代理脚本 setup_proxy.sh..."
+          echo "[INFO] pull shared setup_proxy.sh"
           if fetch "${RAW}/setup_proxy.sh" scripts/setup_proxy.sh && [ -s scripts/setup_proxy.sh ]; then
-            echo "[INFO] ✅ setup_proxy.sh 已就绪 ($(wc -l < scripts/setup_proxy.sh) 行)"
+            echo "[INFO] setup_proxy.sh ready ($(wc -l < scripts/setup_proxy.sh) lines)"
           else
-            echo "[ERROR] 私库中未取到共用的 scripts/setup_proxy.sh"
+            echo "[ERROR] shared scripts/setup_proxy.sh not found"
             exit 1
           fi
 
-          # 依赖清单也以私库为准：检出仓库的根目录不保证有 requirements.txt
-          echo "[INFO] 准备 Python 依赖清单..."
+          echo "[INFO] resolve requirements"
           if [ -s requirements.txt ]; then
             cp requirements.txt scripts/requirements.txt
-            echo "[INFO] 使用仓库根目录的 requirements.txt"
+            echo "[INFO] use requirements.txt from repo root"
           elif fetch "${RAW}/pearl/requirements.txt" scripts/requirements.txt \
             && [ -s scripts/requirements.txt ]; then
-            echo "[INFO] 使用私库路径: scripts/pearl/requirements.txt"
+            echo "[INFO] use private scripts/pearl/requirements.txt"
           else
-            printf 'requests\nPySocks\nseleniumbase\nxvfbwrapper\n' > scripts/requirements.txt
-            echo "[WARN] 私库中也取不到 requirements.txt，改用内置清单"
+            printf 'requests\nPySocks\nseleniumbase\nxvfbwrapper\ncurl_cffi\n' > scripts/requirements.txt
+            echo "[WARN] fallback to builtin requirements"
           fi
           cat scripts/requirements.txt
 
-          - name: 安装系统依赖（Chrome + Xvfb + tkinter）
+      - name: 安装系统依赖（Chrome + Xvfb + tkinter）
         run: |
           sudo apt-get update
-          # python3-tk 是必需的：pyautogui → mouseinfo 在模块层 import tkinter，
-          # 缺了会 sys.exit() 抛 SystemExit，穿过 pyautogui 的 except ImportError
-          # 和脚本的 except Exception，进程静默退出、无 traceback / 无截图 / 无告警。
+          # python3-tk is required: pyautogui -> mouseinfo imports tkinter at module
+          # level; without it sys.exit() raises SystemExit, which slips past both
+          # pyautogui's ImportError guard and the script's Exception guard, killing
+          # the process silently with no traceback, no screenshot and no alert.
           sudo apt-get install -y xvfb curl gnupg python3-tk
           wget -q -O /tmp/google-chrome-stable_current_amd64.deb \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
-          python3 -c "import tkinter; print('[OK] tkinter 可用')" \
-            || echo "[WARN] tkinter 仍不可用，脚本会自动给 mouseinfo 打桩"
+          python3 -c "import tkinter; print('[OK] tkinter available')" \
+            || echo "[WARN] tkinter unavailable, script will stub mouseinfo"
 
       - name: 恢复持久化浏览器 profile
-        # 缓存 Chrome profile：跨运行保留 _GRECAPTCHA 与浏览历史。
-        # 有有效会话时脚本直接复用，整个 reCAPTCHA 环节都可以跳过。
+        # Cache the Chrome profile across runs so _GRECAPTCHA and browsing history
+        # survive; with a valid session the reCAPTCHA step is skipped entirely.
         uses: actions/cache@v4
         with:
           path: chrome-profile
@@ -110,8 +108,8 @@ jobs:
             pearl-chrome-profile-
 
       - name: 清理 profile 残留锁
-        # 上次运行被强杀会留下 SingletonLock，导致 Chrome 起不来
-        # （SessionNotCreatedException: chrome not reachable）
+        # A killed run leaves SingletonLock behind and Chrome then refuses to start
+        # (SessionNotCreatedException: chrome not reachable).
         run: rm -rf chrome-profile/Singleton* || true
 
       - name: 安装 Python 依赖
@@ -119,11 +117,10 @@ jobs:
           set -o pipefail
           python -m pip install --upgrade pip
           pip install -r scripts/requirements.txt
-          # UC 模式用的驱动，提前取好；取不到时 SeleniumBase 会自行下载
-          sbase get uc_driver || echo "[WARN] uc_driver 获取失败，UC 模式会自行下载"
+          sbase get uc_driver || echo "[WARN] uc_driver fetch failed, UC mode will download it"
 
       - name: ⚙️ 设置代理 (sing-box)
-        # PEARL_PROXY：节点链接（vless/vmess/trojan/hysteria2/tuic/anytls/ss/socks5）
+        # PEARL_PROXY: vless/vmess/trojan/hysteria2/tuic/anytls/ss/socks5 node link
         env:
           NODE_LINK: ${{ secrets.PEARL_PROXY }}
         run: bash scripts/setup_proxy.sh
@@ -133,15 +130,14 @@ jobs:
           PEARL: ${{ secrets.PEARL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          # reCAPTCHA v3 是打分制、概率性的：同一出口同一干净浏览器，
-          # 前几次被拒是常态。实测 PearlNodes 第 3 次才过，所以这里给足重试。
+          # reCAPTCHA v3 is a probabilistic score: a rejection on the first tries
+          # is normal for the same exit IP and a clean browser, hence the retries.
           PEARL_LOGIN_ATTEMPTS: '8'
           PEARL_CHROME_PROFILE: 'chrome-profile'
           PEARL_HISTORY_WARMUP: 'true'
         run: python -u scripts/pearl.py
 
       - name: 上传登录失败截图
-        # 登录被拒时截图是唯一线索，reCAPTCHA 服务端不回分数、不给原因
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -151,15 +147,14 @@ jobs:
           retention-days: 14
 
       - name: 🔄 自动修改下次 Cron
-        # 参考 xserver：读脚本写出的 next_time.txt，改写本工作流的 cron 并提交。
-        # 内容是 UTC（GitHub 的 schedule 也按 UTC 解释），不需要再换算时区。
+        # Reads next_time.txt (UTC) and rewrites this workflow's cron line.
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           WORKFLOW_REPO: ${{ github.repository }}
         run: |
           if [ ! -f next_time.txt ]; then
-            echo "⏭️ next_time.txt 不存在，跳过 cron 更新"
+            echo "[SKIP] next_time.txt not found"
             exit 0
           fi
 
@@ -169,41 +164,41 @@ jobs:
           import subprocess
           from datetime import datetime
 
-          with open("next_time.txt") as f:
+          with open("next_time.txt", encoding="utf-8") as f:
               raw = f.read().strip()
 
           m = re.search(r"(\d{4})\D+(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})\D+(\d{1,2})", raw)
           if not m:
-              print(f"❌ next_time.txt 解析失败: {raw!r}")
+              print("cannot parse next_time.txt: %r" % raw)
               raise SystemExit(1)
 
           target = datetime(int(m[1]), int(m[2]), int(m[3]), int(m[4]), int(m[5]))
-          new_cron = f"{target.minute} {target.hour} {target.day} {target.month} *"
+          new_cron = "%d %d %d %d *" % (target.minute, target.hour, target.day, target.month)
           info = target.strftime("%Y-%m-%d %H:%M UTC")
-          print(f"⏰ 下次运行: {info}")
-          print(f"📟 新 cron: {new_cron}")
+          print("next run: " + info)
+          print("new cron: " + new_cron)
 
           token = os.environ["REPO_TOKEN"]
           repo = os.environ["WORKFLOW_REPO"]
           subprocess.run(
-              ["git", "clone", f"https://x-access-token:{token}@github.com/{repo}.git", "wf-repo"],
+              ["git", "clone", "https://x-access-token:%s@github.com/%s.git" % (token, repo), "wf-repo"],
               check=True, capture_output=True,
           )
           os.chdir("wf-repo")
 
           wf = ".github/workflows/pearl.yml"
-          with open(wf) as f:
+          with open(wf, encoding="utf-8") as f:
               content = f.read()
           new_content, count = re.subn(
               r"- cron: '.*?'.*",
-              f"- cron: '{new_cron}'  # 自动更新下次运行时间",
+              "- cron: '%s'" % new_cron,
               content,
               count=1,
           )
           if count == 0:
-              print("⚠️ 工作流里没有 cron 行（schedule 已停用），跳过改写")
+              print("[SKIP] no cron line in workflow")
               raise SystemExit(0)
-          with open(wf, "w") as f:
+          with open(wf, "w", encoding="utf-8") as f:
               f.write(new_content)
 
           subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True, capture_output=True)
@@ -213,18 +208,19 @@ jobs:
           )
           subprocess.run(["git", "add", wf], check=True, capture_output=True)
           r = subprocess.run(
-              ["git", "commit", "-m", "🔄 自动更新 PearlNodes 续期 Cron", "-m", f"下次运行: {info}"],
+              ["git", "commit", "-m", "chore: update pearl cron", "-m", "next run: " + info],
               capture_output=True, text=True,
           )
           if r.returncode == 0:
               subprocess.run(["git", "push"], check=True, capture_output=True)
-              print("✅ Cron 更新成功")
+              print("[OK] cron updated")
           else:
-              print("ℹ️ 无变更需提交")
+              print("[SKIP] nothing to commit")
           PYEOF
 
       - name: 保存浏览器 profile 缓存
-        # 放在 cron 改写之后：无论成败都要把会话存下来，下次才可能免验证码
+        # After the cron rewrite: persist the session no matter how the run ended,
+        # so the next run can skip reCAPTCHA.
         if: always()
         uses: actions/cache/save@v4
         with:
