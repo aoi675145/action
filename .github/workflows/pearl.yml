@@ -2,9 +2,6 @@ name: PearlNodes 续期
 
 on:
   schedule:
-    # Every 12h. This single cadence does double duty: it rolls the sliding
-    # session (so it never expires and no login is needed) and it renews as soon
-    # as a 24h-wide renewal window opens. No cron rewriting needed.
     - cron: '0 */12 * * *'
   workflow_dispatch:
 
@@ -17,8 +14,6 @@ jobs:
     name: 执行续期脚本
     runs-on: ubuntu-latest
     timeout-minutes: 45
-    strategy:
-      fail-fast: false
 
     steps:
       - uses: actions/checkout@v4
@@ -31,7 +26,6 @@ jobs:
           python-version: '3.11'
 
       - name: 从私库拉取脚本
-        # pearl.py comes from scripts/pearl/; setup_proxy.sh is the shared one.
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -39,7 +33,7 @@ jobs:
           mkdir -p scripts
           RAW="https://raw.githubusercontent.com/aoi675145/scripts/main/scripts"
 
-          fetch() { # fetch <url> <dest>
+          fetch() {
             curl -fsSL -H "Authorization: Bearer ${REPO_TOKEN}" -o "$2" "$1"
           }
 
@@ -81,7 +75,7 @@ jobs:
             && [ -s scripts/requirements.txt ]; then
             echo "[INFO] use private scripts/pearl/requirements.txt"
           else
-            printf 'requests\nPySocks\nseleniumbase\nxvfbwrapper\ncurl_cffi\n' > scripts/requirements.txt
+            printf 'requests\nPySocks\nseleniumbase\nxvfbwrapper\n' > scripts/requirements.txt
             echo "[WARN] fallback to builtin requirements"
           fi
           cat scripts/requirements.txt
@@ -89,31 +83,12 @@ jobs:
       - name: 安装系统依赖（Chrome + Xvfb + tkinter）
         run: |
           sudo apt-get update
-          # python3-tk is required: pyautogui -> mouseinfo imports tkinter at module
-          # level; without it sys.exit() raises SystemExit, which slips past both
-          # pyautogui's ImportError guard and the script's Exception guard, killing
-          # the process silently with no traceback, no screenshot and no alert.
           sudo apt-get install -y xvfb curl gnupg python3-tk
           wget -q -O /tmp/google-chrome-stable_current_amd64.deb \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
           python3 -c "import tkinter; print('[OK] tkinter available')" \
             || echo "[WARN] tkinter unavailable, script will stub mouseinfo"
-
-      - name: 恢复持久化浏览器 profile
-        # Cache the Chrome profile across runs so _GRECAPTCHA and browsing history
-        # survive; it is only needed on the rare run that has to log in again.
-        uses: actions/cache@v4
-        with:
-          path: chrome-profile
-          key: pearl-chrome-profile-${{ github.run_id }}
-          restore-keys: |
-            pearl-chrome-profile-
-
-      - name: 清理 profile 残留锁
-        # A killed run leaves SingletonLock behind and Chrome then refuses to start
-        # (SessionNotCreatedException: chrome not reachable).
-        run: rm -rf chrome-profile/Singleton* || true
 
       - name: 安装 Python 依赖
         run: |
@@ -123,7 +98,6 @@ jobs:
           sbase get uc_driver || echo "[WARN] uc_driver fetch failed, UC mode will download it"
 
       - name: ⚙️ 设置代理 (sing-box)
-        # PEARL_PROXY: vless/vmess/trojan/hysteria2/tuic/anytls/ss/socks5 node link
         env:
           NODE_LINK: ${{ secrets.PEARL_PROXY }}
         run: bash scripts/setup_proxy.sh
@@ -133,16 +107,12 @@ jobs:
           PEARL: ${{ secrets.PEARL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          # reCAPTCHA v3 is a probabilistic score: a rejection on the first tries
-          # is normal for the same exit IP and a clean browser, hence the retries.
           PEARL_LOGIN_ATTEMPTS: '8'
-          PEARL_CHROME_PROFILE: 'chrome-profile'
           PEARL_HISTORY_WARMUP: 'true'
           PEARL_COOKIE_FILE: 'pearl-cookies.txt'
         run: python -u scripts/pearl.py
 
       - name: 提交会话文件
-        # The session cookie is rolled by every page load, so persist the new value.
         if: always()
         run: |
           if [ ! -f pearl-cookies.txt ]; then
@@ -156,25 +126,9 @@ jobs:
             echo "[SKIP] cookie unchanged"
             exit 0
           fi
-          git commit -m "chore: refresh pearl session cookie"
+          git commit -m "chore: roll pearl session cookie"
           git pull --rebase --autostash origin "${GITHUB_REF_NAME}" || true
           git push || echo "[WARN] push failed, next run will retry"
-
-      - name: 上传登录失败截图
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: pearl-login-screenshots
-          path: output/screenshots/
-          if-no-files-found: ignore
-          retention-days: 14
-
-      - name: 保存浏览器 profile 缓存
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: chrome-profile
-          key: pearl-chrome-profile-${{ github.run_id }}
 
       - name: 🧽 清理代理进程
         if: always()
