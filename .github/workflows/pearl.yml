@@ -2,7 +2,7 @@ name: PearlNodes 续期
 
 on:
   schedule:
-    - cron: '58 5 4 10 *'
+    - cron: '13 22 4 10 *'
   workflow_dispatch:
 
 permissions:
@@ -133,6 +133,9 @@ jobs:
           # reCAPTCHA v3 is a probabilistic score: a rejection on the first tries
           # is normal for the same exit IP and a clean browser, hence the retries.
           PEARL_LOGIN_ATTEMPTS: '8'
+          # PEARL_SID: 可选，已保存的 connect.sid。有它就直接注入跳过 reCAPTCHA，
+          # 没有则走完整的浏览器登录流程。用 export_sid.py 刷新（sid 大约 24h 过期）。
+          PEARL_SID: ${{ secrets.PEARL_SID }}
           PEARL_CHROME_PROFILE: 'chrome-profile'
           PEARL_HISTORY_WARMUP: 'true'
         run: python -u scripts/pearl.py
