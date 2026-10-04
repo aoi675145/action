@@ -2,7 +2,7 @@ name: PearlNodes 续期
 
 on:
   schedule:
-    - cron: '2 7 4 10 *'
+    - cron: '13 22 4 10 *'
   workflow_dispatch:
 
 permissions:
@@ -78,24 +78,20 @@ jobs:
             && [ -s scripts/requirements.txt ]; then
             echo "[INFO] use private scripts/pearl/requirements.txt"
           else
-            printf 'requests\nPySocks\nseleniumbase\nxvfbwrapper\ncurl_cffi\n' > scripts/requirements.txt
+            printf 'requests\nPySocks\nplaywright\nxvfbwrapper\ncurl_cffi\n' > scripts/requirements.txt
             echo "[WARN] fallback to builtin requirements"
           fi
           cat scripts/requirements.txt
 
-      - name: 安装系统依赖（Chrome + Xvfb + tkinter）
+      - name: 安装系统依赖（Chrome + Xvfb）
         run: |
           sudo apt-get update
-          # python3-tk is required: pyautogui -> mouseinfo imports tkinter at module
-          # level; without it sys.exit() raises SystemExit, which slips past both
-          # pyautogui's ImportError guard and the script's Exception guard, killing
-          # the process silently with no traceback, no screenshot and no alert.
-          sudo apt-get install -y xvfb curl gnupg python3-tk
+          # Xvfb: Playwright headful 模式需要虚拟显示；channel="chrome" 跑
+          # 的是上面已装的 Google Chrome 官方构建，不是 Playwright 自带 Chromium。
+          sudo apt-get install -y xvfb curl gnupg
           wget -q -O /tmp/google-chrome-stable_current_amd64.deb \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
-          python3 -c "import tkinter; print('[OK] tkinter available')" \
-            || echo "[WARN] tkinter unavailable, script will stub mouseinfo"
 
       - name: 恢复持久化浏览器 profile
         # Cache the Chrome profile across runs so _GRECAPTCHA and browsing history
@@ -117,7 +113,8 @@ jobs:
           set -o pipefail
           python -m pip install --upgrade pip
           pip install -r scripts/requirements.txt
-          sbase get uc_driver || echo "[WARN] uc_driver fetch failed, UC mode will download it"
+          # Playwright 需要 OS 库（channel="chrome" 用系统 Chrome，不必下 Chromium 二进制）
+          python -m playwright install-deps chromium || echo "[WARN] playwright install-deps skipped"
 
       - name: ⚙️ 设置代理 (sing-box)
         # PEARL_PROXY: vless/vmess/trojan/hysteria2/tuic/anytls/ss/socks5 node link
