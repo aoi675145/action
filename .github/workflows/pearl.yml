@@ -75,6 +75,15 @@ jobs:
             echo "[WARN] scripts/pearl/cookies.txt missing in private repo"
           fi
 
+          echo "[INFO] pull state.txt"
+          if fetch "${RAW}/pearl/state.txt" state.txt && [ -s state.txt ]; then
+            echo "[INFO] state.txt ready"
+            cat state.txt
+          else
+            rm -f state.txt
+            echo "[INFO] no state.txt yet, will do a full check this run"
+          fi
+
       - name: 安装 Python 依赖
         run: |
           python -m pip install --upgrade pip --quiet
@@ -90,9 +99,10 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PEARL_COOKIE_FILE: 'cookies.txt'
+          PEARL_STATE_FILE: 'state.txt'
         run: python -u scripts/pearl.py
 
-      - name: 回写 cookies.txt 到私库
+      - name: 回写 cookies.txt 与 state.txt 到私库
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -105,14 +115,18 @@ jobs:
           git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-repo
           cd scripts-repo
           mkdir -p scripts/pearl
-          if [ -f scripts/pearl/cookies.txt ] && cmp -s ../cookies.txt scripts/pearl/cookies.txt; then
-            echo "[SKIP] cookie unchanged"
+          cp ../cookies.txt scripts/pearl/cookies.txt
+          if [ -f ../state.txt ]; then
+            cp ../state.txt scripts/pearl/state.txt
+            git add scripts/pearl/state.txt
+          fi
+          git add scripts/pearl/cookies.txt
+          if git diff --cached --quiet; then
+            echo "[SKIP] cookie and state unchanged"
             exit 0
           fi
-          cp ../cookies.txt scripts/pearl/cookies.txt
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add scripts/pearl/cookies.txt
           git commit -m "chore: roll pearl session cookie"
           git push || echo "[WARN] push failed, next run will retry"
 
