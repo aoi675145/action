@@ -13,7 +13,7 @@ jobs:
   renew:
     name: 执行续期脚本
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 15
 
     steps:
       - uses: actions/checkout@v4
@@ -67,35 +67,10 @@ jobs:
             exit 1
           fi
 
-          echo "[INFO] resolve requirements"
-          if [ -s requirements.txt ]; then
-            cp requirements.txt scripts/requirements.txt
-            echo "[INFO] use requirements.txt from repo root"
-          elif fetch "${RAW}/pearl/requirements.txt" scripts/requirements.txt \
-            && [ -s scripts/requirements.txt ]; then
-            echo "[INFO] use private scripts/pearl/requirements.txt"
-          else
-            printf 'requests\nPySocks\nseleniumbase\nxvfbwrapper\n' > scripts/requirements.txt
-            echo "[WARN] fallback to builtin requirements"
-          fi
-          cat scripts/requirements.txt
-
-      - name: 安装系统依赖（Chrome + Xvfb + tkinter）
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb curl gnupg python3-tk
-          wget -q -O /tmp/google-chrome-stable_current_amd64.deb \
-            https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-          sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
-          python3 -c "import tkinter; print('[OK] tkinter available')" \
-            || echo "[WARN] tkinter unavailable, script will stub mouseinfo"
-
       - name: 安装 Python 依赖
         run: |
-          set -o pipefail
-          python -m pip install --upgrade pip
-          pip install -r scripts/requirements.txt
-          sbase get uc_driver || echo "[WARN] uc_driver fetch failed, UC mode will download it"
+          python -m pip install --upgrade pip --quiet
+          pip install --quiet requests PySocks
 
       - name: ⚙️ 设置代理 (sing-box)
         env:
@@ -104,24 +79,21 @@ jobs:
 
       - name: 执行续期脚本
         env:
-          PEARL: ${{ secrets.PEARL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          PEARL_LOGIN_ATTEMPTS: '8'
-          PEARL_HISTORY_WARMUP: 'true'
-          PEARL_COOKIE_FILE: 'pearl-cookies.txt'
+          PEARL_COOKIE_FILE: 'cookies.txt'
         run: python -u scripts/pearl.py
 
       - name: 提交会话文件
         if: always()
         run: |
-          if [ ! -f pearl-cookies.txt ]; then
-            echo "[SKIP] no cookie file"
+          if [ ! -f cookies.txt ]; then
+            echo "[SKIP] no cookies.txt"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add pearl-cookies.txt
+          git add cookies.txt
           if git diff --cached --quiet; then
             echo "[SKIP] cookie unchanged"
             exit 0
