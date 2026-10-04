@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "59 2 5 10 *"
+    - cron: "6 2 * * *"
 
 jobs:
   sign:
@@ -501,7 +501,9 @@ jobs:
           NO_PROXY: localhost,127.0.0.1
         run: |
           rm -rf screenshots
-          xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py
+          # stderr 过滤掉 fontconfig 的 "Unable to revert mtime" 噪音（loguru 走 stdout，不受影响）
+          xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py \
+            2> >(grep -v "Unable to revert mtime" >&2)
 
       - name: 保存截图到私库
         if: always()
