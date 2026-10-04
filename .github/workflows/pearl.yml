@@ -1,11 +1,10 @@
 name: PearlNodes 续期
 
 on:
+  # cron 由本工作流最后一步「自动修改下次 Cron」自动改写，
+  # 依据是脚本写出的 next_time.txt（UTC）。这里只是给个占位值。
   schedule:
-    # 占位值：每次运行后会由「🔄 自动修改下次 Cron」改成
-    # 「最早到期的那台往前 18 小时」对应的具体日期时间（UTC）。
-    # 这一版设成 10-03 18:00 UTC，两台窗口都开着，首次跑即可把它们对齐同步。
-    - cron: '11 0 4 10 *'  # 自动更新下次运行时间
+    - cron: '13 22 4 10 *'  # 自动更新下次运行时间
   workflow_dispatch:
 
 permissions:
@@ -16,6 +15,7 @@ jobs:
   renew:
     name: 执行续期脚本
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     strategy:
       fail-fast: false
 
@@ -86,13 +86,33 @@ jobs:
           fi
           cat scripts/requirements.txt
 
-      - name: 安装系统依赖（Chrome + Xvfb）
+          - name: 安装系统依赖（Chrome + Xvfb + tkinter）
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb curl gnupg
+          # python3-tk 是必需的：pyautogui → mouseinfo 在模块层 import tkinter，
+          # 缺了会 sys.exit() 抛 SystemExit，穿过 pyautogui 的 except ImportError
+          # 和脚本的 except Exception，进程静默退出、无 traceback / 无截图 / 无告警。
+          sudo apt-get install -y xvfb curl gnupg python3-tk
           wget -q -O /tmp/google-chrome-stable_current_amd64.deb \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
+          python3 -c "import tkinter; print('[OK] tkinter 可用')" \
+            || echo "[WARN] tkinter 仍不可用，脚本会自动给 mouseinfo 打桩"
+
+      - name: 恢复持久化浏览器 profile
+        # 缓存 Chrome profile：跨运行保留 _GRECAPTCHA 与浏览历史。
+        # 有有效会话时脚本直接复用，整个 reCAPTCHA 环节都可以跳过。
+        uses: actions/cache@v4
+        with:
+          path: chrome-profile
+          key: pearl-chrome-profile-${{ github.run_id }}
+          restore-keys: |
+            pearl-chrome-profile-
+
+      - name: 清理 profile 残留锁
+        # 上次运行被强杀会留下 SingletonLock，导致 Chrome 起不来
+        # （SessionNotCreatedException: chrome not reachable）
+        run: rm -rf chrome-profile/Singleton* || true
 
       - name: 安装 Python 依赖
         run: |
@@ -104,7 +124,6 @@ jobs:
 
       - name: ⚙️ 设置代理 (sing-box)
         # PEARL_PROXY：节点链接（vless/vmess/trojan/hysteria2/tuic/anytls/ss/socks5）
-        # 未配置时脚本会打印「未配置代理，直连模式」并以 IS_PROXY=false 继续运行
         env:
           NODE_LINK: ${{ secrets.PEARL_PROXY }}
         run: bash scripts/setup_proxy.sh
@@ -114,7 +133,22 @@ jobs:
           PEARL: ${{ secrets.PEARL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          # reCAPTCHA v3 是打分制、概率性的：同一出口同一干净浏览器，
+          # 前几次被拒是常态。实测 PearlNodes 第 3 次才过，所以这里给足重试。
+          PEARL_LOGIN_ATTEMPTS: '8'
+          PEARL_CHROME_PROFILE: 'chrome-profile'
+          PEARL_HISTORY_WARMUP: 'true'
         run: python -u scripts/pearl.py
+
+      - name: 上传登录失败截图
+        # 登录被拒时截图是唯一线索，reCAPTCHA 服务端不回分数、不给原因
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pearl-login-screenshots
+          path: output/screenshots/
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: 🔄 自动修改下次 Cron
         # 参考 xserver：读脚本写出的 next_time.txt，改写本工作流的 cron 并提交。
@@ -167,8 +201,8 @@ jobs:
               count=1,
           )
           if count == 0:
-              print("❌ 没在工作流里找到 cron 行")
-              raise SystemExit(1)
+              print("⚠️ 工作流里没有 cron 行（schedule 已停用），跳过改写")
+              raise SystemExit(0)
           with open(wf, "w") as f:
               f.write(new_content)
 
@@ -188,6 +222,14 @@ jobs:
           else:
               print("ℹ️ 无变更需提交")
           PYEOF
+
+      - name: 保存浏览器 profile 缓存
+        # 放在 cron 改写之后：无论成败都要把会话存下来，下次才可能免验证码
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: chrome-profile
+          key: pearl-chrome-profile-${{ github.run_id }}
 
       - name: 🧽 清理代理进程
         if: always()
