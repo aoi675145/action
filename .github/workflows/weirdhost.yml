@@ -2,7 +2,9 @@ name: Weirdhost 续期
 
 on:
   schedule:
-    - cron: '36 0 * * *'
+    # 一天两次：UTC 00:36 / 12:36 = 北京 08:36 / 20:36（错开整点，GitHub 整点最容易排队延迟）。
+    # 想改成正 8 点就用 '0 0,12 * * *'。
+    - cron: '36 0,12 * * *'
   workflow_dispatch:
 
 jobs:
@@ -10,6 +12,10 @@ jobs:
     name: 续期脚本
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      # 固定 UTC：面板前端的续期判定是拿 expire 字符串与本机时钟比较的，
+      # 日志里的 nextRun 也按同一钟面判断，两个都必须落在 UTC 上。
+      TZ: UTC
     permissions:
       contents: write
       actions: write
@@ -38,6 +44,8 @@ jobs:
             echo "need_renew=true" >> $GITHUB_OUTPUT
             exit 0
           fi
+          # nextRun 与 expiry 同一钟面（面板时钟，KST），面板前端就是拿它与浏览器本地时钟比较；
+          # 本 job 已固定 TZ=UTC（见 jobs.add_time.env），所以这里直接按 UTC 语义比较即可。
           ALL_SKIP=true
           for uuid in $(jq -r 'keys[]' "$LOG_FILE"); do
             next_run=$(jq -r ".[\"$uuid\"].nextRun" "$LOG_FILE")
