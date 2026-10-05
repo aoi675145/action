@@ -24,7 +24,7 @@ jobs:
         with:
           token: ${{ secrets.REPO_TOKEN }}
 
-      - name: 准备（拉取脚本 / 生成依赖清单）
+      - name: 准备（拉取脚本与依赖清单）
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -45,6 +45,7 @@ jobs:
             echo "[INFO] 私库尚无缓存文件，首次运行"
           fi
 
+          echo "[INFO] 生成依赖清单..."
           printf 'seleniumbase\nrequests\nplaywright\nopencv-python\nmsgpack\ntyper\nmatplotlib\ngoogle-genai\nhttpx\nloguru\npydantic-settings\ntenacity\npytz\n' > requirements.txt
 
       - uses: actions/setup-python@v5
@@ -412,7 +413,7 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 安装全部依赖（apt / pip / 解题器）
+      - name: 安装依赖
         id: deps
         run: |
           echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
@@ -455,13 +456,14 @@ jobs:
           # ── Chrome 缓存路径（供下一步缓存使用）──
           echo "path=$(python -c 'import seleniumbase,os;print(os.path.join(os.path.dirname(seleniumbase.__file__),"drivers"))')" >> "$GITHUB_OUTPUT"
 
-          # ── hcaptcha-challenger（自用 fork，固定版本）──
-          git clone --depth 1 https://github.com/aoi675145/hcaptcha.git hcaptcha-challenger
+          # ── 内部组件（固定版本）──
+          git clone -q --depth 1 https://github.com/aoi675145/hcaptcha.git hcaptcha-challenger
           cd hcaptcha-challenger
-          git fetch --depth 1 origin d4da375916cde6bb85128eb8fc9859e1f06cacbc \
-            && git checkout --detach FETCH_HEAD \
-            || echo "[WARN] 固定 commit 获取失败，使用克隆时的 main HEAD"
-          git rev-parse HEAD
+          git fetch -q --depth 1 origin d4da375916cde6bb85128eb8fc9859e1f06cacbc \
+            && git checkout -q --detach FETCH_HEAD \
+            || echo "[WARN] 固定版本获取失败，使用默认版本"
+          git rev-parse HEAD > /dev/null
+          cd ..
 
       - name: 恢复 Chrome for Testing 缓存
         uses: actions/cache@v4
