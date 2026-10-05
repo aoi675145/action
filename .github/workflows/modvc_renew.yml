@@ -2,7 +2,7 @@ name: ModVC 续期
 
 on:
   schedule:
-    - cron: '29 5 5 10 *'  # 自动更新：下次可续期时间（2026-10-05 05:29 UTC，北京时间 13:29）
+    - cron: '57 12 11 10 *'  # 自动更新：下次可续期时间
   workflow_dispatch:
 
 permissions:
