@@ -2,9 +2,7 @@ name: Weirdhost 续期
 
 on:
   schedule:
-    # 一天两次：UTC 00:36 / 12:36 = 北京 08:36 / 20:36（错开整点，GitHub 整点最容易排队延迟）。
-    # 想改成正 8 点就用 '0 0,12 * * *'。
-    - cron: '36 0,12 * * *'
+    - cron: '00 0,12 * * *'
   workflow_dispatch:
 
 jobs:
