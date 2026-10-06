@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "54 2 7 10 *"
+    - cron: "30 22 * * *"
 
 jobs:
   sign:
@@ -569,10 +569,11 @@ jobs:
           from datetime import datetime, timedelta, timezone
 
           workflow = sys.argv[1]
-          target = datetime.now(timezone.utc).date() + timedelta(days=1)
-          slot = random.randrange(4 * 60)
-          hour, minute = divmod(slot, 60)
-          cron_line = f'    - cron: "{minute} {hour} {target.day} {target.month} *"'
+          # 目标：北京时间次日 06:00-08:00 随机（= 当天 22:00-23:59 UTC，日期要回退一天）
+          bj_tomorrow = (datetime.now(timezone.utc) + timedelta(hours=8)).date() + timedelta(days=1)
+          bj_start = datetime(bj_tomorrow.year, bj_tomorrow.month, bj_tomorrow.day, 6, 0)
+          run_at = bj_start - timedelta(hours=8) + timedelta(minutes=random.randrange(2 * 60))
+          cron_line = f'    - cron: "{run_at.minute} {run_at.hour} {run_at.day} {run_at.month} *"'
 
           with open(workflow, "r", encoding="utf-8") as f:
               content = f.read()
@@ -585,7 +586,8 @@ jobs:
           with open(workflow, "w", encoding="utf-8") as f:
               f.write(updated)
 
-          print(f"[INFO] 明天的随机计划: {cron_line.strip()} (UTC)")
+          bj_text = (run_at + timedelta(hours=8)).strftime("%Y-%m-%d %H:%M")
+          print(f"[INFO] 下次运行: {run_at.strftime('%Y-%m-%d %H:%M')} UTC / 北京 {bj_text}")
           PYEOF
 
           git config user.name "github-actions[bot]"
