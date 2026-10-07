@@ -2,7 +2,7 @@ name: ModVC 续期  A
 
 on:
   schedule:
-    - cron: '50 4 7 10 *'  # 自动更新：下次可续期时间
+    - cron: '53 11 13 10 *'  # 自动更新：下次可续期时间
   workflow_dispatch:
 
 permissions:
