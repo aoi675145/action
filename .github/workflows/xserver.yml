@@ -5,6 +5,13 @@ on:
     - cron: '11 7 7 10 *'  # 自动更新下次运行时间
   workflow_dispatch:
 
+# GitHub 定时触发经常延迟，会和外部触发（掉线检测 workflow_dispatch）撞车：
+# 同一时间只允许一个实例运行，后到的排队；排队中的重复触发只保留最新一个。
+# 排队的那次跑完会发现剩余时间已够而自动跳过，不会重复续期
+concurrency:
+  group: xserver-renew
+  cancel-in-progress: false
+
 jobs:
   extend-server:
     runs-on: ubuntu-latest
