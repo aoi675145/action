@@ -27,8 +27,8 @@ jobs:
 
       - name: 安装依赖
         run: |
-          pip install httpx seleniumbase xvfbwrapper
-          sudo apt-get install -y -qq xvfb ffmpeg fonts-noto-cjk
+          pip install httpx seleniumbase pyautogui
+          sudo apt-get install -y -qq --no-install-recommends xvfb xdotool fonts-noto-cjk
           wget -q -O /tmp/google-chrome-stable_current_amd64.deb \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y -qq
@@ -47,7 +47,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           CRON_JOB_API: ${{ secrets.CRON_JOB_API }}
-        run: python scripts/xserver/main.py
+        run: xvfb-run -a --server-args="-screen 0 1280x800x24" python scripts/xserver/main.py
 
       - name: TG 失败通知
         if: failure()
