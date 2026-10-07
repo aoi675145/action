@@ -1,0 +1,83 @@
+name: XServer 续期 
+
+# 触发方式全部是外部的（不用 GitHub 的 schedule，它延迟太大）：
+#   1) cron-job.org 定时任务按脚本写回的时间精确 dispatch 本 workflow
+#   2) 掉线监控发现服务器掉线时 dispatch 本 workflow
+on:
+  workflow_dispatch:
+
+# 两个外部触发可能撞车：同一时间只允许一个实例运行，后到的排队；
+# 排队中的重复触发只保留最新一个。排队的那次跑完会发现剩余时间已够而自动跳过
+concurrency:
+  group: xserver-renew
+  cancel-in-progress: false
+
+jobs:
+  extend-server:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          pip install httpx
+
+      - name: 配置代理节点 (sing-box)
+        env:
+          XSERVER_PROXY: ${{ secrets.XSERVER_PROXY }}
+        run: |
+          bash scripts/xserver/setup_singbox.sh
+
+      - name: 运行续期脚本
+        env:
+          PYTHONIOENCODING: utf-8
+          XSERVER: ${{ secrets.XSERVER }}
+          XSERVER_PROXY: ${{ secrets.XSERVER_PROXY }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          CRON_JOB_API: ${{ secrets.CRON_JOB_API }}
+          ACCOUNTS_TO_RENEW: ALL
+        run: python scripts/xserver/main.py
+
+      - name: TG 失败通知
+        if: failure()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          WF_NAME: ${{ github.workflow }}
+          WF_REPO: ${{ github.repository }}
+          WF_RUN_ID: ${{ github.run_id }}
+          WF_RUN_NUM: ${{ github.run_number }}
+        run: |
+          MSG="❌ XServer 续期失败%0A任务: ${WF_NAME} (${WF_RUN_NUM})%0A仓库: ${WF_REPO}%0A运行页: https://github.com/${WF_REPO}/actions/runs/${WF_RUN_ID}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            --data-urlencode "text=${MSG}"
+
+      - name: 清理代理进程
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box-*.json sing-box-*.log sing-box
+
+      - name: 清理旧运行
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 4
