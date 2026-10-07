@@ -47,6 +47,7 @@ jobs:
           XSERVER_PROXY: ${{ secrets.XSERVER_PROXY }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          CRON_JOB: ${{ secrets.CRON_JOB }}
           ACCOUNTS_TO_RENEW: ALL
         run: python scripts/xserver/main.py
 
