@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "39 22 7 10 *"
+    - cron: "30 22 * * *"
 
 jobs:
   sign:
@@ -517,57 +517,38 @@ jobs:
           xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py \
             2> >(grep -v "Unable to revert mtime" >&2)
 
-      - name: 保存截图到私库
+      - name: 保存信息到私库
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          if [ ! -d screenshots ] || [ -z "$(ls -A screenshots 2>/dev/null)" ]; then
-            echo "[截图] screenshots 目录不存在或为空，跳过"
-            exit 0
-          fi
-          echo "[截图] 克隆私库 aoi675145/scripts，保存截图..."
-          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
-          mkdir -p scripts-cache/scripts/vps8/screenshots
-          cp -f screenshots/*.png scripts-cache/scripts/vps8/screenshots/
-          cd scripts-cache
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -A scripts/vps8/screenshots/
-          if [ -z "$(git status --porcelain -- scripts/vps8/screenshots/)" ]; then
-            echo "[截图] 截图无变化，跳过提交"
-            exit 0
-          fi
-          git commit -m "更新 VPS8 截图 $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
-          git push
-          echo "[截图] 截图已保存到私库 scripts/vps8/screenshots/"
-
-      - name: 保存缓存与统计到私库
-        if: always()
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          if [ ! -s vps8_service_expiry.txt ] && [ ! -s vps8_stats.json ]; then
-            echo "[缓存] 没有可提交的文件，本次不提交私库"
+          HAS_SHOT=0
+          if [ -d screenshots ] && [ -n "$(ls -A screenshots 2>/dev/null)" ]; then HAS_SHOT=1; fi
+          HAS_FILE=0
+          if [ -s vps8_service_expiry.txt ]; then HAS_FILE=1; fi
+          if [ -s vps8_stats.json ]; then HAS_FILE=1; fi
+          if [ "$HAS_SHOT" = "0" ] && [ "$HAS_FILE" = "0" ]; then
+            echo "[保存] 没有可保存的内容，跳过"
             exit 0
           fi
           rm -rf scripts-cache
-          echo "[缓存] 克隆私库 aoi675145/scripts，保存到期缓存与题型统计"
+          echo "[保存] 克隆私库 aoi675145/scripts ..."
           git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
-          mkdir -p scripts-cache/scripts/vps8
-          [ -s vps8_service_expiry.txt ] && cp vps8_service_expiry.txt scripts-cache/scripts/vps8/vps8_service_expiry.txt
-          [ -s vps8_stats.json ] && cp vps8_stats.json scripts-cache/scripts/vps8/vps8_stats.json
+          mkdir -p scripts-cache/scripts/vps8/screenshots
+          if [ "$HAS_SHOT" = "1" ]; then cp -f screenshots/*.png scripts-cache/scripts/vps8/screenshots/; fi
+          if [ -s vps8_service_expiry.txt ]; then cp vps8_service_expiry.txt scripts-cache/scripts/vps8/vps8_service_expiry.txt; fi
+          if [ -s vps8_stats.json ]; then cp vps8_stats.json scripts-cache/scripts/vps8/vps8_stats.json; fi
           cd scripts-cache
           if [ -z "$(git status --porcelain -- scripts/vps8/)" ]; then
-            echo "[缓存] 无变化，不需要提交"
+            echo "[保存] 内容无变化，不需要提交"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A -- scripts/vps8/
-          git commit -m "更新 VPS8 缓存与题型统计"
+          git commit -m "更新 VPS8 运行信息 $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
           git push
-          echo "[缓存] 已保存到私库 scripts/vps8/"
+          echo "[保存] 截图/到期缓存/题型统计已保存到私库 scripts/vps8/"
 
       - name: 随机 cron 
         if: always()
