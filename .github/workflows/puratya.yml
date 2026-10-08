@@ -4,7 +4,7 @@ name: Puratya 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '5 1 * * *'
+    - cron: '5 1 14 10 *' # 下一个: 2026-10-14 01:05 UTC / 2026-10-14 09:05 北京时间 (续期日前2天 09:05)
 
 concurrency:
   group: puratya-renew
@@ -25,6 +25,13 @@ jobs:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: scripts_repo
+
+      - name: 拉取工作流仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/action
+          token: ${{ secrets.REPO_TOKEN }}
+          path: action_repo
 
       - name: 设置 Python
         uses: actions/setup-python@v5
@@ -74,6 +81,61 @@ jobs:
             git -C scripts_repo pull --rebase --autostash || true
             git -C scripts_repo push
           fi
+
+      - name: 自动修改下一次运行时间
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          WORKFLOW_FILE: action_repo/.github/workflows/puratya.yml
+        run: |
+          python3 << 'EOF'
+          import os
+          import re
+          from datetime import datetime, timedelta
+
+          workflow_file = os.environ.get("WORKFLOW_FILE")
+          date_file = 'scripts_repo/scripts/puratya/next_time.txt'
+          now_utc = datetime.utcnow()
+
+          when = None
+          label = '续期日前2天 09:05'
+          if os.path.exists(date_file):
+              with open(date_file, 'r', encoding='utf-8') as handle:
+                  content = handle.read()
+              retry = re.search(r'retry_minutes=(\d+)', content)
+              stamp = re.search(r'(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2})', content)
+              if retry:
+                  when = now_utc + timedelta(minutes=int(retry.group(1)))
+                  label = '失败重试'
+              elif stamp:
+                  when = datetime(*[int(part) for part in stamp.groups()])
+
+          if when is None or when <= now_utc:
+              when = (now_utc + timedelta(days=1)).replace(hour=1, minute=5, second=0, microsecond=0)
+              label = '兜底方案'
+
+          new_cron = f"{when.minute} {when.hour} {when.day} {when.month} *"
+          bj_time = when + timedelta(hours=8)
+          next_date_str = (f"{when.strftime('%Y-%m-%d %H:%M')} UTC / "
+                           f"{bj_time.strftime('%Y-%m-%d %H:%M')} 北京时间 ({label})")
+
+          with open(workflow_file, 'r', encoding='utf-8') as handle:
+              content = handle.read()
+          new_content = re.sub(r"- cron: '.*?'.*",
+                               f"- cron: '{new_cron}' # 下一个: {next_date_str}",
+                               content, count=1)
+          with open(workflow_file, 'w', encoding='utf-8') as handle:
+              handle.write(new_content)
+          print(f"✅ 已把下一次运行时间更新为: {new_cron} (目标时间: {next_date_str})")
+          EOF
+
+          git -C action_repo config user.name "github-actions[bot]"
+          git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C action_repo add .github/workflows/puratya.yml
+          git -C action_repo commit -m "🚀 auto: 锁定下一次运行时间" || echo "action 仓库没有 Cron 变更需要提交"
+          git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
+          git -C action_repo pull --rebase --autostash || true
+          git -C action_repo push
 
       - name: TG 失败通知
         if: failure()
