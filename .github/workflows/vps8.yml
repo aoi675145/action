@@ -1,4 +1,4 @@
-﻿name: VPS8 签到 
+﻿name: VPS8 签到
 
 on:
   workflow_dispatch:
@@ -14,7 +14,7 @@ jobs:
   sign:
     name: 执行签到
     runs-on: ubuntu-22.04
-    timeout-minutes: 35
+    timeout-minutes: 45
     permissions:
       contents: write
       actions: write
@@ -55,378 +55,16 @@ jobs:
             echo "[INFO] 私库尚无统计文件，首次运行"
           fi
 
+          echo "[INFO] 拉取共用代理脚本..."
+          curl -fsSL \
+            -H "Authorization: Bearer ${REPO_TOKEN}" \
+            -o setup_proxy.sh \
+            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/setup_proxy.sh"
+          echo "[INFO] ✅ setup_proxy.sh 已下载"
+
           echo "[INFO] 生成依赖清单..."
+
           printf 'seleniumbase\nrequests\nplaywright\nopencv-python\nmsgpack\ntyper\nmatplotlib\ngoogle-genai\nhttpx\nloguru\npydantic-settings\ntenacity\npytz\n' > requirements.txt
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip'
-          cache-dependency-path: requirements.txt
-
-      - name: 安装并启动代理
-        env:
-          VPS8_PROXY: ${{ secrets.VPS8_PROXY }}
-        run: |
-          if [ -z "$VPS8_PROXY" ]; then
-            echo "[INFO] 未配置代理，直连模式"
-            exit 0
-          fi
-
-          if [[ "$VPS8_PROXY" == hysteria2://* || "$VPS8_PROXY" == hy2://* ]]; then
-            echo "[INFO] 配置 Hysteria2 代理"
-            wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64 -O hysteria
-            chmod +x hysteria
-
-            python3 << 'PYEOF'
-          import json, os, sys
-          from urllib.parse import parse_qs, unquote, urlparse
-
-          url = os.environ.get("VPS8_PROXY", "").strip()
-          parsed = urlparse(url)
-          auth = unquote(parsed.username or "")
-          if not auth or not parsed.hostname or not parsed.port:
-              print("[ERROR] Hysteria2 节点解析失败")
-              sys.exit(1)
-          params = parse_qs(parsed.query)
-          sni = params.get("sni", [parsed.hostname])[0]
-          insecure = params.get("insecure", params.get("allowInsecure", ["0"]))[0].lower() in {"1", "true", "yes", "on"}
-          server = f"{parsed.hostname}:{parsed.port}"
-          with open("hy2.yaml", "w", encoding="utf-8") as f:
-              f.write(f"server: {json.dumps(server)}\n")
-              f.write(f"auth: {json.dumps(auth)}\n")
-              f.write("tls:\n")
-              f.write(f"  sni: {json.dumps(sni)}\n")
-              f.write(f"  insecure: {'true' if insecure else 'false'}\n")
-              f.write("http:\n")
-              f.write("  listen: 127.0.0.1:1080\n")
-          print(f"[INFO] Hysteria2 -> {parsed.hostname[:2]}***{parsed.hostname[-2:]}:{parsed.port}")
-          PYEOF
-
-            ./hysteria client -c hy2.yaml > hysteria.log 2>&1 &
-            sleep 5
-
-            echo "[INFO] 测试 Hysteria2 代理连接..."
-            for i in 1 2 3 4 5; do
-              if curl -x http://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
-                echo "[INFO] ✅ Hysteria2 代理连接成功"
-                # 只导出给浏览器用的代理；apt/pip/git 下载走直连更快
-                echo "PROXY_SOCKS5=http://127.0.0.1:1080" >> $GITHUB_ENV
-                exit 0
-              fi
-              echo "[WARN] Hysteria2 尝试 $i/5..."
-              sleep 3
-            done
-
-            echo "[ERROR] ❌ Hysteria2 代理连接失败"
-            echo "--- Hysteria2 日志 ---"
-            cat hysteria.log
-            exit 1
-          fi
-
-          wget -q https://github.com/oyz6/action/releases/download/proxy/Xray-linux-64.zip
-          unzip -q Xray-linux-64.zip -d xray && chmod +x xray/xray
-
-          python3 << 'PYEOF'
-          import os, sys, json, base64
-          from urllib.parse import parse_qs, unquote, urlparse
-
-          def mask(s):
-              return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
-
-          url = os.environ.get("VPS8_PROXY", "").strip()
-          if not url:
-              print("[ERROR] VPS8_PROXY 为空")
-              sys.exit(1)
-
-          if url.startswith("vless://"):
-              protocol = "vless"
-              content = url[8:]
-          elif url.startswith("vmess://"):
-              protocol = "vmess"
-              content = url[8:]
-          elif url.startswith("trojan://"):
-              protocol = "trojan"
-              content = url[9:]
-          elif url.startswith("ss://"):
-              protocol = "ss"
-              content = url[5:]
-          elif url.startswith("socks5://") or url.startswith("socks://"):
-              protocol = "socks5"
-              content = url.split("://")[1].split("#")[0]
-              if "@" in content:
-                  server = content.split("@")[1].split(":")[0]
-              else:
-                  server = content.split(":")[0]
-              print(f"[INFO] SOCKS5 -> {mask(server)}")
-              with open("use_external_socks.txt", "w") as f:
-                  f.write(url.split("#")[0])
-              sys.exit(0)
-          else:
-              print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
-              sys.exit(1)
-
-          if "#" in content:
-              content = content.rsplit("#", 1)[0]
-
-          config = {
-              "log": {"loglevel": "warning"},
-              "inbounds": [
-                  {"port": 10808, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
-                  {"port": 10809, "listen": "127.0.0.1", "protocol": "http"}
-              ],
-              "outbounds": []
-          }
-
-          if protocol == "vless":
-              uuid, rest = content.split("@", 1)
-              if "?" in rest:
-                  host_port, params_str = rest.split("?", 1)
-              else:
-                  host_port, params_str = rest, ""
-
-              if ":" in host_port:
-                  address, port = host_port.rsplit(":", 1)
-              else:
-                  address, port = host_port, "443"
-
-              params = parse_qs(params_str)
-              security = params.get("security", ["none"])[0]
-              network = params.get("type", ["tcp"])[0]
-              sni = params.get("sni", [address])[0]
-              fp = params.get("fp", ["chrome"])[0]
-              flow = params.get("flow", [""])[0]
-              pbk = params.get("pbk", [""])[0]
-              sid = params.get("sid", [""])[0]
-              host = params.get("host", [sni])[0]
-              path = unquote(params.get("path", ["/"])[0])
-
-              print(f"[INFO] VLESS -> {mask(address)}:{port} (security: {security}, network: {network})")
-
-              outbound = {
-                  "protocol": "vless",
-                  "settings": {
-                      "vnext": [{
-                          "address": address,
-                          "port": int(port),
-                          "users": [{"id": uuid, "encryption": "none"}]
-                      }]
-                  },
-                  "streamSettings": {
-                      "network": network,
-                      "security": security
-                  }
-              }
-
-              if flow:
-                  outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
-
-              if security == "reality":
-                  reality = {
-                      "serverName": sni,
-                      "fingerprint": fp,
-                      "publicKey": pbk,
-                  }
-                  if sid:
-                      reality["shortId"] = sid
-                  outbound["streamSettings"]["realitySettings"] = reality
-              elif security == "tls":
-                  outbound["streamSettings"]["tlsSettings"] = {
-                      "serverName": sni,
-                      "fingerprint": fp,
-                      "allowInsecure": False
-                  }
-
-              if network == "ws":
-                  outbound["streamSettings"]["wsSettings"] = {
-                      "path": path,
-                      "headers": {"Host": host}
-                  }
-              elif network == "grpc":
-                  service_name = params.get("serviceName", [""])[0]
-                  outbound["streamSettings"]["grpcSettings"] = {
-                      "serviceName": service_name
-                  }
-
-              config["outbounds"].append(outbound)
-
-          elif protocol == "vmess":
-              try:
-                  padding = 4 - len(content) % 4
-                  if padding != 4:
-                      content += "=" * padding
-                  decoded = base64.b64decode(content).decode("utf-8")
-                  vm = json.loads(decoded)
-              except Exception as e:
-                  print(f"[ERROR] VMess 解析失败: {e}")
-                  sys.exit(1)
-
-              address = vm.get("add", "")
-              port = int(vm.get("port", 443))
-              uuid = vm.get("id", "")
-              aid = int(vm.get("aid", 0))
-              network = vm.get("net", "tcp")
-              tls = vm.get("tls", "")
-              sni = vm.get("sni", "") or vm.get("host", address)
-              host = vm.get("host", address)
-              path = vm.get("path", "/")
-              fp = vm.get("fp", "chrome")
-
-              print(f"[INFO] VMess -> {mask(address)}:{port} (network: {network}, tls: {tls})")
-
-              outbound = {
-                  "protocol": "vmess",
-                  "settings": {
-                      "vnext": [{
-                          "address": address,
-                          "port": port,
-                          "users": [{"id": uuid, "alterId": aid, "security": "auto"}]
-                      }]
-                  },
-                  "streamSettings": {
-                      "network": network,
-                      "security": "tls" if tls == "tls" else "none"
-                  }
-              }
-
-              if tls == "tls":
-                  outbound["streamSettings"]["tlsSettings"] = {
-                      "serverName": sni,
-                      "fingerprint": fp,
-                      "allowInsecure": False
-                  }
-
-              if network == "ws":
-                  outbound["streamSettings"]["wsSettings"] = {
-                      "path": path,
-                      "headers": {"Host": host}
-                  }
-
-              config["outbounds"].append(outbound)
-
-          elif protocol == "trojan":
-              password, rest = content.split("@", 1)
-              if "?" in rest:
-                  host_port, params_str = rest.split("?", 1)
-              else:
-                  host_port, params_str = rest, ""
-
-              if ":" in host_port:
-                  address, port = host_port.rsplit(":", 1)
-              else:
-                  address, port = host_port, "443"
-
-              params = parse_qs(params_str)
-              sni = params.get("sni", [address])[0]
-              network = params.get("type", ["tcp"])[0]
-              host = params.get("host", [sni])[0]
-              path = unquote(params.get("path", ["/"])[0])
-              fp = params.get("fp", ["chrome"])[0]
-
-              print(f"[INFO] Trojan -> {mask(address)}:{port} (network: {network})")
-
-              outbound = {
-                  "protocol": "trojan",
-                  "settings": {
-                      "servers": [{
-                          "address": address,
-                          "port": int(port),
-                          "password": password
-                      }]
-                  },
-                  "streamSettings": {
-                      "network": network,
-                      "security": "tls",
-                      "tlsSettings": {
-                          "serverName": sni,
-                          "fingerprint": fp,
-                          "allowInsecure": False
-                      }
-                  }
-              }
-
-              if network == "ws":
-                  outbound["streamSettings"]["wsSettings"] = {
-                      "path": path,
-                      "headers": {"Host": host}
-                  }
-
-              config["outbounds"].append(outbound)
-
-          elif protocol == "ss":
-              try:
-                   if "@" in content:
-                       encoded, server_part = content.split("@", 1)
-                       server_part = server_part.split("?")[0]
-                       decoded = base64.b64decode(encoded + "==").decode("utf-8")
-                       method, password = decoded.split(":", 1)
-                       address, port = server_part.split(":", 1)
-                   else:
-                       decoded = base64.b64decode(content + "==").decode("utf-8")
-                       if "@" in decoded:
-                           user_part, server_part = decoded.split("@", 1)
-                           server_part = server_part.split("?")[0]
-                           method, password = user_part.split(":", 1)
-                           address, port = server_part.split(":", 1)
-                       else:
-                           raise ValueError("无法解析")
-              except Exception as e:
-                  print(f"[ERROR] Shadowsocks 解析失败: {e}")
-                  sys.exit(1)
-
-              print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
-
-              outbound = {
-                  "protocol": "shadowsocks",
-                  "settings": {
-                      "servers": [{
-                          "address": address,
-                          "port": int(port),
-                          "method": method,
-                          "password": password
-                      }]
-                  }
-              }
-
-              config["outbounds"].append(outbound)
-
-          with open("xray_config.json", "w") as f:
-              json.dump(config, f, indent=2)
-
-          print("[INFO] ✅ 代理配置已生成")
-          PYEOF
-
-          if [ -f "use_external_socks.txt" ]; then
-            EXTERNAL_SOCKS=$(cat use_external_socks.txt)
-            echo "PROXY_SOCKS5=$EXTERNAL_SOCKS" >> $GITHUB_ENV
-            echo "[INFO] ✅ 使用外部 SOCKS5 代理"
-            exit 0
-          fi
-
-          ./xray/xray run -c xray_config.json > xray.log 2>&1 &
-          sleep 5
-
-          echo "[INFO] 测试代理连接..."
-          for i in 1 2 3 4 5; do
-            if curl -x socks5://127.0.0.1:10808 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
-              echo "[INFO] ✅ 代理连接成功"
-              # 只导出给浏览器用的代理；apt/pip/git 下载走直连更快
-              echo "PROXY_SOCKS5=socks5://127.0.0.1:10808" >> $GITHUB_ENV
-              exit 0
-            fi
-            echo "[WARN] 尝试 $i/5..."
-            sleep 3
-          done
-
-          echo "[ERROR] ❌ 代理连接失败"
-          echo "--- Xray 日志 ---"
-          cat xray.log
-          exit 1
-
-      - name: 安装依赖
-        id: deps
-        run: |
-          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
 
           # ── apt 源修复 ──
           if [ -f /etc/apt/sources.list.d/ubuntu.sources ]; then
@@ -452,6 +90,27 @@ jobs:
           EOF
           fi
           sudo rm -f /etc/apt/apt-mirrors.txt
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: requirements.txt
+
+      - name: 安装并启动代理
+        env:
+          VPS8_PROXY: ${{ secrets.VPS8_PROXY }}
+        run: |
+          if [ -z "$VPS8_PROXY" ]; then
+            echo "::error::VPS8_PROXY 未配置（必填）"
+            exit 1
+          fi
+          NODE_LINK="$VPS8_PROXY" bash setup_proxy.sh
+
+      - name: 安装依赖
+        id: deps
+        run: |
+          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
+
 
           # ── 系统依赖（GitHub Runner 直连 Ubuntu 官方源，不走代理；代理仅保留给浏览器）──
           APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
@@ -508,12 +167,22 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
-          PROXY_HTTP: ${{ env.PROXY_SOCKS5 }}
+          PROXY_HTTP: ${{ env.PROXY_SERVER }}
+          IS_PROXY: ${{ env.IS_PROXY }}
           VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
           NO_PROXY: localhost,127.0.0.1
         run: |
           rm -rf screenshots
-          # stderr 过滤掉 fontconfig 的 "Unable to revert mtime" 噪音（loguru 走 stdout，不受影响）
+          if [ "$IS_PROXY" = "true" ]; then
+            EXIT_IP=$(curl -x "$PROXY_HTTP" -s --max-time 15 https://api.ipify.org || true)
+            if [ -n "$EXIT_IP" ]; then
+              echo "[IP] 出口 IP: $(echo "$EXIT_IP" | sed -E 's/^([0-9]+\.[0-9]+)\..*$/\1.**.**/')"
+            else
+              echo "[IP] ⚠️ 出口 IP 获取失败（代理可能不通）"
+            fi
+          else
+            echo "[IP] 直连模式，跳过出口 IP 校验"
+          fi
           xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py \
             2> >(grep -v "Unable to revert mtime" >&2)
 
@@ -550,7 +219,7 @@ jobs:
           git push
           echo "[保存] 截图/到期缓存/题型统计已保存到私库 scripts/vps8/"
 
-      - name: 随机 cron 
+      - name: 随机 cron
         if: always()
         run: |
           WORKFLOW=".github/workflows/vps8.yml"
