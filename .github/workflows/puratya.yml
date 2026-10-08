@@ -1,0 +1,189 @@
+
+name: Puratya 续期
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 12 10 *' # 下一个: 2026-10-12 03:00 UTC / 2026-10-12 11:00 北京时间 (续期日前2天执行；首次运行后自动改写)
+
+concurrency:
+  group: puratya-renew
+  cancel-in-progress: false
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: write
+      contents: write
+
+    steps:
+      - name: 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: scripts_repo
+
+      - name: 拉取工作流仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/action
+          token: ${{ secrets.REPO_TOKEN }}
+          path: action_repo
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 安装依赖
+        run: |
+          pip install curl_cffi
+          sudo apt-get update -y -qq
+          sudo apt-get install -y -qq jq curl
+
+      - name: 配置代理节点
+        env:
+          PURATYA_PROXY: ${{ secrets.PURATYA_PROXY }}
+          NODE_LINK: ${{ secrets.PURATYA_PROXY }}
+        run: |
+          bash scripts_repo/scripts/setup_proxy.sh
+
+      - name: 运行续期脚本
+        working-directory: scripts_repo/scripts/puratya
+        env:
+          PYTHONIOENCODING: utf-8
+          PURATYA_SERVERS: ${{ secrets.PURATYA_SERVERS }}
+          PURATYA_PROXY: ${{ secrets.PURATYA_PROXY }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: python puratya.py
+
+      - name: 同步 cookies.txt 回私有仓库
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          git -C scripts_repo config user.name "github-actions[bot]"
+          git -C scripts_repo config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -f "scripts_repo/scripts/puratya/cookies.txt" ]; then
+            git -C scripts_repo add scripts/puratya/cookies.txt
+          fi
+          if git -C scripts_repo diff --cached --quiet; then
+            echo "scripts 仓库无变更需要提交"
+          else
+            git -C scripts_repo commit -m "🍪 auto: 更新 cookies"
+            git -C scripts_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/scripts.git
+            git -C scripts_repo pull --rebase --autostash || true
+            git -C scripts_repo push
+          fi
+
+      - name: 自动修改下一次运行时间
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          WORKFLOW_FILE: action_repo/.github/workflows/puratya.yml
+        run: |
+          python3 << 'EOF'
+          import os
+          import re
+          from datetime import datetime, timedelta
+
+          workflow_file = os.environ.get("WORKFLOW_FILE")
+          date_file = 'scripts_repo/scripts/puratya/next_time.txt'
+
+          now_utc = datetime.utcnow()
+          target_date = None
+          label = '续期日前2天执行'
+
+          if os.path.exists(date_file):
+              with open(date_file, 'r', encoding='utf-8') as handle:
+                  content = handle.read()
+
+              match_d = re.search(r'(\d+)\s*d', content, re.IGNORECASE)
+              match_h = re.search(r'(\d+)\s*h', content, re.IGNORECASE)
+              match_m = re.search(r'(\d+)\s*m', content, re.IGNORECASE)
+              match_r = re.search(r'retry_minutes=(\d+)', content)
+              days = int(match_d.group(1)) if match_d else 0
+              hours = int(match_h.group(1)) if match_h else 0
+              minutes = int(match_m.group(1)) if match_m else 0
+
+              if match_r:
+                  # 本轮有失败：按脚本给的间隔重跑一次，不等续期日
+                  target_date = now_utc + timedelta(minutes=int(match_r.group(1)))
+                  label = '失败重试'
+              elif days or hours or minutes:
+                  expire_time = now_utc + timedelta(days=days, hours=hours, minutes=minutes)
+                  target_date = expire_time - timedelta(days=2)
+                  label = '续期日前2天执行'
+
+          if target_date and target_date > now_utc:
+              new_cron = f"{target_date.minute} {target_date.hour} {target_date.day} {target_date.month} *"
+              bj_date = target_date + timedelta(hours=8)
+              next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC / {bj_date.strftime('%Y-%m-%d %H:%M')} 北京时间 ({label})"
+          else:
+              tomorrow_utc = now_utc + timedelta(days=1)
+              tomorrow_bj = tomorrow_utc + timedelta(hours=8)
+              new_cron = f"{tomorrow_utc.minute} {tomorrow_utc.hour} * * *"
+              next_date_str = f"{tomorrow_utc.strftime('%Y-%m-%d %H:%M')} UTC / {tomorrow_bj.strftime('%Y-%m-%d %H:%M')} 北京时间 (兜底方案)"
+
+          try:
+              with open(workflow_file, 'r', encoding='utf-8') as handle:
+                  content = handle.read()
+
+              new_content = re.sub(
+                  r"- cron: '.*?'.*",
+                  f"- cron: '{new_cron}' # 下一个: {next_date_str}",
+                  content,
+                  count=1
+              )
+
+              with open(workflow_file, 'w', encoding='utf-8') as handle:
+                  handle.write(new_content)
+              print(f"✅ 已把下一次运行时间更新为: {new_cron} (目标时间: {next_date_str})")
+          except Exception as exc:
+              print(f"❌ 修改 yml 文件失败: {exc}")
+              exit(1)
+          EOF
+
+          git -C action_repo config user.name "github-actions[bot]"
+          git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C action_repo add .github/workflows/puratya.yml
+          git -C action_repo commit -m "🚀 auto: 锁定下一次运行时间" || echo "action 仓库没有 Cron 变更需要提交"
+          git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
+          git -C action_repo pull --rebase --autostash || true
+          git -C action_repo push
+
+      - name: TG 失败通知
+        if: failure()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          WF_NAME: ${{ github.workflow }}
+          WF_REPO: ${{ github.repository }}
+          WF_RUN_ID: ${{ github.run_id }}
+          WF_RUN_NUM: ${{ github.run_number }}
+        run: |
+          MSG="❌ Puratya 续期失败%0A任务: ${WF_NAME} (${WF_RUN_NUM})%0A仓库: ${WF_REPO}%0A运行页: https://github.com/${WF_REPO}/actions/runs/${WF_RUN_ID}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            --data-urlencode "text=${MSG}"
+
+      - name: 清理代理进程
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-*.json sing-box-*.log
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
