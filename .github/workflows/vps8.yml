@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "58 23 8 10 *"
+    - cron: "30 22 * * *"
 
 jobs:
   sign:
@@ -168,21 +168,10 @@ jobs:
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           PROXY_HTTP: ${{ env.PROXY_SERVER }}
-          IS_PROXY: ${{ env.IS_PROXY }}
           VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
           NO_PROXY: localhost,127.0.0.1
         run: |
           rm -rf screenshots
-          if [ "$IS_PROXY" = "true" ]; then
-            EXIT_IP=$(curl -x "$PROXY_HTTP" -s --max-time 15 https://api.ipify.org || true)
-            if [ -n "$EXIT_IP" ]; then
-              echo "[IP] 出口 IP: $(echo "$EXIT_IP" | sed -E 's/^([0-9]+\.[0-9]+)\..*$/\1.**.**/')"
-            else
-              echo "[IP] ⚠️ 出口 IP 获取失败（代理可能不通）"
-            fi
-          else
-            echo "[IP] 直连模式，跳过出口 IP 校验"
-          fi
           xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py \
             2> >(grep -v "Unable to revert mtime" >&2)
 
