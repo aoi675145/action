@@ -44,19 +44,20 @@ jobs:
           sudo apt-get update -y -qq
           sudo apt-get install -y -qq jq curl
 
-      - name: 配置代理节点
+      - name: 安装并启动代理
         env:
-          PURATYA_PROXY: ${{ secrets.PURATYA_PROXY }}
           NODE_LINK: ${{ secrets.PURATYA_PROXY }}
         run: |
+          if [ -z "${NODE_LINK}" ]; then
+            echo "[ERROR] 未配置 PURATYA_PROXY，代理为必填项，停止执行"
+            exit 1
+          fi
           bash scripts_repo/scripts/setup_proxy.sh
 
       - name: 运行续期脚本
         working-directory: scripts_repo/scripts/puratya
         env:
           PYTHONIOENCODING: utf-8
-          PURATYA_SERVERS: ${{ secrets.PURATYA_SERVERS }}
-          PURATYA_PROXY: ${{ secrets.PURATYA_PROXY }}
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
@@ -172,13 +173,13 @@ jobs:
             -d chat_id="${TG_CHAT_ID}" \
             --data-urlencode "text=${MSG}"
 
-      - name: 清理代理进程
+      - name: 清理 sing-box
         if: always()
         run: |
-          pkill -f sing-box || true
-          rm -f sing-box sing-box-*.json sing-box-*.log
+          pkill -f sing-box 2>/dev/null || true
+          rm -f sing-box sing-box-config.json sing-box.log sing-box-*.json sing-box-*.log sing-box-*.tar.gz
 
-      - name: 清理运行记录
+      - name: 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
@@ -186,4 +187,4 @@ jobs:
           repository: ${{ github.repository }}
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
-          keep_minimum_runs: 2
+          keep_minimum_runs: 1
