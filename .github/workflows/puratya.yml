@@ -4,7 +4,7 @@ name: Puratya 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '59 2 12 10 *' # 下一个: 2026-10-12 02:59 UTC / 2026-10-12 10:59 北京时间 (续期日前2天执行)
+    - cron: '5 1 * * *'
 
 concurrency:
   group: puratya-renew
@@ -25,13 +25,6 @@ jobs:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: scripts_repo
-
-      - name: 拉取工作流仓库
-        uses: actions/checkout@v4
-        with:
-          repository: aoi675145/action
-          token: ${{ secrets.REPO_TOKEN }}
-          path: action_repo
 
       - name: 设置 Python
         uses: actions/setup-python@v5
@@ -81,82 +74,6 @@ jobs:
             git -C scripts_repo pull --rebase --autostash || true
             git -C scripts_repo push
           fi
-
-      - name: 自动修改下一次运行时间
-        if: always()
-        env:
-          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
-          WORKFLOW_FILE: action_repo/.github/workflows/puratya.yml
-        run: |
-          python3 << 'EOF'
-          import os
-          import re
-          from datetime import datetime, timedelta
-
-          workflow_file = os.environ.get("WORKFLOW_FILE")
-          date_file = 'scripts_repo/scripts/puratya/next_time.txt'
-
-          now_utc = datetime.utcnow()
-          target_date = None
-          label = '续期日前2天执行'
-
-          if os.path.exists(date_file):
-              with open(date_file, 'r', encoding='utf-8') as handle:
-                  content = handle.read()
-
-              match_d = re.search(r'(\d+)\s*d', content, re.IGNORECASE)
-              match_h = re.search(r'(\d+)\s*h', content, re.IGNORECASE)
-              match_m = re.search(r'(\d+)\s*m', content, re.IGNORECASE)
-              match_r = re.search(r'retry_minutes=(\d+)', content)
-              days = int(match_d.group(1)) if match_d else 0
-              hours = int(match_h.group(1)) if match_h else 0
-              minutes = int(match_m.group(1)) if match_m else 0
-
-              if match_r:
-                  # 本轮有失败：按脚本给的间隔重跑一次，不等续期日
-                  target_date = now_utc + timedelta(minutes=int(match_r.group(1)))
-                  label = '失败重试'
-              elif days or hours or minutes:
-                  expire_time = now_utc + timedelta(days=days, hours=hours, minutes=minutes)
-                  target_date = expire_time - timedelta(days=2)
-                  label = '续期日前2天执行'
-
-          if target_date and target_date > now_utc:
-              new_cron = f"{target_date.minute} {target_date.hour} {target_date.day} {target_date.month} *"
-              bj_date = target_date + timedelta(hours=8)
-              next_date_str = f"{target_date.strftime('%Y-%m-%d %H:%M')} UTC / {bj_date.strftime('%Y-%m-%d %H:%M')} 北京时间 ({label})"
-          else:
-              tomorrow_utc = now_utc + timedelta(days=1)
-              tomorrow_bj = tomorrow_utc + timedelta(hours=8)
-              new_cron = f"{tomorrow_utc.minute} {tomorrow_utc.hour} * * *"
-              next_date_str = f"{tomorrow_utc.strftime('%Y-%m-%d %H:%M')} UTC / {tomorrow_bj.strftime('%Y-%m-%d %H:%M')} 北京时间 (兜底方案)"
-
-          try:
-              with open(workflow_file, 'r', encoding='utf-8') as handle:
-                  content = handle.read()
-
-              new_content = re.sub(
-                  r"- cron: '.*?'.*",
-                  f"- cron: '{new_cron}' # 下一个: {next_date_str}",
-                  content,
-                  count=1
-              )
-
-              with open(workflow_file, 'w', encoding='utf-8') as handle:
-                  handle.write(new_content)
-              print(f"✅ 已把下一次运行时间更新为: {new_cron} (目标时间: {next_date_str})")
-          except Exception as exc:
-              print(f"❌ 修改 yml 文件失败: {exc}")
-              exit(1)
-          EOF
-
-          git -C action_repo config user.name "github-actions[bot]"
-          git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
-          git -C action_repo add .github/workflows/puratya.yml
-          git -C action_repo commit -m "🚀 auto: 锁定下一次运行时间" || echo "action 仓库没有 Cron 变更需要提交"
-          git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
-          git -C action_repo pull --rebase --autostash || true
-          git -C action_repo push
 
       - name: TG 失败通知
         if: failure()
