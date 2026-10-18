@@ -86,6 +86,7 @@ jobs:
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          CRON_TOKEN: ${{ secrets.REPO_TOKEN }}
           VYCE_COOKIE_FILE: 'cookies.txt'
           VYCE_GITHUB_COOKIE_FILE: 'github_cookies.txt'
           VYCE_STATE_FILE: 'state.txt'
