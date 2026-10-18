@@ -1,0 +1,149 @@
+name: Vyce 续期
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+concurrency:
+  group: vyce-renew
+  cancel-in-progress: false
+
+jobs:
+  renew:
+    name: 执行续期脚本
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+
+      - name: 配置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 从私库拉取脚本与 cookies
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          set -o pipefail
+          mkdir -p scripts
+          RAW="https://raw.githubusercontent.com/aoi675145/scripts/main/scripts"
+
+          fetch() {
+            curl -fsSL -H "Authorization: Bearer ${REPO_TOKEN}" -o "$2" "$1"
+          }
+
+          echo "[INFO] pull vyce/vyce.py"
+          if fetch "${RAW}/vyce/vyce.py" scripts/vyce.py && [ -s scripts/vyce.py ]; then
+            echo "[INFO] vyce.py ready ($(wc -l < scripts/vyce.py) lines)"
+          else
+            echo "[ERROR] scripts/vyce/vyce.py not found in private repo"
+            exit 1
+          fi
+
+          echo "[INFO] pull shared setup_proxy.sh"
+          if fetch "${RAW}/setup_proxy.sh" scripts/setup_proxy.sh && [ -s scripts/setup_proxy.sh ]; then
+            echo "[INFO] setup_proxy.sh ready"
+          else
+            rm -f scripts/setup_proxy.sh
+            echo "[ERROR] shared scripts/setup_proxy.sh missing in private repo"
+            exit 1
+          fi
+
+          for name in cookies.txt github_cookies.txt; do
+            echo "[INFO] pull ${name}"
+            if fetch "${RAW}/vyce/${name}" "${name}" && [ -s "${name}" ]; then
+              echo "[INFO] ${name} ready"
+            else
+              rm -f "${name}"
+              echo "[WARN] scripts/vyce/${name} missing in private repo"
+            fi
+          done
+
+      - name: 安装 Python 依赖
+        run: |
+          python -m pip install --upgrade pip --quiet
+          pip install --quiet requests PySocks
+
+      - name: ⚙️ 设置代理 (sing-box)
+        env:
+          NODE_LINK: ${{ secrets.VYCE_PROXY }}
+        run: |
+          if [ -z "${NODE_LINK}" ]; then
+            echo "[ERROR] 未配置 VYCE_PROXY，已禁止直连"
+            exit 1
+          fi
+          bash scripts/setup_proxy.sh
+
+      - name: 执行续期脚本
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          CRON_TOKEN: ${{ secrets.REPO_TOKEN }}
+          VYCE_COOKIE_FILE: 'cookies.txt'
+          VYCE_GITHUB_COOKIE_FILE: 'github_cookies.txt'
+          DRY_RUN: 'false'
+        run: python -u scripts/vyce.py
+
+      - name: 回写 cookies.txt 到私库
+        if: always()
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          if [ ! -f cookies.txt ]; then
+            echo "[SKIP] no cookies.txt"
+            exit 0
+          fi
+          rm -rf scripts-repo
+          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-repo
+          cd scripts-repo
+          mkdir -p scripts/vyce
+          cp ../cookies.txt scripts/vyce/cookies.txt
+          git add scripts/vyce/cookies.txt
+          if git diff --cached --quiet; then
+            echo "[SKIP] cookies unchanged"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore: roll vyce session cookie"
+          git push || echo "[WARN] push failed, next run will retry"
+
+      - name: TG 失败通知
+        if: failure()
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          WF_NAME: ${{ github.workflow }}
+          WF_REPO: ${{ github.repository }}
+          WF_RUN_ID: ${{ github.run_id }}
+          WF_RUN_NUM: ${{ github.run_number }}
+        run: |
+          MSG="❌ Vyce 续期失败%0A任务: ${WF_NAME} (${WF_RUN_NUM})%0A仓库: ${WF_REPO}%0A运行页: https://github.com/${WF_REPO}/actions/runs/${WF_RUN_ID}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            --data-urlencode "text=${MSG}"
+
+      - name: 🧽 清理代理进程
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box-*.json sing-box-*.log sing-box scripts/setup_proxy.sh
+
+      - name: 清理历史运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
