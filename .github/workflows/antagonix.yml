@@ -57,17 +57,17 @@ jobs:
           pip install --quiet 'requests[socks]' seleniumbase
           seleniumbase install chromedriver
 
-      - name: ⚙️ 设置代理 (sing-box，可选)
+      - name: ⚙️ 设置代理 (sing-box)
         env:
           NODE_LINK: ${{ secrets.ANTAGONIX_PROXY }}
         run: |
           if [ -z "$NODE_LINK" ]; then
-            echo "[INFO] 未配置 ANTAGONIX_PROXY，直连运行"
-            exit 0
+            echo "::error::ANTAGONIX_PROXY 未配置（必填，本脚本不允许直连）"
+            exit 1
           fi
           if [ ! -f scripts/setup_proxy.sh ]; then
-            echo "[WARN] 没有 setup_proxy.sh，跳过"
-            exit 0
+            echo "::error::私库里缺 scripts/setup_proxy.sh，无法起代理"
+            exit 1
           fi
           bash scripts/setup_proxy.sh
 
