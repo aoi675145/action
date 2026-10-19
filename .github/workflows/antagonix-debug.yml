@@ -56,12 +56,11 @@ jobs:
               "client_id": int(q.get("client_id") or 0),
               "response_type": "code",
               "redirect_uri": "https://antagonix.fr/discord_callback",
-              "scope": ["identify", "email", "guilds.join"],
+              "scope": "identify email guilds.join",
               "state": q.get("state"),
           }
           r2 = s.post("https://discord.com/api/v9/oauth2/authorize",
-                      headers={"Authorization": TOK, "Content-Type": "application/json"},
-                      json=payload, timeout=30)
+                      headers={"Authorization": TOK}, params=payload, timeout=30)
           print("api", r2.status_code, (r2.text or "")[:200].replace("\n", " "), flush=True)
           loc = ""
           try:
