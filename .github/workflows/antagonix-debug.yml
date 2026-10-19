@@ -8,7 +8,7 @@ permissions:
 jobs:
   diag:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/setup-python@v5
         with:
@@ -27,71 +27,41 @@ jobs:
           curl -fsSL -H "Authorization: Bearer ${{ secrets.REPO_TOKEN }}" -o /tmp/setup_proxy.sh https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/setup_proxy.sh
           bash /tmp/setup_proxy.sh
       - name: diag
-        env:
-          PYTHONIOENCODING: utf-8
-          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: |
           python -u - <<'PY' 2>&1 | tee /tmp/diag.log
-          import os, json, time
+          import time
           from seleniumbase import SB
 
           UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36")
-          TOK = (os.environ.get("DISCORD_TOKEN") or "").strip()
 
+          PROBE = """
+          var out = {};
+          out.origin = location.origin;
+          out.ls = typeof window.localStorage;
+          out.ss = typeof window.sessionStorage;
+          out.idb = typeof window.indexedDB;
+          out.cookieEnabled = navigator.cookieEnabled;
+          out.cookieLen = document.cookie.length;
+          try { window.localStorage.setItem('probe','1'); out.write = window.localStorage.getItem('probe'); }
+          catch (e) { out.write = 'ERR ' + e.name + ': ' + e.message; }
+          return JSON.stringify(out);
+          """
 
-          def info(sb, tag):
+          def probe(sb, tag):
               try:
-                  txt = sb.execute_script("return document.body.innerText.slice(0,220)") or ""
+                  print(tag, sb.execute_script(PROBE), flush=True)
               except Exception as e:
-                  txt = "ERR " + type(e).__name__ + " " + str(e)[:80]
-              try:
-                  print(tag, "url=", sb.get_current_url()[:80], "| text=", txt.replace("\n", " | "), flush=True)
-              except Exception as e:
-                  print(tag, "url-err", type(e).__name__, flush=True)
+                  print(tag, "ERR", type(e).__name__, str(e)[:200].replace("\n", " "), flush=True)
 
-
-          with SB(headless=False, incognito=False, agent=UA,
-                  locale_code="en", proxy="socks5://127.0.0.1:1080") as sb:
+          with SB(headless=False, agent=UA, locale_code="en",
+                  proxy="socks5://127.0.0.1:1080") as sb:
               sb.set_window_size(1280, 860)
+              sb.open("https://example.com")
+              time.sleep(2)
+              probe(sb, "example")
               sb.open("https://discord.com/login")
-              state = ""
-              for i in range(40):
-                  time.sleep(1)
-                  try:
-                      state = sb.execute_script("return document.readyState + '|' + typeof window.localStorage")
-                  except Exception:
-                      state = "pending"
-                  if state.endswith("|object"):
-                      break
-              print("A ready", state, "after", i + 1, "s", flush=True)
-              info(sb, "A page")
-              if state.endswith("|object"):
-                  sb.execute_script("window.localStorage.setItem('token', arguments[0])", TOK)
-                  print("A wrote", sb.execute_script("return window.localStorage.getItem('token') ? 'yes' : 'no'"),
-                        flush=True)
-
-              sb.open("https://discord.com/channels/@me")
-              time.sleep(10)
-              info(sb, "A me")
-
-              sb.open("https://antagonix.fr/login")
-              time.sleep(3)
-              href = sb.execute_script("return document.querySelector('a[data-oauth-button]').href")
-              print("B href_ok", href.startswith("https://discord.com/oauth2/authorize"), flush=True)
-
-              sb.open(href)
-              time.sleep(20)
-              info(sb, "C authorize")
-              sb.save_screenshot("/tmp/oauth_page.png")
-              print("shot saved", flush=True)
+              time.sleep(6)
+              probe(sb, "discord")
+              print("title", sb.get_title(), flush=True)
           PY
-      - name: upload
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: antagonix-diag9
-          path: |
-            /tmp/diag.log
-            /tmp/oauth_page.png
-          if-no-files-found: warn
