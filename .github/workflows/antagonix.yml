@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: 从私库拉取脚本与 cookies.txt
+      - name: 从私库拉取脚本
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -42,14 +42,6 @@ jobs:
           else
             echo "[WARN] setup_proxy.sh missing, proxy step will be skipped"
             rm -f scripts/setup_proxy.sh
-          fi
-
-          echo "[INFO] pull cookies.txt"
-          if fetch "${RAW}/antagonix/cookies.txt" cookies.txt && [ -s cookies.txt ]; then
-            echo "[INFO] cookies.txt ready"
-          else
-            rm -f cookies.txt
-            echo "[WARN] no cookies.txt in private repo, will rely on ANTAGONIX_COOKIE secret"
           fi
 
       - name: 配置 Python 环境
@@ -82,8 +74,8 @@ jobs:
       - name: 执行续期脚本
         env:
           PYTHONIOENCODING: utf-8
-          ANTAGONIX_COOKIE: ${{ secrets.ANTAGONIX_COOKIE }}
-          ANTAGONIX_COOKIE_FILE: cookies.txt
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
           RENEW_BEFORE_HOURS: ${{ vars.ANTAGONIX_RENEW_BEFORE_HOURS || '24' }}
           FORCE_RENEW: ${{ vars.ANTAGONIX_FORCE_RENEW || '' }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
