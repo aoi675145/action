@@ -32,19 +32,22 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: |
           python -u - <<'PY' 2>&1 | tee /tmp/diag.log
-          import os, json, time
+          import os, json, time, re
+          import requests
           from seleniumbase import SB
 
           UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36")
           TOK = (os.environ.get("DISCORD_TOKEN") or "").strip()
+          PX = {"http": "socks5://127.0.0.1:1080", "https": "socks5://127.0.0.1:1080"}
+          DASH = "https://antagonix.fr/dashboard.php?section=bots&lang=en"
 
 
-          def js(sb, expr, tag):
+          def text(sb, n=400):
               try:
-                  print(tag, "=", sb.execute_script(expr), flush=True)
+                  return (sb.execute_script("document.body.innerText.slice(0,%d)" % n) or "").replace("\n", " | ")
               except Exception as e:
-                  print(tag, "= ERR", type(e).__name__, str(e)[:300].replace("\n", " "), flush=True)
+                  return "ERR " + type(e).__name__
 
 
           with SB(uc=True, headless=False, incognito=False, agent=UA,
@@ -54,31 +57,56 @@ jobs:
               time.sleep(2)
               sb.execute_script("window.localStorage.setItem('token', %s)" % json.dumps(TOK))
               sb.open("https://discord.com/channels/@me")
-              time.sleep(8)
-              print("A url=", sb.get_current_url()[:100], flush=True)
-              js(sb, "typeof window.localStorage", "A typeof-ls")
-              js(sb, "window.localStorage.getItem('token') ? 'has-token' : 'no-token'", "A token")
-              js(sb, "(function(){var x=new XMLHttpRequest();x.open('GET','/api/v9/users/@me',false);"
-                     "x.setRequestHeader('Authorization',window.localStorage.getItem('token')||'');"
-                     "try{x.send();}catch(e){return 'send-err '+e;}return x.status+' '+(x.responseText||'').slice(0,120);})()", "A me")
-              js(sb, "document.cookie.length", "A cookie-len")
+              time.sleep(10)
+              print("A url=", sb.get_current_url()[:80], "text=", text(sb, 300), flush=True)
+
+              # direct API check of the token
+              try:
+                  r = requests.get("https://discord.com/api/v9/users/@me",
+                                   headers={"Authorization": TOK}, proxies=PX, timeout=30)
+                  print("A api-status", r.status_code, r.text[:120], flush=True)
+              except Exception as e:
+                  print("A api-err", type(e).__name__, str(e)[:150], flush=True)
 
               sb.open("https://antagonix.fr/login")
               time.sleep(3)
-              js(sb, "document.querySelectorAll('a[data-oauth-button]').length", "B oauth-buttons")
-              url = None
-              try:
-                  url = sb.execute_script("document.querySelector('a[data-oauth-button]').href")
-              except Exception as e:
-                  print("B href = ERR", type(e).__name__, str(e)[:200].replace("\n", " "), flush=True)
-              print("B href=", (url or '')[:200], flush=True)
+              href = sb.execute_script("document.querySelector('a[data-oauth-button]').href")
+              q = dict(re.findall(r"[?&]([^=&]+)=([^&]*)", href))
+              print("B state", q.get("state"), "client", q.get("client_id"), flush=True)
 
-              sb.open(url)
+              # 1) plain document navigation to the authorize page
+              sb.open(href)
               time.sleep(20)
-              print("C url=", sb.get_current_url()[:160], flush=True)
-              js(sb, "document.body.innerText.slice(0,600)", "C text")
-              js(sb, "document.querySelectorAll('button').length", "C buttons")
-              js(sb, "document.title", "C title")
+              print("C url=", sb.get_current_url()[:90], "text=", text(sb, 300), flush=True)
+
+              # 2) API-based authorize with the token
+              payload = {
+                  "client_id": q.get("client_id"),
+                  "response_type": "code",
+                  "redirect_uri": "https://antagonix.fr/discord_callback",
+                  "scope": (q.get("scope") or "identify email guilds.join").replace("+", " "),
+                  "state": q.get("state"),
+              }
+              try:
+                  r = requests.post("https://discord.com/api/v9/oauth2/authorize",
+                                    headers={"Authorization": TOK, "Content-Type": "application/json",
+                                             "User-Agent": UA},
+                                    json=payload, proxies=PX, timeout=30)
+                  print("D api-authorize", r.status_code, r.text[:300], flush=True)
+                  body = r.json() if r.status_code == 200 else {}
+                  loc = body.get("location") or ""
+                  print("D location-ok", bool(loc), loc.split("code=")[0][:90] if loc else "", flush=True)
+                  if loc:
+                      sb.open(loc)
+                      time.sleep(5)
+                      sb.open(DASH)
+                      time.sleep(4)
+                      ok = sb.execute_script("!!document.getElementById('antxRenewalConfig')")
+                      print("D logged-in-dashboard", ok, "url=", sb.get_current_url()[:70], flush=True)
+                      print("D dash-text=", text(sb, 200), flush=True)
+              except Exception as e:
+                  print("D api-err", type(e).__name__, str(e)[:200], flush=True)
+
               sb.save_screenshot("/tmp/oauth_page.png")
               print("shot saved", flush=True)
           PY
@@ -86,7 +114,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: antagonix-diag6
+          name: antagonix-diag7
           path: |
             /tmp/diag.log
             /tmp/oauth_page.png
