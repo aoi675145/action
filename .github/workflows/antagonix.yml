@@ -1,0 +1,111 @@
+name: Antagonix 续期
+
+on:
+  schedule:
+    - cron: '0 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  renew:
+    name: 执行续期脚本
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 从私库拉取脚本与 cookies.txt
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: |
+          set -o pipefail
+          mkdir -p scripts
+          RAW="https://raw.githubusercontent.com/aoi675145/scripts/main/scripts"
+
+          fetch() {
+            curl -fsSL -H "Authorization: Bearer ${REPO_TOKEN}" -o "$2" "$1"
+          }
+
+          echo "[INFO] pull antagonix.py"
+          if fetch "${RAW}/antagonix/antagonix.py" scripts/antagonix.py && [ -s scripts/antagonix.py ]; then
+            echo "[INFO] antagonix.py ready ($(wc -l < scripts/antagonix.py) lines)"
+          else
+            echo "[ERROR] scripts/antagonix/antagonix.py not found"
+            exit 1
+          fi
+
+          echo "[INFO] pull shared setup_proxy.sh"
+          if fetch "${RAW}/setup_proxy.sh" scripts/setup_proxy.sh && [ -s scripts/setup_proxy.sh ]; then
+            echo "[INFO] setup_proxy.sh ready ($(wc -l < scripts/setup_proxy.sh) lines)"
+          else
+            echo "[WARN] setup_proxy.sh missing, proxy step will be skipped"
+            rm -f scripts/setup_proxy.sh
+          fi
+
+          echo "[INFO] pull cookies.txt"
+          if fetch "${RAW}/antagonix/cookies.txt" cookies.txt && [ -s cookies.txt ]; then
+            echo "[INFO] cookies.txt ready"
+          else
+            rm -f cookies.txt
+            echo "[WARN] no cookies.txt in private repo, will rely on ANTAGONIX_COOKIE secret"
+          fi
+
+      - name: 配置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb fonts-noto-cjk
+          python -m pip install --upgrade pip --quiet
+          pip install --quiet 'requests[socks]' seleniumbase
+          seleniumbase install chromedriver
+
+      - name: ⚙️ 设置代理 (sing-box，可选)
+        env:
+          NODE_LINK: ${{ secrets.ANTAGONIX_PROXY }}
+        run: |
+          if [ -z "$NODE_LINK" ]; then
+            echo "[INFO] 未配置 ANTAGONIX_PROXY，直连运行"
+            exit 0
+          fi
+          if [ ! -f scripts/setup_proxy.sh ]; then
+            echo "[WARN] 没有 setup_proxy.sh，跳过"
+            exit 0
+          fi
+          bash scripts/setup_proxy.sh
+
+      - name: 执行续期脚本
+        env:
+          PYTHONIOENCODING: utf-8
+          ANTAGONIX_COOKIE: ${{ secrets.ANTAGONIX_COOKIE }}
+          ANTAGONIX_COOKIE_FILE: cookies.txt
+          RENEW_BEFORE_HOURS: ${{ vars.ANTAGONIX_RENEW_BEFORE_HOURS || '24' }}
+          FORCE_RENEW: ${{ vars.ANTAGONIX_FORCE_RENEW || '' }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          set -o pipefail
+          python -u scripts/antagonix.py 2>&1 | tee renew.log
+
+      - name: 🧽 清理代理进程
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          pkill -f chrome || true
+          pkill -f Xvfb || true
+          rm -f sing-box sing-box-config.json sing-box.log
+
+      - name: 清理历史运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
