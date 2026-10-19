@@ -81,7 +81,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           ANTAGONIX_RENEW_BEFORE_HOURS: ${{ vars.ANTAGONIX_RENEW_BEFORE_HOURS || '6' }}
           ANTAGONIX_FORCE_RENEW: ${{ inputs.force_renew && '1' || '' }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
