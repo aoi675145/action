@@ -8,7 +8,7 @@ permissions:
 jobs:
   diag:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/setup-python@v5
         with:
@@ -27,41 +27,74 @@ jobs:
           curl -fsSL -H "Authorization: Bearer ${{ secrets.REPO_TOKEN }}" -o /tmp/setup_proxy.sh https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/setup_proxy.sh
           bash /tmp/setup_proxy.sh
       - name: diag
+        env:
+          PYTHONIOENCODING: utf-8
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: |
           python -u - <<'PY' 2>&1 | tee /tmp/diag.log
-          import time
+          import os, re, time, json
+          import requests
           from seleniumbase import SB
 
           UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36")
+          TOK = (os.environ.get("DISCORD_TOKEN") or "").strip()
+          PX = {"http": "socks5://127.0.0.1:1080", "https": "socks5://127.0.0.1:1080"}
+          DASH = "https://antagonix.fr/dashboard.php?section=bots&lang=en"
 
-          PROBE = """
-          var out = {};
-          out.origin = location.origin;
-          out.ls = typeof window.localStorage;
-          out.ss = typeof window.sessionStorage;
-          out.idb = typeof window.indexedDB;
-          out.cookieEnabled = navigator.cookieEnabled;
-          out.cookieLen = document.cookie.length;
-          try { window.localStorage.setItem('probe','1'); out.write = window.localStorage.getItem('probe'); }
-          catch (e) { out.write = 'ERR ' + e.name + ': ' + e.message; }
-          return JSON.stringify(out);
-          """
+          s = requests.Session()
+          s.headers.update({"User-Agent": UA})
+          s.proxies.update(PX)
 
-          def probe(sb, tag):
-              try:
-                  print(tag, sb.execute_script(PROBE), flush=True)
-              except Exception as e:
-                  print(tag, "ERR", type(e).__name__, str(e)[:200].replace("\n", " "), flush=True)
+          r = s.get("https://discord.com/api/v9/users/@me", headers={"Authorization": TOK}, timeout=30)
+          print("1 token-check", r.status_code, (r.text or "")[:100].replace("\n", " "), flush=True)
+
+          page = s.get("https://antagonix.fr/login", timeout=30).text
+          m = re.search(r'href="(https://discord\.com/oauth2/authorize\?[^"]+)"', page)
+          href = m.group(1).replace("&amp;", "&") if m else ""
+          print("2 login-href", bool(href), flush=True)
+          q = dict(re.findall(r"[?&]([^=&]+)=([^&]*)", href))
+          print("2 state", q.get("state"), "client", q.get("client_id"), flush=True)
+
+          payload = {
+              "client_id": q.get("client_id"),
+              "response_type": "code",
+              "redirect_uri": "https://antagonix.fr/discord_callback",
+              "scope": (q.get("scope") or "identify email guilds.join").replace("+", " "),
+              "state": q.get("state"),
+          }
+          r2 = s.post("https://discord.com/api/v9/oauth2/authorize",
+                      headers={"Authorization": TOK, "Content-Type": "application/json"},
+                      json=payload, timeout=30)
+          print("3 api-authorize", r2.status_code, (r2.text or "")[:200].replace("\n", " "), flush=True)
+          loc = ""
+          try:
+              loc = (r2.json() or {}).get("location") or ""
+          except Exception:
+              pass
+          print("3 has-location", bool(loc), loc.split("code=")[0][:60], flush=True)
 
           with SB(headless=False, agent=UA, locale_code="en",
                   proxy="socks5://127.0.0.1:1080") as sb:
               sb.set_window_size(1280, 860)
-              sb.open("https://example.com")
-              time.sleep(2)
-              probe(sb, "example")
-              sb.open("https://discord.com/login")
-              time.sleep(6)
-              probe(sb, "discord")
-              print("title", sb.get_title(), flush=True)
+              if loc:
+                  sb.open(loc)
+                  time.sleep(6)
+                  print("4 after-callback url=", sb.get_current_url()[:90], flush=True)
+              sb.open(DASH)
+              time.sleep(5)
+              print("4 dashboard url=", sb.get_current_url()[:90], flush=True)
+              print("4 csrf-present", sb.execute_script("return !!document.getElementById('antxRenewalConfig')"),
+                    flush=True)
+              print("4 bots", sb.execute_script("return document.querySelectorAll('[data-renew-bot]').length"),
+                    flush=True)
+              sb.save_screenshot("/tmp/login_api.png")
+              print("shot saved", flush=True)
           PY
+      - name: upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: antagonix-diag10
+          path: /tmp/diag.log
+          if-no-files-found: warn
