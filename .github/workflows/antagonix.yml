@@ -2,7 +2,7 @@ name: Antagonix 续期
 
 on:
   schedule:
-    - cron: '23 12 19 10 *'
+    - cron: '27 12 19 10 *'
   workflow_dispatch:
     inputs:
       force_renew:
