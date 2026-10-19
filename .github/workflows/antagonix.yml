@@ -76,8 +76,8 @@ jobs:
           PYTHONIOENCODING: utf-8
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           CRON_TOKEN: ${{ secrets.CRON_TOKEN }}
-          RENEW_BEFORE_HOURS: ${{ vars.ANTAGONIX_RENEW_BEFORE_HOURS || '2' }}
-          FORCE_RENEW: ${{ vars.ANTAGONIX_FORCE_RENEW || '' }}
+          ANTAGONIX_RENEW_BEFORE_HOURS: ${{ vars.ANTAGONIX_RENEW_BEFORE_HOURS || '2' }}
+          ANTAGONIX_FORCE_RENEW: ${{ vars.ANTAGONIX_FORCE_RENEW || '' }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
