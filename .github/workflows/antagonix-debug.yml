@@ -46,42 +46,32 @@ jobs:
               time.sleep(2)
               sb.execute_script("window.localStorage.setItem('token', %s);" % json.dumps(TOK))
               sb.open("https://discord.com/channels/@me")
-              time.sleep(6)
-              print("A url=", sb.get_current_url()[:80], "title=", sb.get_title(), flush=True)
-              print("A api=", sb.execute_async_script("""
-                var cb = arguments[arguments.length - 1];
-                var t = localStorage.getItem('token') || '';
-                fetch('/api/v9/users/@me', {headers: {'Authorization': t}})
-                  .then(function(r){ return r.text().then(function(x){ cb(r.status + ' ' + x.slice(0,160)); }); })
-                  .catch(function(e){ cb('ERR ' + e); });
-              """), flush=True)
+              time.sleep(8)
+              print("A url=", sb.get_current_url()[:100], "title=", sb.get_title(), flush=True)
+              print("A hasToken=", sb.execute_script("return !!localStorage.getItem('token');"), flush=True)
 
               sb.open("https://antagonix.fr/login")
               time.sleep(3)
-              href = sb.execute_script("""
-                var a = document.querySelector('a.discord-button');
-                return a ? a.href : '';
-              """)
+              href = sb.execute_script("var a=document.querySelector('a.discord-button'); return a ? a.href : '';")
               print("B href_len", len(href or ''), flush=True)
 
               sb.open(href)
               time.sleep(15)
-              print("C url=", sb.get_current_url()[:120], "title=", sb.get_title(), flush=True)
-              print("C text=", (sb.execute_script("return document.body.innerText.slice(0,600);") or "").replace("\n", " | "), flush=True)
+              print("C url=", sb.get_current_url()[:140], "title=", sb.get_title(), flush=True)
+              print("C text=", (sb.execute_script("return document.body.innerText.slice(0,700);") or "").replace("\n", " | "), flush=True)
               print("C buttons=", sb.execute_script("""
                 var out = [];
                 document.querySelectorAll('button').forEach(function(b){
                   var r = b.getBoundingClientRect();
                   out.push((b.innerText||'').trim().slice(0,40) + '@' + Math.round(r.width) + 'x' + Math.round(r.height));
                 });
-                return JSON.stringify(out.slice(0, 15));
+                return JSON.stringify(out.slice(0, 20));
               """), flush=True)
               print("C forms=", sb.execute_script("""
                 var out = [];
-                document.querySelectorAll('form').forEach(function(f){ out.push(f.action + ' :: ' + (f.innerText||'').trim().slice(0,120)); });
-                return JSON.stringify(out.slice(0, 6));
+                document.querySelectorAll('form').forEach(function(f){ out.push(f.action + ' :: ' + (f.innerText||'').trim().slice(0,150)); });
+                return JSON.stringify(out.slice(0, 8));
               """), flush=True)
-              print("C h1=", sb.execute_script("return (document.querySelector('h1,h2')||{}).innerText || '';"), flush=True)
               sb.save_screenshot("/tmp/oauth_page.png")
               print("shot saved", flush=True)
           PY
@@ -89,7 +79,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: antagonix-diag3
+          name: antagonix-diag4
           path: |
             /tmp/diag.log
             /tmp/oauth_page.png
