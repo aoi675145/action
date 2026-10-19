@@ -32,81 +32,75 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: |
           python -u - <<'PY' 2>&1 | tee /tmp/diag.log
-          import os, json, time, re
-          import requests
+          import os, json, time
           from seleniumbase import SB
 
           UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36")
           TOK = (os.environ.get("DISCORD_TOKEN") or "").strip()
-          PX = {"http": "socks5://127.0.0.1:1080", "https": "socks5://127.0.0.1:1080"}
           DASH = "https://antagonix.fr/dashboard.php?section=bots&lang=en"
 
 
-          def text(sb, n=400):
+          def info(sb, tag):
               try:
-                  return (sb.execute_script("document.body.innerText.slice(0,%d)" % n) or "").replace("\n", " | ")
+                  txt = (sb.execute_script("document.body.innerText.slice(0,250)") or "").replace("\n", " | ")
               except Exception as e:
-                  return "ERR " + type(e).__name__
+                  txt = "ERR " + type(e).__name__
+              try:
+                  print(tag, "url=", sb.get_current_url()[:80], "text=", txt, flush=True)
+              except Exception as e:
+                  print(tag, "url-err", type(e).__name__, flush=True)
 
 
-          with SB(uc=True, headless=False, incognito=False, agent=UA,
+          with SB(headless=False, incognito=False, agent=UA,
                   locale_code="en", proxy="socks5://127.0.0.1:1080") as sb:
               sb.set_window_size(1280, 860)
               sb.open("https://discord.com/login")
               time.sleep(2)
-              sb.execute_script("window.localStorage.setItem('token', %s)" % json.dumps(TOK))
+              sb.execute_script("window.localStorage.setItem('token', %s);" % json.dumps(TOK))
+              got = sb.execute_script("return !!window.localStorage.getItem('token');")
+              print("A token-written", got, flush=True)
               sb.open("https://discord.com/channels/@me")
-              time.sleep(10)
-              print("A url=", sb.get_current_url()[:80], "text=", text(sb, 300), flush=True)
-
-              # direct API check of the token
-              try:
-                  r = requests.get("https://discord.com/api/v9/users/@me",
-                                   headers={"Authorization": TOK}, proxies=PX, timeout=30)
-                  print("A api-status", r.status_code, r.text[:120], flush=True)
-              except Exception as e:
-                  print("A api-err", type(e).__name__, str(e)[:150], flush=True)
+              time.sleep(6)
+              info(sb, "A me")
 
               sb.open("https://antagonix.fr/login")
               time.sleep(3)
-              href = sb.execute_script("document.querySelector('a[data-oauth-button]').href")
-              q = dict(re.findall(r"[?&]([^=&]+)=([^&]*)", href))
-              print("B state", q.get("state"), "client", q.get("client_id"), flush=True)
-
-              # 1) plain document navigation to the authorize page
-              sb.open(href)
-              time.sleep(20)
-              print("C url=", sb.get_current_url()[:90], "text=", text(sb, 300), flush=True)
-
-              # 2) API-based authorize with the token
-              payload = {
-                  "client_id": q.get("client_id"),
-                  "response_type": "code",
-                  "redirect_uri": "https://antagonix.fr/discord_callback",
-                  "scope": (q.get("scope") or "identify email guilds.join").replace("+", " "),
-                  "state": q.get("state"),
-              }
+              info(sb, "B login")
               try:
-                  r = requests.post("https://discord.com/api/v9/oauth2/authorize",
-                                    headers={"Authorization": TOK, "Content-Type": "application/json",
-                                             "User-Agent": UA},
-                                    json=payload, proxies=PX, timeout=30)
-                  print("D api-authorize", r.status_code, r.text[:300], flush=True)
-                  body = r.json() if r.status_code == 200 else {}
-                  loc = body.get("location") or ""
-                  print("D location-ok", bool(loc), loc.split("code=")[0][:90] if loc else "", flush=True)
-                  if loc:
-                      sb.open(loc)
-                      time.sleep(5)
-                      sb.open(DASH)
-                      time.sleep(4)
-                      ok = sb.execute_script("!!document.getElementById('antxRenewalConfig')")
-                      print("D logged-in-dashboard", ok, "url=", sb.get_current_url()[:70], flush=True)
-                      print("D dash-text=", text(sb, 200), flush=True)
+                  sb.click("a.discord-button", timeout=5)
+                  print("B click OK", flush=True)
               except Exception as e:
-                  print("D api-err", type(e).__name__, str(e)[:200], flush=True)
+                  print("B click FAIL", type(e).__name__, str(e)[:150].replace("\n", " "), flush=True)
+              time.sleep(6)
+              info(sb, "B after-click")
 
+              for _ in range(10):
+                  time.sleep(2)
+                  if "discord.com" not in (sb.get_current_url() or ""):
+                      break
+                  hit = False
+                  for sel in ('button:contains("Authorize")', '//button[contains(., "Authorize")]',
+                              'button:contains("Autoriser")', '//button[contains(., "Autoriser")]',
+                              'form button[type="submit"]'):
+                      try:
+                          sb.click(sel, timeout=3)
+                          print("C authorize via", sel, flush=True)
+                          hit = True
+                          break
+                      except Exception:
+                          continue
+                  if hit:
+                      time.sleep(4)
+              info(sb, "C after-authorize")
+
+              sb.open(DASH)
+              time.sleep(4)
+              info(sb, "D dashboard")
+              print("D csrf-present",
+                    sb.execute_script("!!document.getElementById('antxRenewalConfig')"), flush=True)
+              print("D bots",
+                    sb.execute_script("document.querySelectorAll('[data-renew-bot]').length"), flush=True)
               sb.save_screenshot("/tmp/oauth_page.png")
               print("shot saved", flush=True)
           PY
@@ -114,7 +108,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: antagonix-diag7
+          name: antagonix-diag8
           path: |
             /tmp/diag.log
             /tmp/oauth_page.png
