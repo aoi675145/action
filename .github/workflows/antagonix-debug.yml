@@ -32,24 +32,26 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
         run: |
           python -u - <<'PY' 2>&1 | tee /tmp/diag.log
-          import os, json, time, traceback
+          import os, json, time
           from seleniumbase import SB
 
           UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
                 "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36")
           LOGIN = "https://antagonix.fr/login"
+          DASH = "https://antagonix.fr/dashboard.php?section=bots&lang=en"
           TOK = (os.environ.get("DISCORD_TOKEN") or "").strip()
+
 
           def show(sb, tag):
               try:
-                  print(tag, "url=", sb.get_current_url(), "title=", sb.get_title(), flush=True)
+                  print(tag, "url=", sb.get_current_url()[:100], "title=", sb.get_title(), flush=True)
               except Exception as e:
-                  print(tag, "url-err", type(e).__name__, e, flush=True)
+                  print(tag, "url-err", type(e).__name__, str(e)[:120], flush=True)
+
 
           with SB(uc=True, headless=False, incognito=False, agent=UA,
                   locale_code="en", proxy="socks5://127.0.0.1:1080") as sb:
               sb.set_window_size(1280, 860)
-              print("window", sb.get_window_size(), flush=True)
 
               sb.open("https://discord.com/login")
               time.sleep(2)
@@ -62,45 +64,95 @@ jobs:
               time.sleep(3)
               show(sb, "login")
 
+              # 1) prove the raw driver call is dead (root cause of the production failure)
               try:
-                  print("readyState", sb.execute_script("return document.readyState;"), flush=True)
-                  print("htmlLen", len(sb.get_page_source()), flush=True)
-                  print("hasClass", sb.execute_script("return !!document.querySelector('a.discord-button');"), flush=True)
-                  print("bodyText", (sb.execute_script("return document.body.innerText.slice(0,300);") or "").replace("\n", " | "), flush=True)
-                  print("styles", sb.execute_script("""
-                    var el=document.querySelector('a.discord-button');
-                    if(!el) return 'no-el';
-                    var r=el.getBoundingClientRect(); var s=getComputedStyle(el);
-                    var cx=r.x+r.width/2, cy=r.y+r.height/2;
-                    var top=document.elementFromPoint(cx,cy);
-                    return JSON.stringify({rect:[r.x,r.y,r.width,r.height],display:s.display,
-                      visibility:s.visibility,opacity:s.opacity,pointer:s.pointerEvents,
-                      win:[innerWidth,innerHeight],topEl: top? (top.tagName+'.'+top.className) : null});
-                  """), flush=True)
+                  n = len(sb.driver.window_handles)
+                  print("RAW-driver window_handles OK", n, flush=True)
               except Exception as e:
-                  print("dom-err", type(e).__name__, e, flush=True)
+                  print("RAW-driver window_handles FAIL", type(e).__name__, str(e)[:160].replace("\n", " "), flush=True)
 
-              for sel in ('a.discord-button', 'a[data-oauth-button][href*="discord"]',
-                          'a[href*="discord.com/oauth2"]', 'a[href*="discord"]',
-                          'a:contains("Continue with Discord")'):
-                  t0 = time.time()
-                  try:
-                      n = len(sb.driver.find_elements("css selector", sel)) if ':contains' not in sel else -1
-                      print("SEL", sel, "count", n, flush=True)
-                  except Exception as e:
-                      print("SEL", sel, "find-ERR", type(e).__name__, str(e)[:200], flush=True)
-                  t1 = time.time()
-                  try:
-                      sb.click(sel, timeout=3)
-                      print("CLICK-OK", sel, "%.2fs" % (t1 - t0), "->", sb.get_current_url(), flush=True)
-                      time.sleep(3)
+              # 2) click the discord button WITHOUT touching sb.driver
+              try:
+                  sb.click("a.discord-button", timeout=3)
+                  print("CLICK login-button OK", flush=True)
+              except Exception as e:
+                  print("CLICK login-button FAIL", type(e).__name__, str(e)[:200].replace("\n", " "), flush=True)
+              time.sleep(3)
+              show(sb, "after-login-click")
+
+              # 3) authorize on discord.com
+              for i in range(12):
+                  time.sleep(2)
+                  if "discord.com" not in (sb.get_current_url() or ""):
                       break
-                  except Exception as e:
-                      print("CLICK-FAIL", sel, "%.2fs" % (time.time() - t1), type(e).__name__,
-                            str(e)[:400].replace("\n", " "), flush=True)
+                  clicked = False
+                  for sel in ('button:contains("Authorize")', 'button:contains("Autoriser")',
+                              '//button[contains(., "Authorize")]',
+                              '//button[contains(., "Autoriser")]',
+                              'form button[type="submit"]', 'button[type="submit"]'):
+                      try:
+                          sb.click(sel, timeout=3)
+                          clicked = True
+                          print("AUTHORIZE click via", sel, flush=True)
+                          break
+                      except Exception as e:
+                          print("AUTHORIZE miss", sel, type(e).__name__, str(e)[:120].replace("\n", " "), flush=True)
+                  if clicked:
+                      time.sleep(3)
+              show(sb, "after-authorize")
 
-              time.sleep(2)
-              show(sb, "after-click")
+              # 4) dashboard
+              sb.open(DASH)
+              time.sleep(3)
+              cfg = {}
+              for _ in range(10):
+                  try:
+                      raw = sb.execute_script("""
+                      var out = {csrf: '', sitekey: '', ids: []};
+                      var c = document.getElementById('antxRenewalConfig');
+                      if (c) { try { var j = JSON.parse(c.textContent); out.csrf = j.csrf || ''; out.sitekey = j.sitekey || ''; } catch (e) {} }
+                      document.querySelectorAll('[data-renew-bot]').forEach(function (b) { out.ids.push(Number(b.dataset.renewBot)); });
+                      return JSON.stringify(out);
+                      """)
+                      cfg = json.loads(raw or "{}")
+                  except Exception as e:
+                      print("cfg-err", type(e).__name__, str(e)[:120], flush=True)
+                      cfg = {}
+                  if cfg.get("csrf"):
+                      break
+                  time.sleep(2)
+              show(sb, "dashboard")
+              print("csrf_len", len(cfg.get("csrf") or ""), "ids", cfg.get("ids"), flush=True)
+
+              if cfg.get("csrf"):
+                  script = """
+                  var cb = arguments[arguments.length - 1];
+                  fetch(arguments[0], {method: 'POST', credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/json', 'Accept': 'application/json',
+                              'X-CSRF-Token': arguments[2]},
+                    body: JSON.stringify(arguments[1])})
+                    .then(function (r) { return r.text(); })
+                    .then(function (t) { cb(t); })
+                    .catch(function (e) { cb('__JSERR__' + e); });
+                  """
+                  try:
+                      try:
+                          raw = sb.driver.execute_async_script(script, '/dashboard.php', {'action': 'renewal_list'}, cfg['csrf'])
+                          print("async via RAW driver OK", flush=True)
+                      except Exception as e:
+                          print("async via RAW driver FAIL", type(e).__name__, str(e)[:140].replace("\n", " "), flush=True)
+                          raw = sb.execute_async_script(script, '/dashboard.php', {'action': 'renewal_list'}, cfg['csrf'])
+                          print("async via SB method OK", flush=True)
+                      if isinstance(raw, str) and raw.startswith("__JSERR__"):
+                          print("renewal_list JSERR", raw[:200], flush=True)
+                      else:
+                          d = json.loads(raw)
+                          print("renewal_list ok=", d.get("ok"), "active=", d.get("active"),
+                                "now=", d.get("now"), flush=True)
+                          for l in d.get("leases") or []:
+                              print("  lease", l.get("server_id"), l.get("state"), l.get("expires_at"), flush=True)
+                  except Exception as e:
+                      print("renewal_list FAIL", type(e).__name__, str(e)[:200].replace("\n", " "), flush=True)
               try:
                   sb.save_screenshot("/tmp/login_debug.png")
                   print("shot saved", flush=True)
@@ -111,7 +163,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: antagonix-diag
+          name: antagonix-diag2
           path: |
             /tmp/diag.log
             /tmp/login_debug.png
