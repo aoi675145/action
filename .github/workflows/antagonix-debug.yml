@@ -46,33 +46,29 @@ jobs:
           s.headers.update({"User-Agent": UA})
           s.proxies.update(PX)
 
-          r = s.get("https://discord.com/api/v9/users/@me", headers={"Authorization": TOK}, timeout=30)
-          print("1 token-check", r.status_code, (r.text or "")[:100].replace("\n", " "), flush=True)
-
           page = s.get("https://antagonix.fr/login", timeout=30).text
           m = re.search(r'href="(https://discord\.com/oauth2/authorize\?[^"]+)"', page)
           href = m.group(1).replace("&amp;", "&") if m else ""
-          print("2 login-href", bool(href), flush=True)
           q = dict(re.findall(r"[?&]([^=&]+)=([^&]*)", href))
-          print("2 state", q.get("state"), "client", q.get("client_id"), flush=True)
+          print("state", q.get("state"), "client", q.get("client_id"), flush=True)
 
           payload = {
-              "client_id": q.get("client_id"),
+              "client_id": int(q.get("client_id") or 0),
               "response_type": "code",
               "redirect_uri": "https://antagonix.fr/discord_callback",
-              "scope": (q.get("scope") or "identify email guilds.join").replace("+", " "),
+              "scope": ["identify", "email", "guilds.join"],
               "state": q.get("state"),
           }
           r2 = s.post("https://discord.com/api/v9/oauth2/authorize",
                       headers={"Authorization": TOK, "Content-Type": "application/json"},
                       json=payload, timeout=30)
-          print("3 api-authorize", r2.status_code, (r2.text or "")[:200].replace("\n", " "), flush=True)
+          print("api", r2.status_code, (r2.text or "")[:200].replace("\n", " "), flush=True)
           loc = ""
           try:
               loc = (r2.json() or {}).get("location") or ""
           except Exception:
               pass
-          print("3 has-location", bool(loc), loc.split("code=")[0][:60], flush=True)
+          print("has-location", bool(loc), loc.split("code=")[0][:70], flush=True)
 
           with SB(headless=False, agent=UA, locale_code="en",
                   proxy="socks5://127.0.0.1:1080") as sb:
@@ -80,13 +76,13 @@ jobs:
               if loc:
                   sb.open(loc)
                   time.sleep(6)
-                  print("4 after-callback url=", sb.get_current_url()[:90], flush=True)
+                  print("after-callback", sb.get_current_url()[:90], flush=True)
               sb.open(DASH)
               time.sleep(5)
-              print("4 dashboard url=", sb.get_current_url()[:90], flush=True)
-              print("4 csrf-present", sb.execute_script("return !!document.getElementById('antxRenewalConfig')"),
+              print("dashboard", sb.get_current_url()[:90], flush=True)
+              print("csrf-present", sb.execute_script("return !!document.getElementById('antxRenewalConfig')"),
                     flush=True)
-              print("4 bots", sb.execute_script("return document.querySelectorAll('[data-renew-bot]').length"),
+              print("bots", sb.execute_script("return document.querySelectorAll('[data-renew-bot]').length"),
                     flush=True)
               sb.save_screenshot("/tmp/login_api.png")
               print("shot saved", flush=True)
@@ -95,6 +91,6 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: antagonix-diag10
+          name: antagonix-diag11
           path: /tmp/diag.log
           if-no-files-found: warn
