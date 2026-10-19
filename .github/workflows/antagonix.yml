@@ -31,7 +31,7 @@ jobs:
           RAW="https://raw.githubusercontent.com/aoi675145/scripts/main/scripts"
 
           fetch() {
-            curl -fsSL -H "Authorization: Bearer ${REPO_TOKEN}" -o "$2" "$1"
+            curl -fsSL -H "Authorization: Bearer ${REPO_TOKEN}" -H "Cache-Control: no-cache" -o "$2" "$1?t=$(date +%s)"
           }
 
           echo "[INFO] pull antagonix.py"
