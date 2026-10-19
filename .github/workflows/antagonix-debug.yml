@@ -1,0 +1,117 @@
+name: antagonix-debug
+on: workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: deps
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y xvfb fonts-noto-cjk
+          python -m pip install --upgrade pip --quiet
+          pip install --quiet 'requests[socks]' seleniumbase
+          seleniumbase install chromedriver
+      - name: proxy
+        env:
+          NODE_LINK: ${{ secrets.ANTAGONIX_PROXY }}
+        run: |
+          curl -fsSL -H "Authorization: Bearer ${{ secrets.REPO_TOKEN }}" -o /tmp/setup_proxy.sh https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/setup_proxy.sh
+          bash /tmp/setup_proxy.sh
+      - name: diag
+        env:
+          PYTHONIOENCODING: utf-8
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+        run: |
+          python -u - <<'PY' 2>&1 | tee /tmp/diag.log
+          import os, json, time, traceback
+          from seleniumbase import SB
+
+          UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36")
+          LOGIN = "https://antagonix.fr/login"
+          TOK = (os.environ.get("DISCORD_TOKEN") or "").strip()
+
+          def show(sb, tag):
+              try:
+                  print(tag, "url=", sb.get_current_url(), "title=", sb.get_title(), flush=True)
+              except Exception as e:
+                  print(tag, "url-err", type(e).__name__, e, flush=True)
+
+          with SB(uc=True, headless=False, incognito=False, agent=UA,
+                  locale_code="en", proxy="socks5://127.0.0.1:1080") as sb:
+              sb.set_window_size(1280, 860)
+              print("window", sb.get_window_size(), flush=True)
+
+              sb.open("https://discord.com/login")
+              time.sleep(2)
+              sb.execute_script("window.localStorage.setItem('token', %s);" % json.dumps(TOK))
+              sb.open("https://discord.com/channels/@me")
+              time.sleep(4)
+              show(sb, "discord")
+
+              sb.open(LOGIN)
+              time.sleep(3)
+              show(sb, "login")
+
+              try:
+                  print("readyState", sb.execute_script("return document.readyState;"), flush=True)
+                  print("htmlLen", len(sb.get_page_source()), flush=True)
+                  print("hasClass", sb.execute_script("return !!document.querySelector('a.discord-button');"), flush=True)
+                  print("bodyText", (sb.execute_script("return document.body.innerText.slice(0,300);") or "").replace("\n", " | "), flush=True)
+                  print("styles", sb.execute_script("""
+                    var el=document.querySelector('a.discord-button');
+                    if(!el) return 'no-el';
+                    var r=el.getBoundingClientRect(); var s=getComputedStyle(el);
+                    var cx=r.x+r.width/2, cy=r.y+r.height/2;
+                    var top=document.elementFromPoint(cx,cy);
+                    return JSON.stringify({rect:[r.x,r.y,r.width,r.height],display:s.display,
+                      visibility:s.visibility,opacity:s.opacity,pointer:s.pointerEvents,
+                      win:[innerWidth,innerHeight],topEl: top? (top.tagName+'.'+top.className) : null});
+                  """), flush=True)
+              except Exception as e:
+                  print("dom-err", type(e).__name__, e, flush=True)
+
+              for sel in ('a.discord-button', 'a[data-oauth-button][href*="discord"]',
+                          'a[href*="discord.com/oauth2"]', 'a[href*="discord"]',
+                          'a:contains("Continue with Discord")'):
+                  t0 = time.time()
+                  try:
+                      n = len(sb.driver.find_elements("css selector", sel)) if ':contains' not in sel else -1
+                      print("SEL", sel, "count", n, flush=True)
+                  except Exception as e:
+                      print("SEL", sel, "find-ERR", type(e).__name__, str(e)[:200], flush=True)
+                  t1 = time.time()
+                  try:
+                      sb.click(sel, timeout=3)
+                      print("CLICK-OK", sel, "%.2fs" % (t1 - t0), "->", sb.get_current_url(), flush=True)
+                      time.sleep(3)
+                      break
+                  except Exception as e:
+                      print("CLICK-FAIL", sel, "%.2fs" % (time.time() - t1), type(e).__name__,
+                            str(e)[:400].replace("\n", " "), flush=True)
+
+              time.sleep(2)
+              show(sb, "after-click")
+              try:
+                  sb.save_screenshot("/tmp/login_debug.png")
+                  print("shot saved", flush=True)
+              except Exception as e:
+                  print("shot-err", e, flush=True)
+          PY
+      - name: upload
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: antagonix-diag
+          path: |
+            /tmp/diag.log
+            /tmp/login_debug.png
+          if-no-files-found: warn
