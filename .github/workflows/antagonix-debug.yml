@@ -39,27 +39,42 @@ jobs:
                 "(KHTML, like Gecko) Chrome/154.0.0.0 Safari/537.36")
           TOK = (os.environ.get("DISCORD_TOKEN") or "").strip()
 
+
+          def js(sb, script, default="ERR"):
+              try:
+                  return sb.execute_script(script)
+              except Exception as e:
+                  return default + ":" + type(e).__name__ + ":" + str(e)[:100].replace("\n", " ")
+
+
           with SB(uc=True, headless=False, incognito=False, agent=UA,
                   locale_code="en", proxy="socks5://127.0.0.1:1080") as sb:
               sb.set_window_size(1280, 860)
               sb.open("https://discord.com/login")
               time.sleep(2)
-              sb.execute_script("window.localStorage.setItem('token', %s);" % json.dumps(TOK))
+              js(sb, "window.localStorage.setItem('token', %s); return 1;" % json.dumps(TOK))
               sb.open("https://discord.com/channels/@me")
               time.sleep(8)
               print("A url=", sb.get_current_url()[:100], "title=", sb.get_title(), flush=True)
-              print("A hasToken=", sb.execute_script("return !!localStorage.getItem('token');"), flush=True)
+              print("A token=", js(sb, "return !!window.localStorage.getItem('token');"), flush=True)
+              print("A me=", js(sb, """
+                var x = new XMLHttpRequest();
+                x.open('GET', '/api/v9/users/@me', false);
+                x.setRequestHeader('Authorization', window.localStorage.getItem('token') || '');
+                try { x.send(); } catch (e) { return 'send-err ' + e; }
+                return x.status + ' ' + (x.responseText || '').slice(0, 160);
+              """), flush=True)
 
               sb.open("https://antagonix.fr/login")
               time.sleep(3)
-              href = sb.execute_script("var a=document.querySelector('a.discord-button'); return a ? a.href : '';")
+              href = js(sb, "var a=document.querySelector('a.discord-button'); return a ? a.href : '';")
               print("B href_len", len(href or ''), flush=True)
 
               sb.open(href)
-              time.sleep(15)
+              time.sleep(20)
               print("C url=", sb.get_current_url()[:140], "title=", sb.get_title(), flush=True)
-              print("C text=", (sb.execute_script("return document.body.innerText.slice(0,700);") or "").replace("\n", " | "), flush=True)
-              print("C buttons=", sb.execute_script("""
+              print("C text=", str(js(sb, "return document.body.innerText.slice(0,700);")).replace("\n", " | "), flush=True)
+              print("C buttons=", js(sb, """
                 var out = [];
                 document.querySelectorAll('button').forEach(function(b){
                   var r = b.getBoundingClientRect();
@@ -67,7 +82,7 @@ jobs:
                 });
                 return JSON.stringify(out.slice(0, 20));
               """), flush=True)
-              print("C forms=", sb.execute_script("""
+              print("C forms=", js(sb, """
                 var out = [];
                 document.querySelectorAll('form').forEach(function(f){ out.push(f.action + ' :: ' + (f.innerText||'').trim().slice(0,150)); });
                 return JSON.stringify(out.slice(0, 8));
@@ -79,7 +94,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: antagonix-diag4
+          name: antagonix-diag5
           path: |
             /tmp/diag.log
             /tmp/oauth_page.png
