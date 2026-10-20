@@ -1,0 +1,136 @@
+name: 面板保活
+
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: '动作（默认 deploy=上传+开机，不用改）'
+        required: false
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - start
+          - check
+          - status
+          - upload
+          - restart
+      start_timeout:
+        description: '开机后等待 running 的最长时间（秒）'
+        required: false
+        default: '180'
+  repository_dispatch:
+    types: [panel-keepalive]
+
+concurrency:
+  group: panel-keepalive
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: 日志脱敏
+        env:
+          M_NODE: ${{ secrets.LATVI_PROXY }}
+          M_TG: ${{ secrets.TG_BOT }}
+          M_IDENT: ${{ secrets.LATVI_IDENT }}
+        run: |
+          if [ -n "$M_NODE" ]; then echo "::add-mask::$M_NODE"; fi
+          if [ -n "$M_TG" ]; then echo "::add-mask::$M_TG"; fi
+          if [ -n "$M_IDENT" ]; then echo "::add-mask::$M_IDENT"; fi
+
+      - name: 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/latvi/**
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 校验代理配置
+        env:
+          NODE_LINK: ${{ secrets.LATVI_PROXY }}
+        run: |
+          if [ -z "$NODE_LINK" ]; then
+            echo "❌ 必须配置代理节点（强制代理模式，不允许直连）"
+            exit 1
+          fi
+
+      - name: 启动代理
+        env:
+          NODE_LINK: ${{ secrets.LATVI_PROXY }}
+        run: bash private-repo/scripts/setup_proxy.sh
+
+      - name: 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 执行
+        env:
+          PYTHONIOENCODING: utf-8
+          LATVI_IDENT: ${{ secrets.LATVI_IDENT }}
+          LATVI_PROXY: ${{ env.PROXY_SERVER }}
+          LATVI_START_TIMEOUT: ${{ github.event.client_payload.start_timeout || inputs.start_timeout || '180' }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+        working-directory: private-repo/scripts/latvi
+        run: |
+          set -o pipefail
+          ACTION="${{ github.event.client_payload.action || inputs.action || 'deploy' }}"
+          echo "📋 动作: $ACTION"
+          IP=""
+          if [ -n "$LATVI_PROXY" ]; then
+            IP=$(curl -s -x "$LATVI_PROXY" --max-time 15 https://api.ipify.org || true)
+          fi
+          if [ -n "$IP" ]; then
+            MASKED=$(printf '%s' "$IP" | awk -F'[.:]' '{if ($0 ~ /:/) print $1":"$2":****"; else print $1"."$2".x.x"}')
+            echo "🌐 出口 IP: $MASKED"
+          else
+            echo "🌐 出口 IP: 获取失败"
+          fi
+          python latvi.py "$ACTION" 2>&1 | tee run.log
+
+      - name: TG 失败通知
+        if: failure()
+        env:
+          TG_BOT: ${{ secrets.TG_BOT }}
+          WF_NAME: ${{ github.workflow }}
+          WF_REPO: ${{ github.repository }}
+          WF_RUN_ID: ${{ github.run_id }}
+          WF_RUN_NUM: ${{ github.run_number }}
+        run: |
+          if [ -z "$TG_BOT" ]; then exit 0; fi
+          CHAT_ID="${TG_BOT%%,*}"
+          TOKEN="${TG_BOT#*,}"
+          MSG=$(printf '❌ %s 失败\n任务: %s (%s)\n仓库: %s\n运行页: https://github.com/%s/actions/runs/%s' \
+            "$WF_NAME" "$WF_NAME" "$WF_RUN_NUM" "$WF_REPO" "$WF_REPO" "$WF_RUN_ID")
+          curl -s -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
+            -d chat_id="${CHAT_ID}" \
+            --data-urlencode "text=${MSG}"
+
+      - name: 清理代理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          rm -f sing-box sing-box-config.json sing-box.log
+          rm -f private-repo/scripts/latvi/run.log
+
+      - name: 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 4
