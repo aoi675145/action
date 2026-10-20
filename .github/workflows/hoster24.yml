@@ -70,8 +70,8 @@ jobs:
       - name: 执行
         env:
           PYTHONIOENCODING: utf-8
-          # H24_FILE: '<文件名>'   # 可选：指定上传文件名（默认自动取目录内唯一 .jar）
-          H24_IDENT: ${{ secrets.H24_IDENT }}         # 服务器 ident（可选，脚本有默认值）
+          # H24_FILE: 'voicechat-bukkit-2.6.24.jar'   # 指定上传文件名（默认取目录内唯一 .jar）
+          H24_IDENT: ${{ secrets.H24_IDENT }}         # 服务器 ident（不填则自动发现账号下唯一服务器）
           H24_UA: ${{ secrets.H24_UA }}               # 与浏览器一致的 UA（可选但建议）
           H24_START_TIMEOUT: ${{ github.event.client_payload.start_timeout || inputs.start_timeout || '180' }}
           TG_BOT: ${{ secrets.TG_BOT }}               # Telegram 通知，格式 chat_id,token（可选）
