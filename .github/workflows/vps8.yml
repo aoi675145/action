@@ -7,6 +7,10 @@ on:
         description: '强制续期（跳过缓存，填 1 启用）'
         required: false
         default: ''
+      no_proxy:
+        description: '直连模式（填 1 跳过代理，仅诊断用）'
+        required: false
+        default: ''
   schedule:
     - cron: "7 22 21 10 *"
 
@@ -97,6 +101,7 @@ jobs:
           cache-dependency-path: requirements.txt
 
       - name: 安装并启动代理
+        if: ${{ github.event.inputs.no_proxy != '1' }}
         env:
           VPS8_PROXY: ${{ secrets.VPS8_PROXY }}
         run: |
@@ -167,7 +172,7 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
-          PROXY_HTTP: ${{ env.PROXY_SERVER }}
+          PROXY_HTTP: ${{ github.event.inputs.no_proxy == '1' && '' || env.PROXY_SERVER }}
           VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
           NO_PROXY: localhost,127.0.0.1
         run: |
