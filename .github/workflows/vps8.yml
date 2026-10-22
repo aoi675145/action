@@ -109,7 +109,24 @@ jobs:
             echo "::error::VPS8_PROXY 未配置（必填）"
             exit 1
           fi
-          NODE_LINK="$VPS8_PROXY" bash setup_proxy.sh
+          ok=0
+          for i in 1 2 3; do
+            echo "::group::代理启动尝试 $i/3"
+            if NODE_LINK="$VPS8_PROXY" bash setup_proxy.sh; then
+              ok=1
+              echo "::endgroup::"
+              break
+            fi
+            echo "::endgroup::"
+            echo "::warning::代理启动失败（第 $i 次），清理后重试"
+            pkill -f sing-box 2>/dev/null || true
+            sleep $((i * 20))
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::warning::代理三次均失败，降级为直连继续（不再整单失败）"
+            echo "IS_PROXY=false" >> "$GITHUB_ENV"
+            echo "PROXY_SERVER=" >> "$GITHUB_ENV"
+          fi
 
       - name: 安装依赖
         id: deps
@@ -177,8 +194,18 @@ jobs:
           NO_PROXY: localhost,127.0.0.1
         run: |
           rm -rf screenshots
-          xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py \
-            2> >(grep -v "Unable to revert mtime" >&2)
+          for attempt in 1 2; do
+            echo "::group::签到尝试 $attempt/2"
+            if xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py \
+                2> >(grep -v "Unable to revert mtime" >&2); then
+              echo "::endgroup::"
+              exit 0
+            fi
+            echo "::endgroup::"
+            echo "::warning::签到失败（第 $attempt 次），30s 后重试"
+            sleep 30
+          done
+          exit 1
 
       - name: 保存信息到私库
         if: always()
