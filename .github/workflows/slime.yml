@@ -189,6 +189,28 @@ jobs:
             git push
           fi
 
+      - name: 失败通知
+        if: failure()
+        continue-on-error: true
+        env:
+          TG_BOT: ${{ secrets.TG_BOT }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          if [ -z "$TG_BOT" ]; then echo "未配置 TG_BOT，跳过"; exit 0; fi
+          CHAT_ID="${TG_BOT%%,*}"
+          BOT_TOKEN="${TG_BOT#*,}"
+          if [ -z "$CHAT_ID" ] || [ -z "$BOT_TOKEN" ]; then echo "TG_BOT 格式应为 chat_id,bot_token"; exit 0; fi
+          TEXT="❌ Slime 任务失败
+          🕐 $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
+          🔗 $RUN_URL"
+          if curl -s --max-time 15 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
+               -d chat_id="$CHAT_ID" -d disable_web_page_preview=true --data-urlencode text="$TEXT" \
+               | grep -q '"ok":true'; then
+            echo "已推送失败通知"
+          else
+            echo "失败通知推送失败（不影响任务结论）"
+          fi
+
       - name: 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
