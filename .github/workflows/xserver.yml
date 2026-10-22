@@ -27,9 +27,12 @@ jobs:
 
       - name: 安装依赖
         run: |
-          pip install httpx seleniumbase pyautogui
-          sudo apt-get install -y -qq --no-install-recommends xvfb xdotool fonts-noto-cjk
-          wget -q -O /tmp/google-chrome-stable_current_amd64.deb \
+          # 全部加重试/超时：站点维护期间 runner 拉包也偶发卡死，不能让一步挂满 60 分钟
+          pip install --timeout 20 --retries 3 httpx seleniumbase pyautogui
+          sudo apt-get install -y -qq --no-install-recommends \
+            -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=3 \
+            xvfb xdotool fonts-noto-cjk
+          wget -q --timeout=30 --tries=3 -O /tmp/google-chrome-stable_current_amd64.deb \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y -qq
           python -m seleniumbase get uc_driver || true
