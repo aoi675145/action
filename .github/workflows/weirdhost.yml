@@ -3,6 +3,8 @@ name: Weirdhost 续期
 on:
   schedule:
     - cron: '21 18 24 10 *'   # 由「写回下次精确运行时间」按 logs.txt 的 nextRun 改写
+    # 每日兜底：万一精确那一次被 GitHub 跳过/写回失败，这里每天再检查一次，未到期会秒退
+    - cron: '11 1 * * *'
   workflow_dispatch:
 
 jobs:
