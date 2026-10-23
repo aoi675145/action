@@ -143,7 +143,7 @@ jobs:
         run: |
           python3 - <<'PY'
           import json, re, subprocess, sys
-          from datetime import datetime
+          from datetime import datetime, timedelta
 
           LOG = "private-repo/scripts/weirdhost/logs.txt"
           WF = ".github/workflows/weirdhost.yml"
@@ -167,6 +167,10 @@ jobs:
               sys.exit(0)
 
           nxt = min(times)
+          now = datetime.utcnow()
+          if nxt <= now:
+              print(f"[WARN] nextRun {nxt} 已经过去（上次可能失败），安排 3 小时后重试")
+              nxt = (now + timedelta(hours=3)).replace(second=0, microsecond=0)
           cron = f"{nxt.minute} {nxt.hour} {nxt.day} {nxt.month} *"
           txt = open(WF, encoding="utf-8").read()
           new, n = re.subn(r"^(\s*- cron:\s*)['\"][^'\"]+['\"]",
