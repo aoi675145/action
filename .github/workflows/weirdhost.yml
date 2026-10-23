@@ -2,7 +2,7 @@ name: Weirdhost 续期
 
 on:
   schedule:
-    - cron: '10 0,12 * * *'
+    - cron: '21 18 24 10 *'   # 由「写回下次精确运行时间」按 logs.txt 的 nextRun 改写
   workflow_dispatch:
 
 jobs:
@@ -137,6 +137,57 @@ jobs:
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
+
+      - name: 📅 写回下次精确运行时间
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, re, subprocess, sys
+          from datetime import datetime
+
+          LOG = "private-repo/scripts/weirdhost/logs.txt"
+          WF = ".github/workflows/weirdhost.yml"
+          try:
+              data = json.load(open(LOG, encoding="utf-8"))
+          except Exception as e:
+              print(f"[INFO] 读不到 logs.txt，跳过 cron 写回: {e}")
+              sys.exit(0)
+
+          times = []
+          for entry in data.values():
+              s = str(entry.get("nextRun", "")).strip()
+              if not s:
+                  continue
+              try:
+                  times.append(datetime.strptime(s, "%Y-%m-%d %H:%M"))
+              except ValueError:
+                  pass
+          if not times:
+              print("[INFO] 没有可用的 nextRun，跳过")
+              sys.exit(0)
+
+          nxt = min(times)
+          cron = f"{nxt.minute} {nxt.hour} {nxt.day} {nxt.month} *"
+          txt = open(WF, encoding="utf-8").read()
+          new, n = re.subn(r"^(\s*- cron:\s*)['\"][^'\"]+['\"]",
+                           lambda m: f"{m.group(1)}'{cron}'", txt, count=1, flags=re.M)
+          if not n or new == txt:
+              print(f"[INFO] cron 已是 {cron}，无需写回")
+              sys.exit(0)
+          open(WF, "w", encoding="utf-8").write(new)
+
+          label = nxt.strftime("%Y-%m-%d %H:%M UTC")
+          def git(*a):
+              return subprocess.run(["git", *a], check=False)
+          git("config", "user.name", "github-actions[bot]")
+          git("config", "user.email", "github-actions[bot]@users.noreply.github.com")
+          git("add", WF)
+          git("commit", "-m", f"🔄 下次运行: {label}", "-m", f"Cron: {cron}")
+          git("pull", "--rebase", "--autostash")
+          if git("push").returncode != 0:
+              git("push", "--force-with-lease")
+          print(f"✅ cron 写回: {cron} ({label})")
+          PY
 
       - name: 清理旧的工作流运行记录
         if: always()
