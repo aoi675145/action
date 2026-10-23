@@ -3,7 +3,7 @@ name: hnhost 签到
 on:
   workflow_dispatch:
   schedule:
-    - cron: '55 22 * * *'
+    - cron: '55 0 * * *'
 
 permissions:
   actions: write
