@@ -430,6 +430,9 @@ jobs:
           JOB_STATUS: ${{ job.status }}
           RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
+          # 标题只在 scripts/tg_title.py 里维护
+          TITLE=$(python3 -c "import sys;sys.path.insert(0,'scripts');from tg_title import title;print(title('optiklink'))" 2>/dev/null || echo '❌ 任务执行失败')
+          export TITLE
           node <<'NODE'
           const https = require('https');
 
