@@ -244,7 +244,7 @@ jobs:
           set -euo pipefail
 
           # 到期日当天北京时间 09:17 运行，即 UTC 01:17。
-          NEXT_RUN_UTC=$(date -u -d "$DUE_DATE 01:17:00 UTC" '+%Y-%m-%d %H:%M')
+          NEXT_RUN_UTC=$(date -u -d "$DUE_DATE 02:05:00 UTC" '+%Y-%m-%d %H:%M')
           NEXT_MINUTE=$(date -u -d "$NEXT_RUN_UTC UTC" '+%-M')
           NEXT_HOUR=$(date -u -d "$NEXT_RUN_UTC UTC" '+%-H')
           NEXT_DAY=$(date -u -d "$NEXT_RUN_UTC UTC" '+%-d')
