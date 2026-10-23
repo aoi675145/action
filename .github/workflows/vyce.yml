@@ -100,7 +100,7 @@ jobs:
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.probe }}
         env:
           VYCE_COOKIE_FILE: 'cookies.txt'
-        run: xvfb-run -a --server-args="-screen 0 1280x900x24" python -u scripts/bestcap_renew.py --probe
+        run: xvfb-run -a --server-args="-screen 0 1280x900x24" python -u scripts/bestcap_renew.py --selftest --probe
 
       - name: 执行续期脚本
         if: ${{ !(github.event_name == 'workflow_dispatch' && inputs.probe) }}
