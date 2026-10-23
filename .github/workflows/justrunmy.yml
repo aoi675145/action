@@ -87,7 +87,7 @@ jobs:
           notify_fail "代理出口验证失败，已禁止直连"
           exit 1
         fi
-        MASKED_IP=$(python3 -c 'import sys; p=sys.argv[1].strip().split("."); print(".".join(p[:2]+["***","***"]) if len(p)==4 else "***")' "$PROXY_IP")
+        MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$PROXY_IP")
         echo "✅ 代理出口 IP: $MASKED_IP"
 
     - name: 🚀 运行续期脚本
