@@ -2,7 +2,7 @@ name: Cleanup
 
 on:
   schedule:
-    - cron: '0 2 */10 * *'  
+    - cron: '6 2 */10 * *'  
   workflow_dispatch:         
 
 permissions:
