@@ -3,7 +3,7 @@ name: pidginhost 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '49 1 */10 * *'
+    - cron: '5 5 */10 * *'
 
 permissions:
   contents: write
