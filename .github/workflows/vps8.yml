@@ -18,7 +18,7 @@ jobs:
   sign:
     name: 执行签到
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: write
       actions: write
@@ -194,8 +194,14 @@ jobs:
           NO_PROXY: localhost,127.0.0.1
         run: |
           rm -rf screenshots
-          for attempt in 1 2; do
-            echo "::group::签到尝试 $attempt/2"
+          for attempt in 1 2 3; do
+            echo "::group::签到尝试 $attempt/3"
+            # 中间轮静默：main.py 每轮都会推 TG，不屏蔽就会出现"失败"误报
+            if [ "$attempt" -lt 3 ]; then
+              export VPS8_SILENT=1
+            else
+              export VPS8_SILENT=0
+            fi
             if xvfb-run -a --server-args="-screen 0 1280x720x24" python -u main.py \
                 2> >(grep -v "Unable to revert mtime" >&2); then
               echo "::endgroup::"
