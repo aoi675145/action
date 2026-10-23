@@ -84,7 +84,11 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add .github/workflows/godlike.yml
-          git diff --cached --quiet || (git commit -m "auto: cron $next_cron" && git push)
+          read -r _MM _HH _DD _MO _ <<< "$next_cron"
+          _TS=$(date -u -d "$(date -u +%Y)-$_MO-$_DD $_HH:$_MM" +%s 2>/dev/null || echo 0)
+          if [ "$_TS" -lt "$(date -u +%s)" ]; then _TS=$(date -u -d "$(( $(date -u +%Y) + 1 ))-$_MO-$_DD $_HH:$_MM" +%s); fi
+          NEXT_LABEL=$(date -u -d "@$_TS" '+%Y-%m-%d %H:%M UTC')
+          git diff --cached --quiet || (git commit -m "🔄 下次运行: $NEXT_LABEL" -m "Cron: $next_cron" && git push)
 
       - name: 清理代理进程和临时文件
         if: always()
