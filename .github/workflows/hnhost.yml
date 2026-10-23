@@ -34,6 +34,8 @@ jobs:
           TG_BOT_TOKEN:  ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID:    ${{ secrets.TG_CHAT_ID }}
         run: |
+          # 标题只在 scripts/tg_title.py 里维护
+          TITLE=$(python3 -c "import sys;sys.path.insert(0,'scripts');from tg_title import title;print(title('hnhost'))" 2>/dev/null || echo '❌ 任务执行失败')
           fail() {
             echo "[ERROR] $1"
             if [ -n "$TG_BOT_TOKEN" ] && [ -n "$TG_CHAT_ID" ]; then
