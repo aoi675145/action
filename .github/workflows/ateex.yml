@@ -49,10 +49,17 @@ jobs:
             echo "❌ 代理脚本未生成 PROXY_SERVER，禁止继续"
             exit 1
           fi
-          PROXY_IP=$(curl -fsS --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org) || {
+          PROXY_IP=""
+          for attempt in 1 2 3 4; do
+            if PROXY_IP=$(curl -fsS --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org 2>/dev/null) && [ -n "$PROXY_IP" ]; then break; fi
+            if PROXY_IP=$(curl -fsS --max-time 15 --proxy "$PROXY_SERVER" https://ifconfig.me/ip 2>/dev/null) && [ -n "$PROXY_IP" ]; then break; fi
+            echo "⚠️ 代理探测失败（$attempt/4），3 秒后重试"
+            sleep 3
+          done
+          if [ -z "$PROXY_IP" ]; then
             echo "❌ 代理出口验证失败，禁止继续"
             exit 1
-          }
+          fi
           MASKED_IP=$(python -c 'import sys; p=sys.argv[1].strip().split("."); print(".".join(p[:2]+["***","***"]) if len(p)==4 else "***")' "$PROXY_IP")
           echo "✅ 代理出口 IP: $MASKED_IP"
 
