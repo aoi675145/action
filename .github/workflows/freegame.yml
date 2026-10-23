@@ -174,6 +174,7 @@ jobs:
           exit 1
 
       - name: 🚀 运行自动化续期脚本
+        id: run_script
         env:
           PYTHONIOENCODING: utf-8
           FGH_ACCOUNT: ${{ secrets.FGH_ACCOUNT }}
@@ -190,3 +191,17 @@ jobs:
           name: debug-screenshots
           path: "*.png"
           retention-days: 3
+
+      - name: ❌ 失败通知（前置步骤）
+        if: failure() && steps.run_script.conclusion != 'failure'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+            echo "[SKIP] 未配置 TG_BOT_TOKEN / TG_CHAT_ID"
+            exit 0
+          fi
+          MSG="❌ ${GITHUB_WORKFLOW} 失败（脚本未运行）%0A任务: ${GITHUB_JOB}%0A仓库: ${GITHUB_REPOSITORY}%0A运行页: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT_ID}" --data-urlencode "text=${MSG}" || true

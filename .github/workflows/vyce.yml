@@ -35,6 +35,7 @@ jobs:
           python-version: '3.11'
 
       - name: 从私库拉取脚本与 cookies
+        id: run_script
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -138,7 +139,7 @@ jobs:
           git push || echo "[WARN] push failed, next run will retry"
 
       - name: TG 失败通知
-        if: failure()
+        if: failure() && steps.run_script.conclusion != 'failure'
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}

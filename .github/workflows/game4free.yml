@@ -49,6 +49,7 @@ jobs:
         run: seleniumbase install chromedriver
 
       - name: 执行 Game4Free 续期
+        id: run_script
         env:
           TG_BOT: ${{ secrets.TG_BOT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -77,3 +78,17 @@ jobs:
           delete_workflow_pattern: ${{ github.workflow }}
           retain_days: 0
           keep_minimum_runs: 1
+
+      - name: ❌ 失败通知（前置步骤）
+        if: failure() && steps.run_script.conclusion != 'failure'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+            echo "[SKIP] 未配置 TG_BOT_TOKEN / TG_CHAT_ID"
+            exit 0
+          fi
+          MSG="❌ ${GITHUB_WORKFLOW} 失败（脚本未运行）%0A任务: ${GITHUB_JOB}%0A仓库: ${GITHUB_REPOSITORY}%0A运行页: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT_ID}" --data-urlencode "text=${MSG}" || true
