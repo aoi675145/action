@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -26,12 +26,12 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: 设置代理 (sing-box)
+      - name: 🌐 设置代理 (sing-box)
         env:
           EKNODES_PROXY: ${{ secrets.EKNODES_PROXY }}
         run: |
@@ -42,7 +42,7 @@ jobs:
           echo "✅ 已检测到 EKNODES_PROXY，开始配置强制代理"
           NODE_LINK="$EKNODES_PROXY" bash private-repo/scripts/setup_proxy.sh
 
-      - name: 验证代理环境
+      - name: 🌐 验证代理环境
         run: |
           if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then
             echo "❌ 代理脚本未生成有效的代理环境变量，已禁止继续运行"
@@ -50,10 +50,10 @@ jobs:
           fi
           echo "✅ 代理环境验证成功"
 
-      - name: 安装 Python 依赖
+      - name: 📦 安装 Python 依赖
         run: pip install 'requests[socks]'
 
-      - name: 执行续期
+      - name: 🚀 执行续期
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -67,7 +67,7 @@ jobs:
           set -o pipefail
           python eknodes.py 2>&1 | tee renew.log
 
-      - name: 提交 Cookie 更新
+      - name: ⚙️ 提交 Cookie 更新
         if: success()
         working-directory: private-repo
         run: |
@@ -82,13 +82,13 @@ jobs:
             echo "Cookie 未生成或无变化，跳过提交"
           fi
 
-      - name: 清理代理进程和临时文件
+      - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

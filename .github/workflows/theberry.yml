@@ -210,7 +210,7 @@ jobs:
           chmod +x berryhost.sh
           bash berryhost.sh
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

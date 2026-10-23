@@ -15,21 +15,21 @@ jobs:
     runs-on: ubuntu-22.04
     
     steps:
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: 'aoi675145/scripts'
           # 使用你指定的 REPO_TOKEN 变量名
           token: ${{ secrets.REPO_TOKEN }} 
 
-      - name: 安装 Python
+      - name: 📦 安装 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
           cache-dependency-path: scripts/katabump/requirements.txt
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: |
           # 进入私库中对应的目录安装依赖
           cd scripts/katabump
@@ -43,7 +43,7 @@ jobs:
             }
           fi
           
-      - name: 获取浏览器版本
+      - name: ⚙️ 获取浏览器版本
         id: get_version
         run: |
           CHROME_VERSION=$(chromium-browser --version 2>/dev/null | grep -oE 'Chromium\s[0-9]+' | grep -oE '[0-9]+')
@@ -57,10 +57,10 @@ jobs:
           echo "Detected Chrome/Chromium Major Version: $CHROME_VERSION"
           echo "CHROME_VERSION=$CHROME_VERSION" >> $GITHUB_ENV
 
-      - name: 启动虚拟显示
+      - name: ⚙️ 启动虚拟显示
         run: Xvfb :99 -ac &
 
-      - name: 安装并启动代理
+      - name: 🌐 安装并启动代理
         env:
           Katabump_PROXY_NODE: ${{ secrets.Katabump_PROXY_NODE }}
         run: |
@@ -367,7 +367,7 @@ jobs:
           cat xray.log || true
           exit 0
 
-      - name: 执行续期
+      - name: 🚀 执行续期
         id: run_script
         env:
           Katabump_ACCOUNTS: ${{ secrets.Katabump_ACCOUNTS }}
@@ -382,7 +382,7 @@ jobs:
           cd scripts/katabump
           python -u katabump.py
 
-      - name: 修改 cron
+      - name: ⏰ 修改 cron
         if: always()
         run: |
           NEXT_FILE=$(find . -name next_run.txt | head -1)
@@ -404,7 +404,7 @@ jobs:
           NEXT_LABEL=$(date -u -d "@$_TS" '+%Y-%m-%d %H:%M UTC')
           git diff --cached --quiet || (git commit -m "🔄 下次运行: $NEXT_LABEL" -m "Cron: $next_cron" && git push)
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

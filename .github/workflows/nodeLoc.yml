@@ -23,7 +23,7 @@ jobs:
     name: 执行签到
     runs-on: ubuntu-latest
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
           # 确认拉取你图片中的私库
@@ -31,24 +31,24 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 配置Python环境
+      - name: 🐍 配置Python环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装Chrome浏览器
+      - name: 📦 安装Chrome浏览器
         id: setup-chrome
         uses: browser-actions/setup-chrome@v1
         with:
           chrome-version: 131
 
-      - name: 安装Python依赖
+      - name: 📦 安装Python依赖
         run: pip install undetected-chromedriver selenium requests
 
-      - name: 创建截图目录
+      - name: 📤 创建截图目录
         run: mkdir -p /tmp/screenshots
 
-      - name: 执行签到脚本
+      - name: 🚀 执行签到脚本
         id: run_script
         env:
           NL_ACCOUNT: ${{ secrets.NL_ACCOUNT }}
@@ -58,7 +58,7 @@ jobs:
         # 路径确认：nodeloc/main.py 匹配图片中的 scripts/nodeloc/main.py 结构
         run: python nodeloc/main.py
 
-      - name: 清理工作流记录
+      - name: 🧹 清理工作流记录
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}

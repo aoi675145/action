@@ -380,7 +380,7 @@ jobs:
             git push
           fi
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

@@ -28,7 +28,7 @@ jobs:
         with:
           token: ${{ secrets.REPO_TOKEN }}
 
-      - name: 准备（拉取脚本与依赖清单）
+      - name: 📦 准备（拉取脚本与依赖清单）
         id: run_script
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -101,7 +101,7 @@ jobs:
           cache: 'pip'
           cache-dependency-path: requirements.txt
 
-      - name: 安装并启动代理
+      - name: 🌐 安装并启动代理
         if: ${{ github.event.inputs.no_proxy != '1' }}
         env:
           VPS8_PROXY: ${{ secrets.VPS8_PROXY }}
@@ -129,7 +129,7 @@ jobs:
             echo "PROXY_SERVER=" >> "$GITHUB_ENV"
           fi
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         id: deps
         run: |
           echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
@@ -157,7 +157,7 @@ jobs:
           git rev-parse HEAD > /dev/null
           cd ..
 
-      - name: 恢复 Chrome for Testing 缓存
+      - name: ⚙️ 恢复 Chrome for Testing 缓存
         uses: actions/cache@v4
         with:
           path: ${{ steps.deps.outputs.path }}
@@ -165,7 +165,7 @@ jobs:
           restore-keys: |
             sb-drivers-
 
-      - name: 安装 Chrome for Testing 与 ChromeDriver
+      - name: 📦 安装 Chrome for Testing 与 ChromeDriver
         run: |
           sudo apt-get remove -y google-chrome-stable > /dev/null 2>&1 || true
           rm -rf ~/.cache/selenium
@@ -182,7 +182,7 @@ jobs:
           hash -r
           seleniumbase install chromedriver
 
-      - name: 执行 VPS8 签到
+      - name: 🚀 执行 VPS8 签到
         env:
           VPS8: ${{ secrets.VPS8 }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -214,7 +214,7 @@ jobs:
           done
           exit 1
 
-      - name: 保存信息到私库
+      - name: 💾 保存信息到私库
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -247,7 +247,7 @@ jobs:
           git push
           echo "[保存] 截图/到期缓存/题型统计已保存到私库 scripts/vps8/"
 
-      - name: 随机 cron
+      - name: ⏰ 随机 cron
         if: always()
         run: |
           WORKFLOW=".github/workflows/vps8.yml"
@@ -287,7 +287,7 @@ jobs:
           NEXT_LABEL=$(cat next_run_label.txt 2>/dev/null || echo "未知")
           git diff --cached --quiet || (git commit -m "🔄 下次运行: $NEXT_LABEL" && git pull --rebase --strategy-option=theirs && git push)
 
-      - name: 清理历史运行记录
+      - name: 🧹 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

@@ -289,7 +289,7 @@ jobs:
           set -o pipefail
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python orihost.py 2>&1 | tee renew.log; exit ${PIPESTATUS[0]}
 
-      - name: 提取到期时间
+      - name: ⚙️ 提取到期时间
         id: extract_due
         if: success()
         working-directory: scripts_repo/scripts/orihost
@@ -304,7 +304,7 @@ jobs:
           echo "skip_update=false" >> $GITHUB_OUTPUT
           echo "::notice::📅 当前到期时间: $DUE_DATE"
 
-      - name: 修改下次 Cron 时间
+      - name: ⏰ 修改下次 Cron 时间
         if: success() && steps.extract_due.outputs.skip_update != 'true'
         run: |
           set -e
@@ -357,7 +357,7 @@ jobs:
 
           echo "::notice::✅ Cron 更新成功"
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

@@ -12,19 +12,19 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.10"
 
-      - name: 安装系统依赖
+      - name: 📦 安装系统依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb
           pip install --upgrade pip
           pip install seleniumbase requests pyvirtualdisplay
 
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -43,13 +43,13 @@ jobs:
             https://api.github.com/repos/aoi675145/scripts/contents/scripts/setup_proxy.sh
           test -s setup_proxy.sh && echo "✅ setup_proxy.sh 拉取成功"
 
-      - name: 设置代理
+      - name: 🌐 设置代理
         env:
           SEARCADE_PROXY: ${{ secrets.SEARCADE_PROXY }}
         run: |
           NODE_LINK="$SEARCADE_PROXY" bash setup_proxy.sh
 
-      - name: 执行保活
+      - name: 🚀 执行保活
         id: run_script
         env:
           SEARCADE: ${{ secrets.SEARCADE }}
@@ -58,12 +58,12 @@ jobs:
         run: |
           python searcade.py
 
-      - name: 清理代理进程
+      - name: 🧹 清理代理进程
         if: always()
         run: |
           pkill -f sing-box || true
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

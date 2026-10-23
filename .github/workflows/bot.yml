@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 从私库拉取脚本
+      - name: 📥 从私库拉取脚本
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -39,19 +39,19 @@ jobs:
             "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/setup_proxy.sh"
           echo "[INFO] ✅ setup_proxy.sh 已下载 ($(wc -l < setup_proxy.sh) 行)"
 
-      - name: 安装系统依赖
+      - name: 📦 安装系统依赖
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y google-chrome-stable xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full
 
-      - name: 安装 Python 库
+      - name: 📦 安装 Python 库
         run: |
           pip install -q seleniumbase 'requests[socks]'
 
-      - name: 安装 ChromeDriver
+      - name: 📦 安装 ChromeDriver
         run: seleniumbase install chromedriver
 
-      - name: 下载并解压扩展
+      - name: ⚙️ 下载并解压扩展
         run: |
           mkdir -p scripts/extensions/nopecha
 
@@ -59,7 +59,7 @@ jobs:
             https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
           7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
 
-      - name: 安装并启动代理
+      - name: 🌐 安装并启动代理
         env:
           NODE_LINK: ${{ secrets.Bot_PROXY }}
         run: |
@@ -87,7 +87,7 @@ jobs:
           MASKED_IP=$(python3 -c 'import sys; p=sys.argv[1].strip().split("."); print(".".join(p[:2]+["***","***"]) if len(p)==4 else "***")' "$PROXY_IP")
           echo "✅ 代理出口 IP: $MASKED_IP"
 
-      - name: 执行 Bot-Hosting 金币领取
+      - name: 🚀 执行 Bot-Hosting 金币领取
         id: run_script
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
@@ -97,13 +97,13 @@ jobs:
           Bot_PROXY: ${{ env.PROXY_SERVER }}
         run: xvfb-run -a --server-args="-screen 0 1280x720x24" python -u bot.py
 
-      - name: 清理 sing-box
+      - name: 🧹 清理 sing-box
         if: always()
         run: |
           pkill -f sing-box 2>/dev/null || true
           rm -f sing-box sing-box-config.json sing-box.log sing-box-*.tar.gz setup_proxy.sh
 
-      - name: 清理历史运行记录
+      - name: 🧹 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

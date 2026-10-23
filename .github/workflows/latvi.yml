@@ -36,7 +36,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: 日志脱敏
+      - name: 📝 日志脱敏
         env:
           M_NODE: ${{ secrets.LATVI_PROXY }}
           M_TG: ${{ secrets.TG_BOT }}
@@ -46,7 +46,7 @@ jobs:
           if [ -n "$M_TG" ]; then echo "::add-mask::$M_TG"; fi
           if [ -n "$M_IDENT" ]; then echo "::add-mask::$M_IDENT"; fi
 
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -57,7 +57,7 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
-      - name: 校验代理配置
+      - name: 🌐 校验代理配置
         env:
           NODE_LINK: ${{ secrets.LATVI_PROXY }}
         run: |
@@ -66,17 +66,17 @@ jobs:
             exit 1
           fi
 
-      - name: 启动代理
+      - name: 🌐 启动代理
         env:
           NODE_LINK: ${{ secrets.LATVI_PROXY }}
         run: bash private-repo/scripts/setup_proxy.sh
 
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: 执行
+      - name: 🚀 执行
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -101,7 +101,7 @@ jobs:
           fi
           python latvi.py "$ACTION" 2>&1 | tee run.log
 
-      - name: TG 失败通知
+      - name: 📨 TG 失败通知
         if: failure() && steps.run_script.conclusion != 'failure'
         env:
           TG_BOT: ${{ secrets.TG_BOT }}
@@ -119,14 +119,14 @@ jobs:
             -d chat_id="${CHAT_ID}" \
             --data-urlencode "text=${MSG}"
 
-      - name: 清理代理进程和临时文件
+      - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
           rm -f private-repo/scripts/latvi/run.log
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

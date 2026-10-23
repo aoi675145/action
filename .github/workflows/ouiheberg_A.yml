@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: 拉取私库 OuiHeberg 脚本
+      - name: 📥 拉取私库 OuiHeberg 脚本
         uses: actions/checkout@v4
         with:
           repository: 'aoi675145/scripts'
@@ -27,7 +27,7 @@ jobs:
           sparse-checkout: scripts/ouiheberg/ouiheberg.py
           sparse-checkout-cone-mode: false
 
-      - name: 启动代理转换网关
+      - name: 🌐 启动代理转换网关
         env:
           MY_PROXY_NODE: ${{ secrets.OuiHeberg_PROXY_A }}
           TG_BOT: ${{ secrets.TG_BOT }}
@@ -195,7 +195,7 @@ jobs:
             exit 1
           fi
 
-      - name: 安装 Python 依赖和 UC 驱动
+      - name: 📦 安装 Python 依赖和 UC 驱动
         run: |
           python3 -m pip install --disable-pip-version-check \
             'requests[socks]>=2.32,<3' \
@@ -212,7 +212,7 @@ jobs:
           echo "ChromeDriver: $(chromedriver --version 2>/dev/null || true)"
           python3 -c 'import seleniumbase, selenium; print(f"SeleniumBase: {seleniumbase.__version__}"); print(f"Selenium: {selenium.__version__}")'
 
-      - name: 执行 OuiHeberg 续期
+      - name: 🚀 执行 OuiHeberg 续期
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN_A }}
           OUIHEBERG: ${{ secrets.OUIHEBERG_A }}
@@ -221,7 +221,7 @@ jobs:
           set -o pipefail
           python3 scripts/ouiheberg/ouiheberg.py 2>&1 | tee ouiheberg-renew.log
 
-      - name: 提取续期到期时间
+      - name: 🚀 提取续期到期时间
         id: extract_due
         if: success()
         run: |
@@ -235,7 +235,7 @@ jobs:
           echo "skip_update=false" >> "$GITHUB_OUTPUT"
           echo "::notice::已获取续期到期时间"
 
-      - name: 自动修改下次运行 Cron
+      - name: ⏰ 自动修改下次运行 Cron
         if: success() && steps.extract_due.outputs.skip_update != 'true'
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -284,7 +284,7 @@ jobs:
           git push
           echo "::notice::Cron 更新成功"
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

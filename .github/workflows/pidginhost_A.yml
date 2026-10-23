@@ -14,22 +14,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 设置 Python 环境
+      - name: 🐍 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: pip install --quiet 'requests[socks]'
 
-      - name: 安装并启动代理
+      - name: 🌐 安装并启动代理
         env:
           PIDGIN_PROXY_NODE: ${{ secrets.PIDGIN_PROXY_NODE_A }}
           TG_BOT_TOKEN:      ${{ secrets.TG_BOT_TOKEN }}
@@ -289,7 +289,7 @@ jobs:
 
           fail "代理连接失败"
 
-      - name: 运行保活/续期脚本
+      - name: 🚀 运行保活/续期脚本
         env:
           PIDGIN_COOKIE_FILE: cookies_A.txt
           PIDGINHOST_A:      ${{ secrets.PIDGINHOST_A }}
@@ -299,7 +299,7 @@ jobs:
           PYTHONUNBUFFERED:  1
         run: python scripts/pidginhost/pidginhost.py
 
-      - name: 提交 Cookie 更新
+      - name: ⚙️ 提交 Cookie 更新
         if: success()
         run: |
           git config --global user.name "GitHub Actions"
@@ -313,7 +313,7 @@ jobs:
             echo "Cookie 无变化，跳过提交。"
           fi
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

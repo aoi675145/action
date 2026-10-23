@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -29,25 +29,25 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: 设置代理 (sing-box)
+      - name: 🌐 设置代理 (sing-box)
         env:
           Openworld_PROXY: ${{ secrets.Openworld_PROXY }}
         run: |
           NODE_LINK="$Openworld_PROXY" bash private-repo/scripts/setup_proxy.sh
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb fonts-noto-cjk
           pip install playwright requests ddddocr Pillow 'requests[socks]' websocket-client opencv-python-headless
           playwright install --with-deps chromium
 
-      - name: 运行 Openworld 续期脚本
+      - name: 🚀 运行 Openworld 续期脚本
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -64,7 +64,7 @@ jobs:
           set -o pipefail
           xvfb-run --auto-servernum python3 openworld.py 2>&1 | tee renew.log
 
-      - name: 提交更新的 cookies.txt 回私库
+      - name: 📥 提交更新的 cookies.txt 回私库
         if: success()
         working-directory: private-repo
         run: |
@@ -101,7 +101,7 @@ jobs:
           fi
           echo "✅ cookies.txt 已推送到私库"
 
-      - name: 清理代理进程和临时文件
+      - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
@@ -109,7 +109,7 @@ jobs:
           pkill -f Xvfb || true
           rm -f sing-box sing-box-config.json sing-box.log
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

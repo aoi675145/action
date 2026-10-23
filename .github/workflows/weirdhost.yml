@@ -21,10 +21,10 @@ jobs:
       actions: write
 
     steps:
-      - name: 检出代码
+      - name: ⚙️ 检出代码
         uses: actions/checkout@v4
 
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -36,7 +36,7 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
-      - name: 检查是否需要续期
+      - name: 🚀 检查是否需要续期
         id: check_renew
         run: |
           LOG_FILE="private-repo/scripts/weirdhost/logs.txt"
@@ -62,13 +62,13 @@ jobs:
             echo "need_renew=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: 设置 Python 环境
+      - name: 🐍 设置 Python 环境
         if: steps.check_renew.outputs.need_renew == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
 
-      - name: 设置代理 (sing-box)
+      - name: 🌐 设置代理 (sing-box)
         if: steps.check_renew.outputs.need_renew == 'true'
         env:
           WEIRDHOST_PROXY_NODE: ${{ secrets.WEIRDHOST_PROXY_NODE }}
@@ -79,7 +79,7 @@ jobs:
           fi
           NODE_LINK="$WEIRDHOST_PROXY_NODE" bash private-repo/scripts/setup_proxy.sh
 
-      - name: 修复 apt 源
+      - name: 📦 修复 apt 源
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
           sudo tee /etc/apt/sources.list.d/ubuntu.sources > /dev/null <<'EOF'
@@ -97,7 +97,7 @@ jobs:
           EOF
           sudo rm -f /etc/apt/apt-mirrors.txt
 
-      - name: 安装系统依赖
+      - name: 📦 安装系统依赖
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
           # apt 直连 GitHub runner 内置源即可（前面已改写为官方 https 源），
@@ -105,13 +105,13 @@ jobs:
           sudo apt-get -o Acquire::Retries=3 update
           sudo apt-get install -y xvfb xdotool fonts-noto-cjk jq
 
-      - name: 安装 Python 依赖
+      - name: 📦 安装 Python 依赖
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
           # pip 直连 pypi，不走代理
           pip install seleniumbase aiohttp pynacl
 
-      - name: 屏蔽广告域名
+      - name: ⚙️ 屏蔽广告域名
         if: steps.check_renew.outputs.need_renew == 'true'
         run: |
           for domain in pagead2.googlesyndication.com googleads.g.doubleclick.net www.googleadservices.com ep2.adtrafficquality.google c1.rfihub.net; do
@@ -119,7 +119,7 @@ jobs:
             echo "🚫 已屏蔽 $domain"
           done
 
-      - name: 运行续期脚本
+      - name: 🚀 运行续期脚本
         id: run_script
         if: steps.check_renew.outputs.need_renew == 'true'
         env:
@@ -135,7 +135,7 @@ jobs:
           set -o pipefail
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python weirdhost.py 2>&1 | tee renew.log; exit ${PIPESTATUS[0]}
 
-      - name: 清理代理进程和临时文件
+      - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
@@ -196,7 +196,7 @@ jobs:
           print(f"✅ cron 写回: {cron} ({label})")
           PY
 
-      - name: 清理旧的工作流运行记录
+      - name: 🧹 清理旧的工作流运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

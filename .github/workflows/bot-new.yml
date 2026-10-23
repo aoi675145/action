@@ -167,7 +167,7 @@ jobs:
             exit 1
           fi
 
-      - name: 检查脚本代理出口
+      - name: 🌐 检查脚本代理出口
         run: |
           if [ -z "${PROXY_SERVER}" ]; then
             echo "[ERROR] PROXY_SERVER 为空，禁止直连"
@@ -200,7 +200,7 @@ jobs:
           BOTNEW_PROXY: ${{ env.PROXY_SERVER }}
         run: xvfb-run python scripts_repo/scripts/bot-new/bot-new.py
 
-      - name: 修改 cron
+      - name: ⏰ 修改 cron
         if: always()
         run: |
           if [ ! -f next_run.txt ]; then

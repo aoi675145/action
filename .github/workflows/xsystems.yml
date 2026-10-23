@@ -293,7 +293,7 @@ jobs:
           XSYSTEMS_PROXY: ${{ env.PROXY_URL }}
         run: python scripts_repo/scripts/xsystems/xsystems.py 2>&1 | tee renew.log
 
-      - name: ⏰ 提取下次领取时间
+      - name: ⏰ ⏰ 提取下次领取时间
         id: extract_next
         if: success()
         run: |

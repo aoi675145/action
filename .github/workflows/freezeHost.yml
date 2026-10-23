@@ -45,7 +45,7 @@ jobs:
           sudo rm -f /etc/resolv.conf
           echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
 
-      - name: 安装并启动代理
+      - name: 🌐 安装并启动代理
         env:
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
@@ -229,7 +229,7 @@ jobs:
             exit 1
           fi
 
-      - name: 检查脚本代理出口
+      - name: 🌐 检查脚本代理出口
         run: |
           if [ -z "${PROXY_SERVER}" ]; then
             echo "[ERROR] PROXY_SERVER 为空，禁止直连"

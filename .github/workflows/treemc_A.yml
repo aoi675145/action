@@ -15,7 +15,7 @@ jobs:
       actions: write
 
     steps:
-      - name: 拉取脚本库
+      - name: 📥 拉取脚本库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -26,21 +26,21 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
-      - name: 安装 Python
+      - name: 📦 安装 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: 设置代理 (sing-box)
+      - name: 🌐 设置代理 (sing-box)
         env:
           TREEMC_PROXY: ${{ secrets.TREEMC_PROXY_A }}
         run: |
           NODE_LINK="$TREEMC_PROXY" bash scripts_repo/scripts/setup_proxy.sh
 
-      - name: 安装 Python 依赖
+      - name: 📦 安装 Python 依赖
         run: pip install --quiet 'requests[socks]'
 
-      - name: 运行续期脚本
+      - name: 🚀 运行续期脚本
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -54,13 +54,13 @@ jobs:
           set -o pipefail
           python treemc.py 2>&1 | tee renew.log
 
-      - name: 清理代理进程和临时文件
+      - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

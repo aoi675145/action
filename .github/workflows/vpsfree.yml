@@ -23,7 +23,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -34,7 +34,7 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
-      - name: 安装依赖并准备扩展
+      - name: 📦 安装依赖并准备扩展
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y google-chrome-stable xvfb fonts-noto-cjk fonts-wqy-zenhei p7zip-full jq
@@ -45,7 +45,7 @@ jobs:
             https://github.com/NopeCHALLC/nopecha-extension/releases/download/0.6.0/chromium.zip
           7z x -y scripts/extensions/nopecha/chromium.zip -oscripts/extensions/nopecha/unpacked
 
-      - name: 设置代理 (sing-box)
+      - name: 🌐 设置代理 (sing-box)
         env:
           VPSFREE_PROXY: ${{ secrets.VPSFREE_PROXY }}
         run: |
@@ -55,7 +55,7 @@ jobs:
           fi
           NODE_LINK="$VPSFREE_PROXY" bash private-repo/scripts/setup_proxy.sh
 
-      - name: 执行 VPSFREE 续期
+      - name: 🚀 执行 VPSFREE 续期
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -69,13 +69,13 @@ jobs:
           set -o pipefail
           xvfb-run -a --server-args="-screen 0 1280x720x24" python -u private-repo/scripts/vpsfree/vpsfree.py 2>&1 | tee renew.log
 
-      - name: 清理代理进程和临时文件
+      - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
 
-      - name: 提取下次运行时间
+      - name: ⏰ 提取下次运行时间
         id: extract_next_run
         if: success()
         run: |
@@ -89,7 +89,7 @@ jobs:
           echo "skip_update=false" >> "$GITHUB_OUTPUT"
           echo "::notice::⏰ 下次运行时间: $NEXT_RUN UTC"
 
-      - name: 自动修改下次 Cron
+      - name: ⏰ 自动修改下次 Cron
         if: success() && steps.extract_next_run.outputs.skip_update != 'true'
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -134,7 +134,7 @@ jobs:
           git push
           echo "::notice::✅ Cron 更新成功"
 
-      - name: 清理历史运行记录
+      - name: 🧹 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

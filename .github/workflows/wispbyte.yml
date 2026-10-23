@@ -24,12 +24,12 @@ jobs:
         with:
           token: ${{ secrets.REPO_TOKEN }}
 
-      - name: 配置 Python 环境
+      - name: 🐍 配置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 从私库拉取脚本
+      - name: 📥 从私库拉取脚本
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -61,7 +61,7 @@ jobs:
           mv "${DOWNLOAD_FILE}" scripts/main.py
           echo "[INFO] ✅ main.py 已下载 ($(wc -l < scripts/main.py) 行)"
 
-      - name: 安装系统依赖
+      - name: 📦 安装系统依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y xvfb ffmpeg unzip curl gnupg
@@ -69,7 +69,7 @@ jobs:
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y
 
-      - name: 安装 Python 依赖
+      - name: 📦 安装 Python 依赖
         run: |
           set -o pipefail
           python -m pip install --upgrade pip
@@ -82,13 +82,13 @@ jobs:
             exit 1
           fi
 
-      - name: 启用 WARP 网络
+      - name: 🌐 启用 WARP 网络
         uses: fscarmen/warp-on-actions@v1.3
         with:
           stack: dual
           mode: client
 
-      - name: 执行重启脚本
+      - name: 🚀 执行重启脚本
         id: run_script
         env:
           WISPBYTE_1: ${{ secrets.WISPBYTE_1 }}
@@ -101,7 +101,7 @@ jobs:
           INPUT_ACCOUNTS: ${{ inputs.accounts }}
         run: python -u scripts/main.py
 
-      - name: 清理历史运行记录
+      - name: 🧹 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

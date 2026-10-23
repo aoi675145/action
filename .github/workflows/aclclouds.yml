@@ -358,7 +358,7 @@ jobs:
         run: |
           python aclclouds.py
 
-      - name: 同步 cookies.txt 回私有仓库
+      - name: 💾 同步 cookies.txt 回私有仓库
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -377,7 +377,7 @@ jobs:
             git -C scripts_repo push
           fi
 
-      - name: 自动修改下一次运行时间
+      - name: 🚀 自动修改下一次运行时间
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
           WORKFLOW_FILE: action_repo/.github/workflows/aclclouds.yml
@@ -448,7 +448,7 @@ jobs:
           git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
           git -C action_repo push --force
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

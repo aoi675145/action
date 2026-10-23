@@ -14,22 +14,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 设置 Python 环境
+      - name: 🐍 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: pip install --quiet requests
 
-      - name: 安装并启动代理
+      - name: 🌐 安装并启动代理
         env:
           FREEMCHOST_PROXY_NODE: ${{ secrets.FREEMCHOST_PROXY_NODE }}
         run: |
@@ -165,7 +165,7 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 运行续期脚本
+      - name: 🚀 运行续期脚本
         id: run_script
         env:
           FREEMCHOST: ${{ secrets.FREEMCHOST }}
@@ -179,7 +179,7 @@ jobs:
           fi
           python3 scripts/freemchost/main.py
 
-      - name: 修改 cron
+      - name: ⏰ 修改 cron
         if: always()
         run: |
           if [ ! -f next_run.txt ]; then
@@ -214,7 +214,7 @@ jobs:
           NEXT_LABEL=$(date -u -d "@$_TS" '+%Y-%m-%d %H:%M UTC')
           git diff --cached --quiet || (git commit -m "🔄 下次运行: $NEXT_LABEL" -m "Cron: $next_cron" && git push)
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

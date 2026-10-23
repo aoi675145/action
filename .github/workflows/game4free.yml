@@ -19,7 +19,7 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 从私库拉取脚本
+      - name: 📥 从私库拉取脚本
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -37,18 +37,18 @@ jobs:
           test -s proxy.txt || { echo "[ERROR] proxy.txt 为空"; exit 1; }
           echo "[INFO] ✅ proxy.txt 已下载 ($(grep -cvE '^[[:space:]]*(#|$)' proxy.txt) 个节点)"
 
-      - name: 安装系统依赖
+      - name: 📦 安装系统依赖
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y google-chrome-stable xvfb xdotool
 
-      - name: 安装 Python 依赖
+      - name: 📦 安装 Python 依赖
         run: pip install seleniumbase
 
-      - name: 安装 ChromeDriver
+      - name: 📦 安装 ChromeDriver
         run: seleniumbase install chromedriver
 
-      - name: 执行 Game4Free 续期
+      - name: 🚀 执行 Game4Free 续期
         id: run_script
         env:
           TG_BOT: ${{ secrets.TG_BOT }}
@@ -63,13 +63,13 @@ jobs:
           xvfb-run -a --server-args="-screen 0 1920x1080x24" \
             python -u game4free.py
 
-      - name: 清理进程
+      - name: 🧹 清理进程
         if: always()
         run: |
           pkill -f sing-box 2>/dev/null || true
           pkill -f Xvfb 2>/dev/null || true
 
-      - name: 清理历史运行记录
+      - name: 🧹 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

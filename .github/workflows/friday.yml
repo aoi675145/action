@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: 'aoi675145/scripts'
@@ -26,7 +26,7 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
-      - name: 拉取工作流仓库
+      - name: 📥 拉取工作流仓库
         uses: actions/checkout@v4
         with:
           repository: 'aoi675145/action'
@@ -36,7 +36,7 @@ jobs:
             .github/workflows/friday.yml
           sparse-checkout-cone-mode: false
 
-      - name: 安装系统依赖
+      - name: 📦 安装系统依赖
         # SeleniumBase UC 模式的 GUI 点击依赖 pyautogui -> MouseInfo -> tkinter，
         # Linux runner 上缺 python3-tk 会在点击时直接抛错；scrot / xdotool
         # 供 UC 截图定位使用（SeleniumBase 官方 UC 文档要求）。
@@ -47,7 +47,7 @@ jobs:
             python3-tk python3-dev \
             scrot x11-utils xdotool
 
-      - name: 安装 Python 依赖
+      - name: 📦 安装 Python 依赖
         # filelock 3.32.5 起对同线程嵌套 FileLock 抛 Deadlock，会打断
         # SeleniumBase UC 模式的 pyautogui.lock 获取；脚本启动时会给
         # pyautogui.lock 打 is_singleton 单例补丁，这里固定版本以免行为再变。
@@ -55,7 +55,7 @@ jobs:
           python -m pip install --disable-pip-version-check --no-cache-dir \
             "filelock==3.32.5" seleniumbase 'requests[socks]'
 
-      - name: 设置代理 (sing-box)
+      - name: 🌐 设置代理 (sing-box)
         env:
           FRIDAY_PROXY: ${{ secrets.FRIDAY_PROXY }}
         run: |
@@ -65,7 +65,7 @@ jobs:
           fi
           NODE_LINK="$FRIDAY_PROXY" bash scripts/setup_proxy.sh
 
-      - name: 执行续期
+      - name: 🚀 执行续期
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -79,7 +79,7 @@ jobs:
             python -u friday.py 2>&1 | tee renew.log
         continue-on-error: true
 
-      - name: 修改 cron
+      - name: ⏰ 修改 cron
         if: always()
         run: |
           NEXT_FILE=scripts/friday/next_run.txt
@@ -98,14 +98,14 @@ jobs:
           git -C action_repo add .github/workflows/friday.yml
           git -C action_repo diff --cached --quiet || (git -C action_repo commit -m "auto: cron $next_cron" && git -C action_repo push --quiet && echo "✅ Cron 已更新")
 
-      - name: 清理临时文件
+      - name: 🧹 清理临时文件
         if: always()
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
           find scripts/friday -maxdepth 1 -name "*.png" -delete 2>/dev/null || true
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

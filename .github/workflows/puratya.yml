@@ -19,32 +19,32 @@ jobs:
       contents: write
 
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: scripts_repo
 
-      - name: 拉取工作流仓库
+      - name: 📥 拉取工作流仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/action
           token: ${{ secrets.REPO_TOKEN }}
           path: action_repo
 
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: |
           pip install curl_cffi
           sudo apt-get update -y -qq
           sudo apt-get install -y -qq jq curl
 
-      - name: 安装并启动代理
+      - name: 🌐 安装并启动代理
         env:
           NODE_LINK: ${{ secrets.PURATYA_PROXY }}
         run: |
@@ -54,7 +54,7 @@ jobs:
           fi
           bash scripts_repo/scripts/setup_proxy.sh
 
-      - name: 运行续期脚本
+      - name: 🚀 运行续期脚本
         id: run_script
         working-directory: scripts_repo/scripts/puratya
         env:
@@ -64,7 +64,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: python puratya.py
 
-      - name: 同步 cookies.txt 回私有仓库
+      - name: 💾 同步 cookies.txt 回私有仓库
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -83,7 +83,7 @@ jobs:
             git -C scripts_repo push
           fi
 
-      - name: 自动修改下一次运行时间
+      - name: 🚀 自动修改下一次运行时间
         if: always()
         env:
           GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -139,7 +139,7 @@ jobs:
           git -C action_repo pull --rebase --autostash || true
           git -C action_repo push
 
-      - name: TG 失败通知
+      - name: 📨 TG 失败通知
         if: failure() && steps.run_script.conclusion != 'failure'
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -155,13 +155,13 @@ jobs:
             -d chat_id="${TG_CHAT_ID}" \
             --data-urlencode "text=${MSG}"
 
-      - name: 清理 sing-box
+      - name: 🧹 清理 sing-box
         if: always()
         run: |
           pkill -f sing-box 2>/dev/null || true
           rm -f sing-box sing-box-config.json sing-box.log sing-box-*.json sing-box-*.log sing-box-*.tar.gz
 
-      - name: 清理历史运行记录
+      - name: 🧹 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

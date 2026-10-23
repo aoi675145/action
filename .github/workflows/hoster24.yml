@@ -33,7 +33,7 @@ jobs:
     timeout-minutes: 30
     steps:
       # 本仓库只放 workflow；实际脚本从私库 aoi675145/scripts 拉取
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -44,7 +44,7 @@ jobs:
             scripts/hoster24/**
           sparse-checkout-cone-mode: false
 
-      - name: 校验代理配置
+      - name: 🌐 校验代理配置
         env:
           H24_PROXY: ${{ secrets.H24_PROXY }}
         run: |
@@ -56,18 +56,18 @@ jobs:
       # 解析 NODE_LINK -> sing-box，本地起 socks5://127.0.0.1:1080 与
       # http://127.0.0.1:1081，并把本地代理地址写入 GITHUB_ENV（后续步骤自动可用）。
       # 代理失败会 exit 1，任务直接标红。
-      - name: 启动代理 (sing-box)
+      - name: 🌐 启动代理 (sing-box)
         env:
           H24_PROXY: ${{ secrets.H24_PROXY }}   # 代理节点分享链接（vless:// 等）
           # DIRECT_DOMAINS: 'example.com'       # 可选：命中域名直连不走代理
         run: NODE_LINK="$H24_PROXY" bash private-repo/scripts/hoster24/setup_proxy.sh
 
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: 执行
+      - name: 🚀 执行
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -95,7 +95,7 @@ jobs:
           python hoster24.py "$ACTION" 2>&1 | tee hoster24.log
 
       # 面板若在响应中续签 connect.sid，脚本会回写 cookies.txt；这里检测变化并提交回私库
-      - name: 回写续期 Cookie 到私库
+      - name: 💾 回写续期 Cookie 到私库
         if: always()
         working-directory: private-repo
         run: |
@@ -110,7 +110,7 @@ jobs:
             echo "🍪 cookies.txt 无变化，跳过提交"
           fi
 
-      - name: 清理代理进程和临时文件
+      - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
@@ -118,7 +118,7 @@ jobs:
           rm -f private-repo/scripts/hoster24/hoster24.log
 
       # 运行日志含服务器信息，历史运行记录自动清理（保留最近 4 次）
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
