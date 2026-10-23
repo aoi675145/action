@@ -442,7 +442,8 @@ jobs:
           git -C action_repo config user.name "github-actions[bot]"
           git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
           git -C action_repo add .github/workflows/aclclouds.yml
-          git -C action_repo commit -m "🚀 auto: 精准锁定到期前1天执行续期" || echo "action 仓库没有 Cron 变更需要提交"
+          NEXT_LABEL=$(grep -o '下一个: [^()]*' action_repo/.github/workflows/aclclouds.yml | head -1 | sed 's/下一个: //;s/ *$//')
+          git -C action_repo commit -m "🔄 下次运行: ${NEXT_LABEL:-未知}" || echo "action 仓库没有 Cron 变更需要提交"
           git -C action_repo remote set-url origin https://x-access-token:${GITHUB_TOKEN}@github.com/aoi675145/action.git
           git -C action_repo push --force
 
