@@ -55,6 +55,7 @@ jobs:
           bash scripts_repo/scripts/setup_proxy.sh
 
       - name: 运行续期脚本
+        id: run_script
         working-directory: scripts_repo/scripts/puratya
         env:
           PYTHONIOENCODING: utf-8
@@ -139,7 +140,7 @@ jobs:
           git -C action_repo push
 
       - name: TG 失败通知
-        if: failure()
+        if: failure() && steps.run_script.conclusion != 'failure'
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}

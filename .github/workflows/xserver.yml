@@ -52,6 +52,7 @@ jobs:
           bash scripts/xserver/setup_singbox.sh
 
       - name: 运行续期脚本
+        id: run_script
         env:
           PYTHONIOENCODING: utf-8
           XSERVER: ${{ secrets.XSERVER }}
@@ -62,7 +63,7 @@ jobs:
         run: xvfb-run -a --server-args="-screen 0 1280x800x24" python scripts/xserver/main.py
 
       - name: TG 失败通知
-        if: failure()
+        if: failure() && steps.run_script.conclusion != 'failure'
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}

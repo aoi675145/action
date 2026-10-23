@@ -424,7 +424,7 @@ jobs:
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/optikLink/optiklink.py
 
       - name: 发送失败通知
-        if: failure() && steps.keepalive.outcome == 'failure'
+        if: failure() && steps.keepalive.outcome != 'failure'
         env:
           TG_BOT: ${{ secrets.TG_BOT }}
           JOB_STATUS: ${{ job.status }}

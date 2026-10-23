@@ -77,6 +77,7 @@ jobs:
           python-version: '3.12'
 
       - name: 执行
+        id: run_script
         env:
           PYTHONIOENCODING: utf-8
           LATVI_IDENT: ${{ secrets.LATVI_IDENT }}
@@ -101,7 +102,7 @@ jobs:
           python latvi.py "$ACTION" 2>&1 | tee run.log
 
       - name: TG 失败通知
-        if: failure()
+        if: failure() && steps.run_script.conclusion != 'failure'
         env:
           TG_BOT: ${{ secrets.TG_BOT }}
           WF_NAME: ${{ github.workflow }}

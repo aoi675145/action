@@ -169,6 +169,7 @@ jobs:
           fi
 
       - name: 4. 执行 Slime 金币获取
+        id: run_script
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           PROXY_URL: ${{ secrets.PROXY_URL }}
@@ -190,7 +191,7 @@ jobs:
           fi
 
       - name: 失败通知
-        if: failure()
+        if: failure() && steps.run_script.conclusion != 'failure'
         continue-on-error: true
         env:
           TG_BOT: ${{ secrets.TG_BOT }}

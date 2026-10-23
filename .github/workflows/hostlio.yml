@@ -48,6 +48,7 @@ jobs:
           NODE_LINK="$HOSTLIO_PROXY" bash private-repo/scripts/setup_proxy.sh
 
       - name: 🚀 运行续期脚本
+        id: run_script
         env:
           PYTHONIOENCODING: utf-8
           HOSTLIO_SERVICES: ${{ secrets.HOSTLIO_SERVICES }}
@@ -61,7 +62,7 @@ jobs:
           python -u private-repo/scripts/hostlio/hostlio.py 2>&1 | tee hostlio.log
 
       - name: 📨 TG 失败通知
-        if: failure()
+        if: failure() && steps.run_script.conclusion != 'failure'
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
