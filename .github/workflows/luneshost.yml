@@ -18,24 +18,24 @@ jobs:
       cancel-in-progress: false
 
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: |
           sudo apt-get update && sudo apt-get install -y xvfb unzip
           pip install seleniumbase>=4.25.0 pyvirtualdisplay>=3.0 requests>=2.31.0
 
-      - name: 配置代理
+      - name: 🌐 配置代理
         env:
           LUNES_1_PROXY_NODE: ${{ secrets.LUNES_1_PROXY_NODE }}
           LUNES_2_PROXY_NODE: ${{ secrets.LUNES_2_PROXY_NODE }}
@@ -237,7 +237,7 @@ jobs:
           ./xray-start.sh
           sleep 3
 
-      - name: 验证代理出口
+      - name: 🌐 验证代理出口
         run: |
           mask_ip() { sed -E 's/([0-9]+\.[0-9]+)\.[0-9]+\.[0-9]+/\1.**.**/g'; }
           shopt -s nullglob
@@ -264,7 +264,7 @@ jobs:
             fi
           done
 
-      - name: 执行保活
+      - name: 🚀 执行保活
         id: run_script
         env:
 #          LUNES_EMAIL: ${{ secrets.LUNES_EMAIL }}
@@ -291,7 +291,7 @@ jobs:
 #          path: output/screenshots/
 #          retention-days: 3
 
-      - name: 清理旧运行
+      - name: 🧹 清理旧运行
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ github.token }}

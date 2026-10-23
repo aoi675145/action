@@ -12,7 +12,7 @@ jobs:
   earn-coins:
     runs-on: ubuntu-latest
     steps:
-      - name: 1. 拉取私库脚本
+      - name: 📥 1. 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -20,12 +20,12 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: scripts_repo
 
-      - name: 2. 设置 Python 环境
+      - name: 🐍 2. 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 3. 安装并启动 Xray 代理
+      - name: 🌐 3. 安装并启动 Xray 代理
         env:
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
@@ -168,7 +168,7 @@ jobs:
             exit 1
           fi
 
-      - name: 4. 执行 Slime 金币获取
+      - name: 🚀 4. 执行 Slime 金币获取
         id: run_script
         env:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
@@ -178,7 +178,7 @@ jobs:
           Slime_MAX_ADS: ${{ vars.Slime_MAX_ADS || 20 }}
         run: python scripts_repo/scripts/slime/main.py
 
-      - name: 5. 提交续期缓存到私库
+      - name: 💾 5. 提交续期缓存到私库
         run: |
           cd scripts_repo
           if [ -f scripts/slime/renew_cache.json ]; then
@@ -190,7 +190,7 @@ jobs:
             git push
           fi
 
-      - name: 失败通知
+      - name: 📨 失败通知
         if: failure() && steps.run_script.conclusion != 'failure'
         continue-on-error: true
         env:
@@ -212,7 +212,7 @@ jobs:
             echo "失败通知推送失败（不影响任务结论）"
           fi
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

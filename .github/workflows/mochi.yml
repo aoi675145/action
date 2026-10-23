@@ -14,27 +14,27 @@ jobs:
       actions: write
 
     steps:
-      - name: Setup Python
+      - name: 🐍 Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install dependencies
+      - name: 📦 Install dependencies
         run: pip install seleniumbase requests pyautogui
 
-      - name: Install Chrome
+      - name: 📦 Install Chrome
         run: |
           sudo apt-get update
           sudo apt-get install -y google-chrome-stable xvfb
 
-      - name: 修复 DNS
+      - name: ⚙️ 修复 DNS
         run: |
           sudo systemctl stop systemd-resolved 2>/dev/null || true
           sudo systemctl disable systemd-resolved 2>/dev/null || true
           sudo rm -f /etc/resolv.conf
           echo -e "nameserver 1.1.1.1\nnameserver 8.8.8.8\nnameserver 1.0.0.1" | sudo tee /etc/resolv.conf
 
-      - name: 安装并启动代理
+      - name: 🌐 安装并启动代理
         env:
           MOCHI_PROXY: ${{ secrets.Mochi_Proxy }}
         run: |
@@ -160,7 +160,7 @@ jobs:
             exit 1
           fi
 
-      - name: 检查代理出口
+      - name: 🌐 检查代理出口
         run: |
           if [ -z "${PROXY_SERVER}" ]; then
             echo "[ERROR] PROXY_SERVER 为空，禁止直连"
@@ -184,11 +184,11 @@ jobs:
           echo "[INFO] 检查 Mochi Hosting 可访问..."
           curl -fsSI --max-time 30 --proxy "${PROXY_SERVER}" https://hosting.aida0710.work/ | sed -n '1,8p'
 
-      - name: Pull script from private repo
+      - name: ⚙️ Pull script from private repo
         run: |
           git clone https://${{ secrets.REPO_TOKEN }}@github.com/aoi675145/scripts.git /tmp/scripts
 
-      - name: Run Mochi Renew
+      - name: 🚀 Run Mochi Renew
         id: run_script
         env:
           MOCHI: ${{ secrets.Mochi }}
@@ -197,7 +197,7 @@ jobs:
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
         run: xvfb-run python /tmp/scripts/scripts/mochi/mochi.py
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         uses: Mattraks/delete-workflow-runs@v2
         with:
           token: ${{ secrets.REPO_TOKEN }}

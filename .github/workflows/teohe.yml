@@ -12,18 +12,18 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: 拉取私库代码
+      - name: 📥 拉取私库代码
         uses: actions/checkout@v4
         with:
           repository: 'aoi675145/scripts'
           token: ${{ secrets.REPO_TOKEN }}
 
-      - name: 安装 Python 环境
+      - name: 📦 安装 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         env:
           DEBIAN_FRONTEND: noninteractive
           NEEDRESTART_MODE: a
@@ -48,13 +48,13 @@ jobs:
 
           [ -f "$TURNSTILE_DIR/manifest.json" ]
           
-      - name: 启用 WARP 网络
+      - name: 🌐 启用 WARP 网络
         uses: fscarmen/warp-on-actions@v1.3
         with:
           stack: dual
           mode: client
 
-      - name: 修复 DNS
+      - name: ⚙️ 修复 DNS
         run: |
           sudo systemctl stop systemd-resolved 2>/dev/null || true
           sudo systemctl disable systemd-resolved 2>/dev/null || true
@@ -63,7 +63,7 @@ jobs:
           echo "[INFO] 出口 IP:"
           curl -s --max-time 10 https://www.cloudflare.com/cdn-cgi/trace | grep -E 'warp=|loc=' || true
 
-      - name: 执行续期
+      - name: 🚀 执行续期
         id: run_script
         env:
           TEOHEBERG: ${{ secrets.TEOHEBERG }}
@@ -79,7 +79,7 @@ jobs:
             --server-args="-screen 0 1920x1080x24 -ac -noreset +extension GLX +render" \
             python -u main.py
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

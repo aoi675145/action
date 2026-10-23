@@ -13,22 +13,22 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 设置 Python 环境
+      - name: 🐍 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: pip install --quiet 'requests[socks]'
 
-      - name: 安装并启动代理
+      - name: 🌐 安装并启动代理
         env:
           NODE_LINK:     ${{ secrets.HNHOST_PROXY_NODE }}
           TG_BOT_TOKEN:  ${{ secrets.TG_BOT_TOKEN }}
@@ -71,7 +71,7 @@ jobs:
           MASKED_IP=$(python3 -c 'import sys; p=sys.argv[1].strip().split("."); print(".".join(p[:2]+["***","***"]) if len(p)==4 else "***")' "$PROXY_IP")
           echo "✅ 代理出口 IP: $MASKED_IP"
 
-      - name: 运行签到脚本
+      - name: 🚀 运行签到脚本
         env:
           DISCORD_TOKEN:                ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN:                 ${{ secrets.TG_BOT_TOKEN }}
@@ -86,7 +86,7 @@ jobs:
           PYTHONUNBUFFERED:             1
         run: python scripts/hnhost/main.py
 
-      - name: 回写会话缓存
+      - name: 💾 回写会话缓存
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -135,13 +135,13 @@ jobs:
                   print(f"⚠️ 回写失败 HTTP {e.code}: {e.read()[:200]}")
           PYEOF
 
-      - name: 清理 sing-box
+      - name: 🧹 清理 sing-box
         if: always()
         run: |
           pkill -f sing-box 2>/dev/null || true
           rm -f sing-box sing-box-config.json sing-box.log sing-box-*.tar.gz
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

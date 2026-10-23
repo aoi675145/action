@@ -289,7 +289,7 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 检查脚本代理出口
+      - name: 🌐 检查脚本代理出口
         run: |
           if [ -z "${PROXY_URL}" ]; then
             echo "[ERROR] PROXY_URL 为空，禁止直连"
@@ -322,7 +322,7 @@ jobs:
           ACTIVEVM_PROXY: ${{ env.PROXY_URL }}
         run: python scripts_repo/scripts/activevm/activevm.py 2>&1 | tee renew.log
 
-      - name: 提取下次签到时间
+      - name: ⏰ 提取下次签到时间
         id: extract_next
         if: success()
         run: |
@@ -336,7 +336,7 @@ jobs:
           echo "skip_update=false" >> $GITHUB_OUTPUT
           echo "::notice::⏰ 下次签到时间: $NEXT_SHARE"
 
-      - name: 修改下次 Cron 时间
+      - name: ⏰ 修改下次 Cron 时间
         if: success() && steps.extract_next.outputs.skip_update != 'true'
         run: |
           set -e

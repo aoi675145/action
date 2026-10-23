@@ -20,12 +20,12 @@ jobs:
         with:
           token: ${{ secrets.REPO_TOKEN }}
 
-      - name: 配置 Python 环境
+      - name: 🐍 配置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 从私库拉取脚本与 cookies.txt
+      - name: 📥 从私库拉取脚本与 cookies.txt
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -84,7 +84,7 @@ jobs:
             echo "[INFO] no state.txt yet, will do a full check this run"
           fi
 
-      - name: 安装 Python 依赖
+      - name: 📦 安装 Python 依赖
         run: |
           python -m pip install --upgrade pip --quiet
           pip install --quiet requests PySocks
@@ -94,7 +94,7 @@ jobs:
           NODE_LINK: ${{ secrets.PEARL_PROXY }}
         run: bash scripts/setup_proxy.sh
 
-      - name: 执行续期脚本
+      - name: 🚀 执行续期脚本
         id: run_script
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -103,7 +103,7 @@ jobs:
           PEARL_STATE_FILE: 'state.txt'
         run: python -u scripts/pearl.py
 
-      - name: 回写 cookies.txt 与 state.txt 到私库
+      - name: 💾 回写 cookies.txt 与 state.txt 到私库
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -135,7 +135,7 @@ jobs:
         if: always()
         run: pkill -f sing-box || true
 
-      - name: 清理历史运行记录
+      - name: 🧹 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

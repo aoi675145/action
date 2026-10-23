@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-22.04
 
     steps:
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -27,12 +27,12 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
-      - name: 安装 Python
+      - name: 📦 安装 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装系统与 Python 依赖
+      - name: 📦 安装系统与 Python 依赖
         run: |
           sudo apt-get update -qq
           # google-chrome-stable runner 自带，显式安装兜底；jq 是 setup_proxy.sh 的依赖；xdotool 兜底点击 Turnstile
@@ -43,7 +43,7 @@ jobs:
           pip install -q seleniumbase "requests[socks]" pyautogui
           # uc_driver 由 SeleniumBase UC 模式自动匹配下载，无需固定版本；缺失依赖 ryft.py 也会自装
 
-      - name: 设置代理 (sing-box)
+      - name: 🌐 设置代理 (sing-box)
         env:
           Ryft_PROXY_NODE: ${{ secrets.Ryft_PROXY_NODE }}
         run: |
@@ -54,7 +54,7 @@ jobs:
           fi
           NODE_LINK="$Ryft_PROXY_NODE" bash private-repo/scripts/setup_proxy.sh
 
-      - name: 执行续期
+      - name: 🚀 执行续期
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -66,12 +66,12 @@ jobs:
           cd private-repo/scripts/ryft
           xvfb-run -a --server-args="-screen 0 1280x800x24" python -u ryft.py
 
-      - name: 清理代理进程
+      - name: 🧹 清理代理进程
         if: always()
         run: |
           pkill -f sing-box || true
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

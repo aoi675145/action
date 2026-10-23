@@ -16,19 +16,19 @@ jobs:
     timeout-minutes: 35
 
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 设置 Python 环境
+      - name: 🐍 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装系统依赖
+      - name: 📦 安装系统依赖
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -38,12 +38,12 @@ jobs:
             xdotool \
             scrot
 
-      - name: 安装 Python 依赖和 UC 驱动
+      - name: 📦 安装 Python 依赖和 UC 驱动
         run: |
           pip install --quiet seleniumbase requests
           sbase get uc_driver >/dev/null
 
-      - name: 安装并启动 Xray 代理
+      - name: 🌐 安装并启动 Xray 代理
         env:
           KERIT_PROXY: ${{ secrets.KERIT_PROXY }}
         run: |
@@ -263,7 +263,7 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 运行续期脚本
+      - name: 🚀 运行续期脚本
         id: run_renew
         env:
           KERITCLOUD: ${{ secrets.KERITCLOUD }}
@@ -273,7 +273,7 @@ jobs:
           set -o pipefail
           python3 scripts/kerit/kerit.py 2>&1 | tee renew.log
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

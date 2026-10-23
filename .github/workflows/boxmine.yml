@@ -17,29 +17,29 @@ jobs:
     timeout-minutes: 300
 
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 设置 Python 环境
+      - name: 🐍 设置 Python 环境
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: pip install --quiet "requests[socks]" websocket-client PySocks python-socks
 
-      - name: 配置 AFK 代理
+      - name: 🌐 配置 AFK 代理
         env:
           BOXMINE_PROXY: ${{ secrets.BOXMINE_PROXY }}
         run: |
           chmod +x scripts/setup_proxy.sh
           NODE_LINK="$BOXMINE_PROXY" bash scripts/setup_proxy.sh
 
-      - name: 运行 AFK 脚本
+      - name: 🚀 运行 AFK 脚本
         id: afk
         env:
           DISCORD_TOKEN:                ${{ secrets.DISCORD_TOKEN_A }}
@@ -50,13 +50,13 @@ jobs:
           PYTHONUNBUFFERED:             1
         run: python scripts/boxmine/boxmine_afk.py
 
-      - name: 清理 sing-box
+      - name: 🧹 清理 sing-box
         if: always()
         run: |
           pkill -f sing-box 2>/dev/null || true
           rm -rf sing-box sing-box-config.json sing-box.log sing-box.tar.gz sing-box-*.tar.gz
 
-      - name: 更新下次 AFK 调度
+      - name: ⏰ 更新下次 AFK 调度
         if: always()
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -118,7 +118,7 @@ jobs:
           print(f"✅ Cron 已更新：{cron}（UTC）")
           PYEOF
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

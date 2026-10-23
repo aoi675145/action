@@ -58,7 +58,7 @@ jobs:
         run: |
           NODE_LINK="$FMCH_PROXY" bash private-repo/scripts/setup_proxy.sh
 
-      - name: 检查脚本代理出口
+      - name: 🌐 检查脚本代理出口
         run: |
           if [ -z "${PROXY_SERVER}" ]; then
             echo "[ERROR] PROXY_SERVER 为空，禁止直连"

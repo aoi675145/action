@@ -13,19 +13,19 @@ jobs:
     timeout-minutes: 60
 
     steps:
-      - name: 拉取私有仓库
+      - name: 📥 拉取私有仓库
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: |
           # 全部加重试/超时：站点维护期间 runner 拉包也偶发卡死，不能让一步挂满 60 分钟
           pip install --timeout 20 --retries 3 httpx seleniumbase pyautogui
@@ -45,13 +45,13 @@ jobs:
           sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y -qq
           python -m seleniumbase get uc_driver || true
 
-      - name: 配置代理节点 (sing-box)
+      - name: 🌐 配置代理节点 (sing-box)
         env:
           XSERVER_PROXY: ${{ secrets.XSERVER_PROXY }}
         run: |
           bash scripts/xserver/setup_singbox.sh
 
-      - name: 运行续期脚本
+      - name: 🚀 运行续期脚本
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -62,7 +62,7 @@ jobs:
           CRON_JOB_API: ${{ secrets.CRON_JOB_API }}
         run: xvfb-run -a --server-args="-screen 0 1280x800x24" python scripts/xserver/main.py
 
-      - name: TG 失败通知
+      - name: 📨 TG 失败通知
         if: failure() && steps.run_script.conclusion != 'failure'
         env:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -77,7 +77,7 @@ jobs:
             -d chat_id="${TG_CHAT_ID}" \
             --data-urlencode "text=${MSG}"
 
-      - name: 清理代理进程
+      - name: 🧹 清理代理进程
         if: always()
         run: |
           pkill -f sing-box || true
@@ -86,7 +86,7 @@ jobs:
           pkill -f Xvfb || true
           rm -f sing-box-*.json sing-box-*.log sing-box
 
-      - name: 清理旧运行
+      - name: 🧹 清理旧运行
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

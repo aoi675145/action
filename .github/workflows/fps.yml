@@ -23,12 +23,12 @@ jobs:
 
     steps:
 
-      - name: 安装 Python 3.12
+      - name: 📦 安装 Python 3.12
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: 准备运行环境
+      - name: 🚀 准备运行环境
         run: |
           echo "📦 安装 Python 与 Chrome 运行依赖..."
           pip install --upgrade pip -q
@@ -50,7 +50,7 @@ jobs:
           fi
           echo "✅ 运行环境准备完成"
 
-      - name: 设置并验证代理 (sing-box)
+      - name: 🌐 设置并验证代理 (sing-box)
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -86,7 +86,7 @@ jobs:
           MASKED_IP=$(python -c 'import sys; p=sys.argv[1].strip().split("."); print(".".join(p[:2]+["***","***"]) if len(p)==4 else sys.argv[1][:8]+"***")' "$PROXY_IP")
           echo "✅ 强制代理已就绪，出口 IP: $MASKED_IP"
 
-      - name: 运行 fps.ms 续期脚本
+      - name: 🚀 运行 fps.ms 续期脚本
         id: run_renew
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -120,7 +120,7 @@ jobs:
           fi
           exit "$EXIT_CODE"
 
-      - name: 自动修改下次 Cron
+      - name: ⏰ 自动修改下次 Cron
         if: ${{ always() && steps.run_renew.outputs.cron != '' }}
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
@@ -179,7 +179,7 @@ jobs:
           print(f"✅ Cron 已更新：{cron}（UTC）")
           PYEOF
 
-      - name: 清理运行进程和临时文件
+      - name: 🧹 清理运行进程和临时文件
         if: always()
         run: |
           if [ -n "${XVFB_PID:-}" ]; then
@@ -188,7 +188,7 @@ jobs:
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log setup_proxy.sh
 
-      - name: 清理历史运行记录
+      - name: 🧹 清理历史运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

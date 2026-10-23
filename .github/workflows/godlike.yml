@@ -12,7 +12,7 @@ jobs:
     timeout-minutes: 15
 
     steps:
-      - name: 从私库拉取脚本
+      - name: 📥 从私库拉取脚本
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
@@ -37,17 +37,17 @@ jobs:
           done
           echo "[INFO] ✅ 已从私库拉取 main.py 和 setup_proxy.sh"
 
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 安装依赖
+      - name: 📦 安装依赖
         run: |
           pip install 'requests[socks]' playwright pynacl 'websockets>=13' python-socks
           playwright install --with-deps chromium
 
-      - name: 设置代理 (sing-box)
+      - name: 🌐 设置代理 (sing-box)
         env:
           GODLIKE_PROXY: ${{ secrets.GODLIKE_PROXY }}
         run: |
@@ -57,7 +57,7 @@ jobs:
           fi
           NODE_LINK="$GODLIKE_PROXY" bash setup_proxy.sh
 
-      - name: 运行续期脚本
+      - name: 🚀 运行续期脚本
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -70,7 +70,7 @@ jobs:
           set -o pipefail
           python main.py 2>&1 | tee renew.log
 
-      - name: 修改 cron
+      - name: ⏰ 修改 cron
         if: always()
         run: |
           if [ ! -f next_run.txt ]; then
@@ -91,13 +91,13 @@ jobs:
           NEXT_LABEL=$(date -u -d "@$_TS" '+%Y-%m-%d %H:%M UTC')
           git diff --cached --quiet || (git commit -m "🔄 下次运行: $NEXT_LABEL" -m "Cron: $next_cron" && git push)
 
-      - name: 清理代理进程和临时文件
+      - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
 
-      - name: 清理历史
+      - name: 🧹 清理历史
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

@@ -21,30 +21,30 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout workflow repo
+      - name: 📥 Checkout workflow repo
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.REPO_TOKEN }}
           path: workflow-repo
 
-      - name: Checkout private repo
+      - name: 📥 Checkout private repo
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: private-repo
 
-      - name: Set up Python
+      - name: 🐍 Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.9'
 
-      - name: Install Dependencies
+      - name: 📦 Install Dependencies
         working-directory: private-repo/scripts/gameserver
         run: |
           pip install -r requirements.txt
 
-      - name: Setup Proxy
+      - name: 🌐 Setup Proxy
         env:
           gameserver_PROXY_URL: ${{ secrets.gameserver_PROXY_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
@@ -271,7 +271,7 @@ jobs:
           notify_proxy_failed "VLESS/VMess 代理连接失败"
           exit 1
 
-      - name: Run Renewal Script
+      - name: 🚀 Run Renewal Script
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_renew == 'true')
         working-directory: private-repo/scripts/gameserver
         env:
@@ -284,7 +284,7 @@ jobs:
         run: |
           python renew.py
 
-      - name: Run Selenium Script
+      - name: 🚀 Run Selenium Script
         if: github.event_name != 'schedule' && !(github.event_name == 'workflow_dispatch' && github.event.inputs.run_renew == 'true')
         working-directory: private-repo/scripts/gameserver
         env:
@@ -296,7 +296,7 @@ jobs:
         run: |
           python main.py
 
-      - name: Commit and Push Cookie
+      - name: 💾 Commit and Push Cookie
         working-directory: private-repo
         run: |
           git config user.name "Auto Bot"
@@ -316,7 +316,7 @@ jobs:
             }
           fi
 
-      - name: Commit and Push Workflow Schedule
+      - name: 💾 Commit and Push Workflow Schedule
         if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && github.event.inputs.run_renew == 'true')
         working-directory: workflow-repo
         run: |
@@ -335,7 +335,7 @@ jobs:
             }
           fi
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

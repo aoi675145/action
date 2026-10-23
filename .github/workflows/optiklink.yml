@@ -9,26 +9,26 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - name: 拉取私有代码
+      - name: 📥 拉取私有代码
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: .
 
-      - name: 安装 Python
+      - name: 📦 安装 Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: 安装 Playwright
+      - name: 📦 安装 Playwright
         run: |
           pip install --upgrade pip
           pip install playwright
           python -m playwright install --with-deps chromium
           sudo apt-get update && sudo apt-get install -y xvfb
 
-      - name: 解析节点并启动 Xray 代理
+      - name: 🌐 解析节点并启动 Xray 代理
         env:
           PROXY_NODE: ${{ secrets.OPTIKLINK_PROXY_NODE }}
         run: |
@@ -415,7 +415,7 @@ jobs:
           cat xray.log
           exit 1
 
-      - name: 运行保活脚本
+      - name: 🚀 运行保活脚本
         id: keepalive
         env:
           DISCORD_TOKEN_K:   ${{ secrets.DISCORD_TOKEN_K }}
@@ -423,7 +423,7 @@ jobs:
           GOST_PROXY:        ${{ env.LOCAL_PROXY }}
         run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python scripts/optikLink/optiklink.py
 
-      - name: 发送失败通知
+      - name: 📨 发送失败通知
         if: failure() && steps.keepalive.outcome != 'failure'
         env:
           TG_BOT: ${{ secrets.TG_BOT }}
@@ -475,7 +475,7 @@ jobs:
           req.end(body);
           NODE
 
-      - name: 上传失败截图
+      - name: 📤 上传失败截图
         if: failure()
         uses: actions/upload-artifact@v4
         with:
@@ -483,7 +483,7 @@ jobs:
           path: test-results/
           retention-days: 7
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

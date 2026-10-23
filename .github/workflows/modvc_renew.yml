@@ -268,7 +268,7 @@ jobs:
           set -o pipefail
           python modvc_renew.py 2>&1 | tee renew.log
 
-      - name: 提取下次续期时间
+      - name: ⏰ 提取下次续期时间
         id: extract_due
         if: always()
         run: |
@@ -283,7 +283,7 @@ jobs:
           echo "skip_update=false" >> $GITHUB_OUTPUT
           echo "::notice::⏰ 下次可续期时间: $NEXT_AT"
 
-      - name: 修改下次 Cron 时间
+      - name: ⏰ 修改下次 Cron 时间
         if: always() && steps.extract_due.outputs.skip_update != 'true'
         run: |
           set -e
@@ -345,7 +345,7 @@ jobs:
 
           echo "::notice::✅ Cron 更新成功"
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:

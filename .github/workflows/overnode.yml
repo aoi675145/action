@@ -6,7 +6,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: 拉取私库脚本
+      - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
         with:
           repository: aoi675145/scripts
@@ -17,21 +17,21 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
-      - name: 设置 Python
+      - name: 🐍 设置 Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: 设置代理 (sing-box)
+      - name: 🌐 设置代理 (sing-box)
         env:
           OVERNODE_PROXY: ${{ secrets.OVERNODE_PROXY }}
         run: |
           NODE_LINK="$OVERNODE_PROXY" bash private-repo/scripts/setup_proxy.sh
 
-      - name: 安装 Python 依赖
+      - name: 📦 安装 Python 依赖
         run: pip install 'requests[socks]'
 
-      - name: 执行续期
+      - name: 🚀 执行续期
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
@@ -44,13 +44,13 @@ jobs:
           set -o pipefail
           python overnode.py 2>&1 | tee renew.log
 
-      - name: 清理代理进程和临时文件
+      - name: 🧹 清理代理进程和临时文件
         if: always()
         run: |
           pkill -f sing-box || true
           rm -f sing-box sing-box-config.json sing-box.log
 
-      - name: 清理运行记录
+      - name: 🧹 清理运行记录
         if: always()
         uses: Mattraks/delete-workflow-runs@v2
         with:
