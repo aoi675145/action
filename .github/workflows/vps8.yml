@@ -12,7 +12,7 @@ on:
         required: false
         default: ''
   schedule:
-    - cron: "44 23 22 10 *"
+    - cron: "27 23 23 10 *"
 
 jobs:
   sign:
