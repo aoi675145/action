@@ -1,0 +1,10 @@
+name: ZZ Probe
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: hello
+        run: echo "probe ok"
