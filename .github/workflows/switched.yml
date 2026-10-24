@@ -69,7 +69,7 @@ jobs:
           MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$PROXY_IP")
           echo "✅ 代理出口 IP: $MASKED_IP"
 
-      - name: 🚀 刷满并换时长
+      - name: 🚀 执行脚本
         env:
           SWITCHED_COOKIES: ${{ secrets.SWITCHED_COOKIES }}
           PROXY_URL: ${{ env.PROXY_URL }}
