@@ -1,0 +1,141 @@
+name: Switched Vylo 刷Token
+
+on:
+  workflow_dispatch:
+    inputs:
+      count:
+        description: "刷几个 token（每日上限 25）"
+        default: "25"
+        required: true
+      spend:
+        description: "跑完把余额全部换成时长（默认不换）"
+        type: boolean
+        default: false
+      proxy:
+        description: "临时覆盖代理 URL（留空用 PROXY secret 或本地 sing-box）"
+        default: ""
+        required: false
+
+permissions:
+  actions: write
+
+concurrency:
+  group: switched-vylo
+  cancel-in-progress: false
+
+jobs:
+  farm:
+    timeout-minutes: 90
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-scripts
+          sparse-checkout: |
+            scripts/switched/
+          sparse-checkout-cone-mode: false
+
+      - name: 🐍 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 安装依赖
+        run: |
+          python -m pip install -q --upgrade pip
+          pip install -q -r private-scripts/scripts/switched/requirements.txt
+          python -m playwright install --with-deps chromium
+
+      - name: 🛡️ 设置代理 (sing-box)
+        env:
+          SB_CONFIG: ${{ secrets.SB_CONFIG }}
+          INPUT_PROXY: ${{ github.event.inputs.proxy }}
+          SECRET_PROXY: ${{ secrets.PROXY }}
+        run: |
+          if [ -n "$INPUT_PROXY" ]; then
+            echo "SW_PROXY=$INPUT_PROXY" >> "$GITHUB_ENV"
+            echo "🛡️ 使用手动指定的代理"
+            exit 0
+          fi
+          if [ -n "$SECRET_PROXY" ]; then
+            echo "SW_PROXY=$SECRET_PROXY" >> "$GITHUB_ENV"
+            echo "🛡️ 使用 PROXY secret"
+            exit 0
+          fi
+          if [ -z "$SB_CONFIG" ]; then
+            echo "❌ 未配置 PROXY / SB_CONFIG（vylo.cc 拒绝机房 IP，直连已禁用）"
+            exit 1
+          fi
+          VER=1.14.1
+          curl -sSLo sb.tgz "https://github.com/SagerNet/sing-box/releases/download/v${VER}/sing-box-${VER}-linux-amd64.tar.gz"
+          tar xzf sb.tgz
+          cp "sing-box-${VER}-linux-amd64/sing-box" ./sing-box
+          printf '%s' "$SB_CONFIG" > sb.json
+          nohup ./sing-box run -c sb.json > sb.log 2>&1 &
+          IP=""
+          for i in $(seq 25); do
+            IP=$(curl -s -m 6 --socks5-hostname 127.0.0.1:10807 https://api.ipify.org || true)
+            if [ -n "$IP" ]; then break; fi
+            sleep 3
+          done
+          if [ -z "$IP" ]; then
+            echo "❌ 本地 sing-box 出口验证失败"
+            tail -3 sb.log || true
+            exit 1
+          fi
+          echo "SW_PROXY=socks5://127.0.0.1:10807" >> "$GITHUB_ENV"
+          MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$IP")
+          echo "✅ 代理出口 IP: $MASKED_IP"
+
+      - name: 🚀 刷 Token
+        env:
+          NOPROFIT_COOKIES: ${{ secrets.NOPROFIT_COOKIES }}
+          SW_PROXY: ${{ env.SW_PROXY }}
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          COUNT: ${{ github.event.inputs.count || '25' }}
+        run: |
+          set -o pipefail
+          cd private-scripts/scripts/switched
+          xvfb-run -a -s "-screen 0 1400x1000x24" \
+            python3 -u main.py --count "$COUNT" 2>&1 | tee farm.log
+
+      - name: 💰 换时长（可选）
+        if: ${{ github.event.inputs.spend == 'true' }}
+        env:
+          NOPROFIT_COOKIES: ${{ secrets.NOPROFIT_COOKIES }}
+          SW_PROXY: ${{ env.SW_PROXY }}
+        run: |
+          cd private-scripts/scripts/switched
+          xvfb-run -a python3 -u add_runtime.py --tokens 0
+
+      - name: 📤 失败时上传日志
+        if: ${{ failure() || cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: switched-debug
+          path: |
+            private-scripts/scripts/switched/farm.log
+            sb.log
+            /tmp/vylo_turnstile_fail_*.png
+          if-no-files-found: ignore
+
+      - name: 🧹 清理 sing-box
+        if: always()
+        run: |
+          pkill -f sing-box 2>/dev/null || true
+          rm -f sing-box sing-box-config.json sb.json sb.log sb.tgz
+
+      - name: 🧹 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
