@@ -1,20 +1,7 @@
-name: Switched Vylo 刷Token
+name: Switched Vylo 刷Coins
 
 on:
   workflow_dispatch:
-    inputs:
-      count:
-        description: "刷几个 token（每日上限 25）"
-        default: "25"
-        required: true
-      spend:
-        description: "跑完把余额全部换成时长（默认不换）"
-        type: boolean
-        default: false
-      proxy:
-        description: "临时覆盖代理 URL（留空走 SWITCHED_PROXY_NODE + 公用代理脚本）"
-        default: ""
-        required: false
 
 permissions:
   actions: write
@@ -54,13 +41,7 @@ jobs:
       - name: 🛡️ 设置代理 (sing-box)
         env:
           NODE_LINK: ${{ secrets.SWITCHED_PROXY_NODE }}
-          INPUT_PROXY: ${{ github.event.inputs.proxy }}
         run: |
-          if [ -n "$INPUT_PROXY" ]; then
-            echo "PROXY_URL=$INPUT_PROXY" >> "$GITHUB_ENV"
-            echo "🛡️ 使用手动指定的代理"
-            exit 0
-          fi
           if [ -z "$NODE_LINK" ]; then
             echo "❌ 未配置 SWITCHED_PROXY_NODE（vylo.cc 拒绝机房 IP，直连已禁用）"
             exit 1
@@ -88,27 +69,17 @@ jobs:
           MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$PROXY_IP")
           echo "✅ 代理出口 IP: $MASKED_IP"
 
-      - name: 🚀 刷 Token
+      - name: 🚀 刷满并换时长
         env:
           SWITCHED_COOKIES: ${{ secrets.SWITCHED_COOKIES }}
           PROXY_URL: ${{ env.PROXY_URL }}
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          COUNT: ${{ github.event.inputs.count || '25' }}
         run: |
           set -o pipefail
           cd private-scripts/scripts/switched
           xvfb-run -a -s "-screen 0 1400x1000x24" \
-            python3 -u main.py --count "$COUNT" 2>&1 | tee farm.log
-
-      - name: 💰 换时长（可选）
-        if: ${{ github.event.inputs.spend == 'true' }}
-        env:
-          SWITCHED_COOKIES: ${{ secrets.SWITCHED_COOKIES }}
-          PROXY_URL: ${{ env.PROXY_URL }}
-        run: |
-          cd private-scripts/scripts/switched
-          xvfb-run -a python3 -u main.py --spend --tokens 0
+            python3 -u main.py 2>&1 | tee farm.log
 
       - name: 📤 失败时上传日志
         if: ${{ failure() || cancelled() }}
