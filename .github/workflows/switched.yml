@@ -68,6 +68,7 @@ jobs:
           fi
           MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$PROXY_IP")
           echo "✅ 代理出口 IP: $MASKED_IP"
+          echo "EXIT_IP=$PROXY_IP" >> "$GITHUB_ENV"   # main.py 打码后才写日志
 
       - name: 🚀 执行脚本
         env:
