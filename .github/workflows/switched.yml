@@ -1,4 +1,4 @@
-name: Switched Vylo 刷Coins
+name: Switched Coins
 
 on:
   workflow_dispatch:
