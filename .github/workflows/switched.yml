@@ -24,7 +24,6 @@ jobs:
           path: private-scripts
           sparse-checkout: |
             scripts/switched/main.py
-            scripts/switched/ts_solver.py
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
