@@ -73,7 +73,7 @@ jobs:
         env:
           SWITCHED_COOKIES: ${{ secrets.SWITCHED_COOKIES }}
           PROXY_URL: ${{ env.PROXY_URL }}
-          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           set -o pipefail
