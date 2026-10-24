@@ -24,6 +24,7 @@ jobs:
           path: private-scripts
           sparse-checkout: |
             scripts/switched/main.py
+            scripts/switched/ts_solver.py
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
@@ -35,7 +36,7 @@ jobs:
       - name: 📦 安装依赖
         run: |
           python -m pip install -q --upgrade pip
-          pip install -q playwright requests
+          pip install -q playwright requests pydoll-python
           python -m playwright install --with-deps chromium
 
       - name: 🛡️ 设置代理 (sing-box)
@@ -78,6 +79,10 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           set -o pipefail
+          # pydoll 旁路求解器需要一个 chrome 二进制：直接用 playwright 装好的那个
+          CHROME_BIN=$(python -c "import glob,os;c=glob.glob(os.path.expanduser('~/.cache/ms-playwright/chromium-*/chrome-linux*/chrome'));print(c[0] if c else '')")
+          if [ -z "$CHROME_BIN" ]; then echo "❌ 找不到 chromium 二进制"; exit 1; fi
+          echo "CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
           cd private-scripts/scripts/switched
           xvfb-run -a -s "-screen 0 1400x1000x24" \
             python3 -u main.py 2>&1 | tee farm.log
