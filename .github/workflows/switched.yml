@@ -2,6 +2,9 @@ name: Switched Coins
 
 on:
   workflow_dispatch:
+  schedule:
+    # 15th 03:00 America/Beijing == 14th 19:00 UTC
+    - cron: '0 19 14 * *'
 
 permissions:
   actions: write
