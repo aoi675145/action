@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   farm:
-    timeout-minutes: 90
+    timeout-minutes: 180
     runs-on: ubuntu-latest
 
     steps:
