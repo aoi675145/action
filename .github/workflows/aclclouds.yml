@@ -2,7 +2,7 @@ name:  ACLClouds 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '54 11 26 10 *' # 下一个: 2026-10-26 11:54 UTC / 2026-10-26 19:54 北京时间 (到期前1天执行)
+    - cron: '53 10 30 10 *' # 下一个: 2026-10-30 10:53 UTC / 2026-10-30 18:53 北京时间 (到期前1天执行)
 
 jobs:
   run_renewal:
