@@ -89,16 +89,6 @@ jobs:
           xvfb-run -a -s "-screen 0 1400x1000x24" \
             python3 -u main.py 2>&1 | tee farm.log
 
-      - name: 📤 失败时上传日志
-        if: ${{ failure() || cancelled() }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: switched-debug
-          path: |
-            private-scripts/scripts/switched/farm.log
-            /tmp/vylo_turnstile_fail_*.png
-          if-no-files-found: ignore
-
       - name: 🧹 清理 sing-box
         if: always()
         run: |
