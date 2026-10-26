@@ -81,7 +81,6 @@ jobs:
       - name: 🚀 执行脚本
         env:
           SWITCHED_COOKIES: ${{ secrets.SWITCHED_COOKIES }}
-          SWITCHED_ACCOUNT: ${{ secrets.SWITCHED_ACCOUNT }}
           SWITCHED_EXCHANGE: ${{ inputs.exchange }}
           PROXY_URL: ${{ env.PROXY_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
