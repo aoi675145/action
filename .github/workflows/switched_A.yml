@@ -84,9 +84,8 @@ jobs:
           SWITCHED_COOKIES: ${{ secrets.SWITCHED_COOKIES_A }}
           SWITCHED_EXCHANGE: ${{ inputs.exchange }}
           PROXY_URL: ${{ env.PROXY_URL }}
-          # 通知可单独配 _A；没配就沿用主号的
-          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN_A || secrets.TG_BOT_TOKEN }}
-          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID_A || secrets.TG_CHAT_ID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
           set -o pipefail
           # pydoll 旁路求解器需要一个 chrome 二进制：直接用 playwright 装好的那个
