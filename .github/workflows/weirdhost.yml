@@ -103,7 +103,7 @@ jobs:
           # apt 直连 GitHub runner 内置源即可（前面已改写为官方 https 源），
           # 不走 sing-box 代理——代理只给浏览器访问 weirdhost 用
           sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get install -y xvfb xdotool fonts-noto-cjk jq
+          sudo apt-get install -y xvfb xdotool fonts-wqy-microhei jq
 
       - name: 📦 安装 Python 依赖
         if: steps.check_renew.outputs.need_renew == 'true'

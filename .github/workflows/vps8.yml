@@ -138,7 +138,7 @@ jobs:
           # ── 系统依赖（GitHub Runner 直连 Ubuntu 官方源，不走代理；代理仅保留给浏览器）──
           APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
           sudo apt-get update -qq $APT_OPTS
-          sudo apt-get install -y --no-install-recommends xvfb fonts-noto-cjk
+          sudo apt-get install -y --no-install-recommends xvfb fonts-wqy-microhei
           # 预生成系统字体缓存，避免 Chrome 启动时刷 "Unable to revert mtime" 噪音
           sudo fc-cache -fs > /dev/null 2>&1 || true
 

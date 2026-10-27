@@ -43,7 +43,7 @@ jobs:
       - name: 📦 安装依赖
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb fonts-noto-cjk
+          sudo apt-get install -y xvfb fonts-wqy-microhei
           pip install playwright requests ddddocr Pillow 'requests[socks]' websocket-client opencv-python-headless
           playwright install --with-deps chromium
 
