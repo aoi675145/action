@@ -36,9 +36,9 @@ jobs:
         run: |
           sudo apt-get update -qq
           # google-chrome-stable runner 自带，显式安装兜底；jq 是 setup_proxy.sh 的依赖；xdotool 兜底点击 Turnstile
-          sudo apt-get install -y --no-install-recommends google-chrome-stable xvfb fonts-noto-cjk jq xdotool || {
+          sudo apt-get install -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool || {
             sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
-            sudo apt-get install -y --no-install-recommends google-chrome-stable xvfb fonts-noto-cjk jq xdotool
+            sudo apt-get install -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool
           }
           pip install -q seleniumbase "requests[socks]" pyautogui
           # uc_driver 由 SeleniumBase UC 模式自动匹配下载，无需固定版本；缺失依赖 ryft.py 也会自装
