@@ -189,7 +189,9 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          # agnes-2.5-pro-beta solves canvas captchas ~20x faster than 3.0-flash (5s vs 104s);
+          # secret can still override
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL || 'agnes-2.5-pro-beta' }}
           PROXY_HTTP: ${{ github.event.inputs.no_proxy == '1' && '' || env.PROXY_SERVER }}
           VPS8_FORCE_RENEW: ${{ github.event.inputs.force_renew || '' }}
           NO_PROXY: localhost,127.0.0.1
