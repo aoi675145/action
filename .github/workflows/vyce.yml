@@ -2,7 +2,7 @@ name: Vyce 续期
 
 on:
   schedule:
-    - cron: '42 18 29 * *'
+    - cron: '22 2 31 * *'
   workflow_dispatch:
     inputs:
       probe:
