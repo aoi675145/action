@@ -7,8 +7,6 @@ on:
         description: '结束后领签到/任务，余额够就买 Plus（取消勾选 = 只刷币）'
         type: boolean
         default: true
-  schedule:
-    - cron: '22 1 * * *'
 
 permissions:
   actions: write
