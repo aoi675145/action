@@ -1,0 +1,111 @@
+name: Plugged Tokens
+
+on:
+  workflow_dispatch:
+    inputs:
+      exchange:
+        description: '结束后领签到/任务，余额够就买 Plus（取消勾选 = 只刷币）'
+        type: boolean
+        default: true
+  schedule:
+    # 15th 04:00 America/Beijing == 14th 20:00 UTC (switched 跑 03:00，错开一小时)
+    - cron: '0 20 14 * *'
+
+permissions:
+  actions: write
+
+concurrency:
+  group: plugged-tokens
+  cancel-in-progress: false
+
+jobs:
+  farm:
+    timeout-minutes: 180
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-scripts
+          sparse-checkout: |
+            scripts/plugged/main.py
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 🐍 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 安装依赖
+        run: |
+          python -m pip install -q --upgrade pip
+          pip install -q playwright requests pydoll-python
+          python -m playwright install --with-deps chromium
+
+      - name: 🛡️ 设置代理 (sing-box)
+        env:
+          NODE_LINK: ${{ secrets.PLUGGED_PROXY_NODE }}
+        run: |
+          if [ -z "$NODE_LINK" ]; then
+            echo "❌ 未配置 PLUGGED_PROXY_NODE"
+            exit 1
+          fi
+          chmod +x private-scripts/scripts/setup_proxy.sh
+          NODE_LINK="$NODE_LINK" bash private-scripts/scripts/setup_proxy.sh
+
+          source "$GITHUB_ENV"
+          if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then
+            echo "❌ 代理脚本未返回有效的 PROXY_SERVER"
+            exit 1
+          fi
+          echo "PROXY_URL=$PROXY_SERVER" >> "$GITHUB_ENV"
+
+          PROXY_IP=""
+          for attempt in 1 2 3 4; do
+            if PROXY_IP=$(curl -fsS --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org 2>/dev/null) && [ -n "$PROXY_IP" ]; then break; fi
+            echo "⚠️ 代理探测失败（$attempt/4），3 秒后重试"
+            sleep 3
+          done
+          if [ -z "$PROXY_IP" ]; then
+            echo "❌ 代理出口验证失败"
+            exit 1
+          fi
+          MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$PROXY_IP")
+          echo "✅ 代理出口 IP: $MASKED_IP"
+          echo "EXIT_IP=$PROXY_IP" >> "$GITHUB_ENV"
+
+      - name: 🚀 执行脚本
+        env:
+          PLUGGED_COOKIES: ${{ secrets.PLUGGED_COOKIES }}
+          PLUGGED_EXCHANGE: ${{ inputs.exchange }}
+          PROXY_URL: ${{ env.PROXY_URL }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          set -o pipefail
+          CHROME_BIN=$(python -c "import glob,os;c=glob.glob(os.path.expanduser('~/.cache/ms-playwright/chromium-*/chrome-linux*/chrome'));print(c[0] if c else '')")
+          if [ -z "$CHROME_BIN" ]; then echo "❌ 找不到 chromium 二进制"; exit 1; fi
+          echo "CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
+          cd private-scripts/scripts/plugged
+          xvfb-run -a -s "-screen 0 1400x1000x24" \
+            python3 -u main.py 2>&1 | tee farm.log
+
+      - name: 🧹 清理 sing-box
+        if: always()
+        run: |
+          pkill -f sing-box 2>/dev/null || true
+          rm -f sing-box sing-box-config.json sing-box.log sing-box-*.tar.gz
+
+      - name: 🧹 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2

@@ -34,43 +34,12 @@ jobs:
           python-version: '3.10'
 
       - name: 📦 安装依赖
-        id: deps
         run: |
-          # GitHub runner 自带 azure 镜像，拉 deb 经常龟速（见过 30KB 包卡 150 秒），换回官方源
-          for f in /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/*.sources /etc/apt/sources.list; do
-            [ -f "$f" ] && sudo sed -i 's|http://azure\.archive\.ubuntu\.com|http://archive.ubuntu.com|g' "$f" 2>/dev/null || true
-          done
-          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=15 -o Acquire::https::Timeout=15"
-          sudo apt-get update -qq $APT_OPTS
-          # x11-utils / xdotool / scrot 都没被 orihost.py 用到（截图走 sb.driver.save_screenshot）
-          sudo apt-get install -y --no-install-recommends $APT_OPTS wget xvfb
-          python -m pip install -q --upgrade pip
-          pip install -q seleniumbase requests PySocks
-          echo "week=$(date -u +%G-W%V)" >> "$GITHUB_OUTPUT"
-          echo "drivers=$(python -c 'import seleniumbase,os;print(os.path.join(os.path.dirname(seleniumbase.__file__),"drivers"))')" >> "$GITHUB_OUTPUT"
-
-      - name: ⚙️ 恢复 Chrome 缓存
-        uses: actions/cache@v4
-        with:
-          path: ${{ steps.deps.outputs.drivers }}
-          key: ori-drivers-${{ steps.deps.outputs.week }}
-          restore-keys: |
-            ori-drivers-
-
-      - name: 📦 安装 Chrome for Testing
-        run: |
-          DRIVERS="${{ steps.deps.outputs.drivers }}"
-          if [ -x "$DRIVERS/chrome-linux64/chrome" ] || [ -x "$DRIVERS/chrome-linux/chrome" ]; then
-            echo "[INFO] 命中缓存，跳过下载"
-            exit 0
-          fi
-          # 解压会刷几千行 inflating:，只保留错误和结论
-          if ! seleniumbase install chromium > /tmp/chrome-install.log 2>&1; then
-            echo "[ERROR] Chrome 安装失败，最后 30 行："
-            tail -30 /tmp/chrome-install.log
-            exit 1
-          fi
-          echo "[INFO] Chrome 安装完成"
+          sudo apt-get update
+          sudo apt-get install -y wget xvfb x11-utils xdotool scrot
+          python -m pip install --upgrade pip
+          pip install seleniumbase requests PySocks
+          seleniumbase install chromium
 
       - name: 🛡️ 安装并启动代理
         env:
