@@ -8,8 +8,9 @@ on:
         type: boolean
         default: true
   schedule:
-    # 15th 04:00 America/Beijing == 14th 20:00 UTC (switched 跑 03:00，错开一小时)
-    - cron: '0 20 14 * *'
+    # 每天 08:52 北京时间（00:52 UTC）。08:00-09:30 这一档已经排了三十多个任务，
+    # 00:00-00:45 也全被占了，00:52 是这一小时里唯一还空着的分钟段。
+    - cron: '52 0 * * *'
 
 permissions:
   actions: write
