@@ -1,0 +1,104 @@
+# Witchly Coins —— 纯 requests 版（Discord OAuth + linkvertise HTTP 链路）。
+# 与 witchly.yml（Playwright 点击版 main.py）互不影响：这个不带浏览器、
+# 不装 playwright，跑得快也省机时。
+#
+# 状态自持：脚本每次运行后把新 session 写回自己源文件的 AUTO-UPDATED 块，
+# 由最后的「推回私库」步骤提交到 scripts 仓库，下次运行直接带上。
+name: Witchly-Coins
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '43 0 * * *'   # 北京 08:43。08:45 被老版 witchly.yml 占了，错开两分钟
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  run_witchly_coins:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: 📥 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: scripts_repo
+
+      - name: 🐍 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 安装依赖
+        run: pip install -q requests
+
+      - name: 🛡️ 启动代理
+        env:
+          WITCHLY_PROXY_NODE: ${{ secrets.WITCHLY_PROXY_NODE }}
+        run: |
+          if [ -z "$WITCHLY_PROXY_NODE" ]; then
+            echo "❌ 未配置 WITCHLY_PROXY_NODE"
+            exit 1
+          fi
+          chmod +x scripts_repo/scripts/setup_proxy.sh
+          NODE_LINK="$WITCHLY_PROXY_NODE" bash scripts_repo/scripts/setup_proxy.sh
+
+          source "$GITHUB_ENV"
+          if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then
+            echo "❌ 代理脚本未返回有效的 PROXY_SERVER"
+            exit 1
+          fi
+          echo "PROXY_URL=$PROXY_SERVER" >> "$GITHUB_ENV"
+
+          PROXY_IP=""
+          for attempt in 1 2 3 4; do
+            if PROXY_IP=$(curl -fsS --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org 2>/dev/null) && [ -n "$PROXY_IP" ]; then break; fi
+            echo "⚠️ 代理探测失败（$attempt/4），3 秒后重试"
+            sleep 3
+          done
+          if [ -z "$PROXY_IP" ]; then
+            echo "❌ 代理出口验证失败"
+            exit 1
+          fi
+          MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$PROXY_IP")
+          echo "✅ 代理出口 IP: $MASKED_IP"
+
+      - name: 🚀 运行脚本
+        working-directory: scripts_repo/scripts/witchly
+        env:
+          PYTHONIOENCODING: utf-8
+          WITCHLY_ACCOUNT: ${{ secrets.WITCHLY_ACCOUNT }}
+          TG_BOT: ${{ secrets.TG_BOT }}
+          CRON_JOB: ${{ secrets.WITCHLY_CRON_JOB }}
+          GOST_PROXY: ${{ env.PROXY_URL }}
+          PROXY_URL: ${{ env.PROXY_URL }}
+        run: python witchly_coins.py
+
+      - name: 📤 推回 session 状态
+        if: always()
+        working-directory: scripts_repo
+        run: |
+          git config user.name "witchly-bot"
+          git config user.email "bot@witchly"
+          git add scripts/witchly/witchly_coins.py
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(witchly): refresh session [skip ci]"
+            git push
+            echo "✅ session 已推回"
+          else
+            echo "ℹ️ 状态无变化，跳过推送"
+          fi
+
+      - name: 🧹 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
