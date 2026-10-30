@@ -73,6 +73,8 @@ jobs:
       # 8080 to sing-box's HTTP inbound (1081) and set the flag.
       - name: 🔌 桥接 8080（脚本写死的 GOST 端口）
         run: |
+          # socat 不保证预装，缺就现场装
+          command -v socat >/dev/null || sudo apt-get update -qq && sudo apt-get install -y -qq socat
           nohup socat TCP-LISTEN:8080,fork,reuseaddr TCP:127.0.0.1:1081 >/dev/null 2>&1 &
           sleep 1
           if curl -fsS --max-time 15 -x http://127.0.0.1:8080 https://api.ipify.org >/dev/null 2>&1; then
