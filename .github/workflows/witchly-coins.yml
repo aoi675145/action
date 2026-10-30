@@ -36,7 +36,7 @@ jobs:
       - name: 📦 安装依赖
         run: pip install -q requests
 
-      - name: 🛡️ 启动代理
+      - name: 🛡️ 启动代理（公用 setup_proxy.sh）
         env:
           WITCHLY_PROXY_NODE: ${{ secrets.WITCHLY_PROXY_NODE }}
         run: |
@@ -67,6 +67,21 @@ jobs:
           MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$PROXY_IP")
           echo "✅ 代理出口 IP: $MASKED_IP"
 
+      # witchly_coins.py has no native proxy support: when GOST_PROXY is set it
+      # hard-codes http://127.0.0.1:8080 as its relay (the original repo ran
+      # GOST there). Keep the contract instead of patching the script — forward
+      # 8080 to sing-box's HTTP inbound (1081) and set the flag.
+      - name: 🔌 桥接 8080（脚本写死的 GOST 端口）
+        run: |
+          nohup socat TCP-LISTEN:8080,fork,reuseaddr TCP:127.0.0.1:1081 >/dev/null 2>&1 &
+          sleep 1
+          if curl -fsS --max-time 15 -x http://127.0.0.1:8080 https://api.ipify.org >/dev/null 2>&1; then
+            echo "✅ 8080 -> 1081 转发就绪"
+          else
+            echo "❌ 8080 转发失败"
+            exit 1
+          fi
+
       - name: 🚀 运行脚本
         working-directory: scripts_repo/scripts/witchly
         env:
@@ -74,7 +89,7 @@ jobs:
           WITCHLY_ACCOUNT: ${{ secrets.WITCHLY_ACCOUNT }}
           TG_BOT: ${{ secrets.TG_BOT }}
           CRON_JOB: ${{ secrets.WITCHLY_CRON_JOB }}
-          GOST_PROXY: ${{ env.PROXY_URL }}
+          GOST_PROXY: "1"
           PROXY_URL: ${{ env.PROXY_URL }}
         run: python witchly_coins.py
 
