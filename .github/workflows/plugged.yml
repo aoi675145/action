@@ -32,7 +32,7 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: private-scripts
           sparse-checkout: |
-            scripts/plugged/main.py
+            scripts/plugged/plugged.py
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
@@ -93,7 +93,7 @@ jobs:
           echo "CHROME_BIN=$CHROME_BIN" >> "$GITHUB_ENV"
           cd private-scripts/scripts/plugged
           xvfb-run -a -s "-screen 0 1400x1000x24" \
-            python3 -u main.py 2>&1 | tee farm.log
+            python3 -u plugged.py 2>&1 | tee farm.log
 
       - name: 🧹 清理 sing-box
         if: always()
