@@ -4,9 +4,13 @@ on:
   workflow_dispatch:
     inputs:
       exchange:
-        description: '结束后领签到/任务，余额够就买 Plus（取消勾选 = 只刷币）'
+        description: '结束后领签到/任务（取消勾选 = 只刷币）'
         type: boolean
         default: true
+      buy_plus:
+        description: '余额够时自动兑换 Plus 会员（默认关闭，不花 tokens）'
+        type: boolean
+        default: false
 
 permissions:
   actions: write
@@ -43,7 +47,11 @@ jobs:
       - name: 📦 安装依赖
         run: |
           python -m pip install -q --upgrade pip
-          pip install -q requests curl_cffi cryptography
+          pip install -q requests curl_cffi cryptography pydoll-python
+          # The adfocus fallback drives a real Chromium (headed, under xvfb):
+          # the offerwall refuses replayed HTTP beacons often enough that the
+          # browser leg pays for itself.
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb >/dev/null
 
       - name: 🛡️ 设置代理 (sing-box)
         env:
@@ -80,6 +88,7 @@ jobs:
       - name: 🚀 执行脚本
         env:
           PLUGGED_COOKIES: ${{ secrets.PLUGGED_COOKIES }}
+          PLUGGED_BUY_PLUS: ${{ inputs.buy_plus }}
           PLUGGED_EXCHANGE: ${{ inputs.exchange }}
           # cron-job.org 是唯一触发源（每天 08:00 北京时间）；脚本跑完会按长等待/次日 08:00 写回
           CRON_JOB_API: ${{ secrets.CRONJOB_API_AOI }}
@@ -89,7 +98,7 @@ jobs:
         run: |
           set -o pipefail
           cd private-scripts/scripts/plugged
-          python3 -u plugged.py 2>&1 | tee farm.log
+          TMPDIR=/tmp xvfb-run -a --server-args="-screen 0 1366x768x24" python3 -u plugged.py 2>&1 | tee farm.log
 
       - name: 🧹 清理 sing-box
         if: always()
