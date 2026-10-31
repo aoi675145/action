@@ -62,10 +62,10 @@ def mailbox():
     pw = "Pw" + "".join(random.choices(string.ascii_letters + string.digits, k=12)) + "!9"
     S.post("https://api.mail.tm/accounts", json={"address": addr, "password": pw},
            timeout=30).raise_for_status()
-    S.post("https://api.mail.tm/token", json={"address": addr, "password": pw},
-           timeout=30).raise_for_status()
+    tok = S.post("https://api.mail.tm/token", json={"address": addr, "password": pw},
+                 timeout=30).json()["token"]
     ok(f"临时邮箱 {addr[:3]}***@{dom}")
-    return addr, pw
+    return addr, pw, tok
 
 
 def js_value(raw):
@@ -203,8 +203,12 @@ async def signup():
     from pydoll.browser import Chrome
     from pydoll.browser.options import ChromiumOptions
 
-    addr, pw = mailbox()
+    addr, pw, mbox = mailbox()
     nick = "pl" + "".join(random.choices(string.ascii_lowercase, k=5))
+    with open("/tmp/newaccount.json", "w") as f:
+        json.dump({"email": addr, "password": pw, "name": nick,
+                   "mail_token": mbox}, f)
+    os.chmod("/tmp/newaccount.json", 0o600)
 
     opts = ChromiumOptions()
     opts.headless = False
@@ -254,6 +258,35 @@ async def signup():
             bad("注册没成功")
             return ""
 
+        step("验证邮箱")
+        link = ""
+        for _ in range(20):
+            await asyncio.sleep(3)
+            try:
+                msgs = S.get("https://api.mail.tm/messages",
+                             headers={"Authorization": f"Bearer {mbox}"},
+                             timeout=30).json().get("hydra:member") or []
+            except Exception:
+                msgs = []
+            for m in msgs:
+                body = S.get(f"https://api.mail.tm/messages/{m['id']}",
+                             headers={"Authorization": f"Bearer {mbox}"},
+                             timeout=30).json()
+                text = " ".join(str(v) for v in (body.get("text") or [])
+                                + [body.get("html") or ""])
+                hits = re.findall(r'https?://[^\s"<>]+', text)
+                hit = [h for h in hits if re.search(r"verif|confirm|token=", h, re.I)]
+                if hit:
+                    link = hit[0].replace("&amp;", "&")
+                    break
+            if link:
+                break
+        if link:
+            v = S.get(link, timeout=45, allow_redirects=True)
+            log(f"验证链接打开 {v.status_code} {v.url[:60]}")
+        else:
+            log("没收到验证邮件，直接试登录")
+
         step("登录")
         for attempt in (1, 2):
             async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=90):
@@ -271,9 +304,9 @@ async def signup():
             r, s2 = post_form("https://accounts.noprofit.space/login", {
                 "_token": csrf, "login": addr, "password": pw,
                 "legal_acceptance": "1", "cf-turnstile-response": token}, cookies)
-            log(f"登录[{attempt}] POST {r.status_code} 跳 "
-                f"{r.headers.get('location','')[:60]}")
-            if r.status_code in (301, 302, 303):
+            loc = r.headers.get("location", "")
+            log(f"登录[{attempt}] POST {r.status_code} 跳 {loc[:60]}")
+            if r.status_code in (301, 302, 303) and "login" not in loc:
                 acc = s2
                 break
             body = css_text(r.text)
@@ -282,25 +315,45 @@ async def signup():
             bad(f"登录被拒：{hit.group(1)[:180] if hit else body[:180]}")
 
         step("SSO 进面板")
-        await tab.go_to("https://accounts.noprofit.space/dashboard", timeout=120)
-        await asyncio.sleep(3)
-        sso = js_value(await tab.execute_script("""
-            const a = [...document.querySelectorAll('a')]
-                .find(e => /plugged\\.host/i.test(e.innerText || '') && e.href);
-            return a ? a.href : '';
-        """))
-        log(f"SSO 链接 {'有' if sso else '没有'}")
-        if sso:
-            r = acc.get(sso, allow_redirects=True, timeout=45)
-            log(f"SSO 结束 {r.status_code} {r.url[:60]}")
-            for c in acc.cookies:
+        # panel.plugged.host blocks this box's own IP (403) but answers through
+        # the node, so the SSO hop goes over plain HTTP through the proxy.
+        dash = acc.get("https://accounts.noprofit.space/dashboard", timeout=45,
+                       headers={"User-Agent": "Mozilla/5.0 Chrome/131.0.0.0"})
+        hrefs = re.findall(r'href="([^"]*)"', dash.text)
+        cand = [h for h in hrefs if re.search(r"sso|plugged", h, re.I)]
+        log(f"dashboard {dash.status_code} 候选链接 {len(cand)}"
+            + (f"：{cand[0][:80]}" if cand else ""))
+        sso = cand[0] if cand else (
+            "https://accounts.noprofit.space/sso?client=plugged-host-calagopus"
+            "&return_to=https://panel.plugged.host/api/auth/noprofit/callback")
+        hop = requests.Session()
+        hop.trust_env = False
+        hop.cookies.update({c.name: c.value for c in acc.cookies})
+        px = os.environ.get("SSO_PROXY") or PROXY or "http://127.0.0.1:1091"
+        ua = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+        from urllib.parse import urljoin, unquote as _unq
+        target = urljoin("https://accounts.noprofit.space/", sso)
+        try:
+            r = hop.get(target, allow_redirects=True, timeout=60,
+                        proxies={"http": px, "https": px}, headers={"User-Agent": ua})
+            log(f"SSO {r.status_code} 终点 {r.url[:60]}")
+            if "/migrate" in r.url:
+                m = re.search(r"return_to=([^&]+)", r.url)
+                if m:
+                    r = hop.get(_unq(m.group(1)), allow_redirects=True, timeout=60,
+                                proxies={"http": px, "https": px},
+                                headers={"User-Agent": ua})
+                    log(f"回跳 {r.status_code} 终点 {r.url[:60]}")
+            for c in hop.cookies:
                 if c.name == "calagopus_session" and c.value:
                     cookie = c.value
-        if not cookie:
-            for c in await tab.get_cookies():
-                if c.get("name") == "calagopus_session" and c.get("value"):
-                    cookie = c["value"]
-        log(f"面板页 {str(await tab.current_url())[:70]}")
+            if not cookie:
+                m = re.search(r"calagopus_session=([^;\s]+)", str(r.headers))
+                cookie = m.group(1) if m else ""
+        except Exception as exc:
+            bad(f"SSO 请求失败 {type(exc).__name__}")
+        log(f'面板会话 {"有" if cookie else "没有"}')
     return cookie
 
 
