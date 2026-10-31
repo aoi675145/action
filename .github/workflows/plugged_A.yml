@@ -38,6 +38,7 @@ jobs:
           path: private-scripts
           sparse-checkout: |
             scripts/plugged/plugged.py
+            scripts/plugged/adfocus_browser.py
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
