@@ -175,8 +175,10 @@ async def fill_field(tab, selector, value, checkbox=False):
 
 async def fill_fields(tab, fields):
     missing = []
-    for selector, value in fields:
-        got = await fill_field(tab, selector, value)
+    for item in fields:
+        selector, value = item[0], item[1]
+        checkbox = item[2] if len(item) > 2 else False
+        got = await fill_field(tab, selector, value, checkbox)
         if not got:
             missing.append(selector)
     return missing
