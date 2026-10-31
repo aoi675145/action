@@ -3,8 +3,8 @@
 
 Stage A  new account: mail.tm mailbox -> accounts.noprofit.space register ->
          login -> SSO into panel.plugged.host -> calagopus_session cookie
-Stage B  two batches of BATCH claims over plain HTTPS (no browser):
-         earn N URLs, clear them in parallel, redeem each, report what landed.
+Stage B  N batches of BATCH claims over plain HTTPS (no browser):
+         earn BATCH URLs, clear them in parallel, redeem each, report what landed.
 
 Never prints the cookie or the password.
 """
@@ -16,13 +16,11 @@ import re
 import string
 import sys
 import time
-import urllib.parse
 from concurrent.futures import ThreadPoolExecutor
 
 import requests
 from curl_cffi import requests as cffi
 
-sys.path.insert(0, "/app/user-packages/python")
 sys.path.insert(0, os.path.dirname(os.path.abspath(os.environ.get(
     "PLUGGED_SRC", "plugged.py"))))
 import plugged as P  # noqa: E402  (panel API layer only)
@@ -34,6 +32,9 @@ ROUNDS = int(os.environ.get("ROUNDS", "2"))
 PROXY = os.environ.get("PROXY_URL", "")
 IMPERSONATE = "chrome131"
 UA_CH = {"b": "Chromium/131|Google Chrome/131|Not_A Brand/24", "p": "Windows", "m": 0}
+
+S = requests.Session()
+S.trust_env = False
 
 
 def log(msg):
@@ -52,33 +53,31 @@ def step(msg):
     log(f"── {msg} " + "─" * max(0, 34 - len(msg)))
 
 
-S = requests.Session()
-S.trust_env = False
-
-
 # ───────────────────────── stage A: throwaway account ─────────────────────────
 def mailbox():
     r = S.get("https://api.mail.tm/domains", timeout=30).json()
     dom = r["hydra:member"][0]["domain"]
     user = "pl" + "".join(random.choices(string.ascii_lowercase + string.digits, k=10))
-    addr, pw = f"{user}@{dom}", "Pw" + "".join(
-        random.choices(string.ascii_letters + string.digits, k=12)) + "!9"
+    addr = f"{user}@{dom}"
+    pw = "Pw" + "".join(random.choices(string.ascii_letters + string.digits, k=12)) + "!9"
     S.post("https://api.mail.tm/accounts", json={"address": addr, "password": pw},
            timeout=30).raise_for_status()
-    tok = S.post("https://api.mail.tm/token", json={"address": addr, "password": pw},
-                 timeout=30).json()["token"]
+    S.post("https://api.mail.tm/token", json={"address": addr, "password": pw},
+           timeout=30).raise_for_status()
     ok(f"临时邮箱 {addr[:3]}***@{dom}")
-    return addr, pw, tok
+    return addr, pw
 
 
 def js_value(raw):
-    try:
-        return raw["result"]["result"].get("value")
-    except Exception:
+    for path in (("result", "result", "value"), ("result", "value"), ("value",)):
+        cur = raw
         try:
-            return raw["result"]["result"]["value"]
+            for k in path:
+                cur = cur[k]
+            return cur
         except Exception:
-            return None
+            continue
+    return None
 
 
 async def turnstile_token(tab):
@@ -91,25 +90,44 @@ async def turnstile_token(tab):
     return ""
 
 
+async def page_text(tab, limit=400):
+    raw = js_value(await tab.execute_script(
+        "return (document.body && document.body.innerText || '').replace(/\\s+/g,' ')"
+        f".slice(0,{limit})"))
+    return raw or ""
+
+
 async def submit_form(tab, fields, token, label):
     payload = json.dumps(fields)
-    await tab.execute_script(f"""
+    info = js_value(await tab.execute_script(f"""
         const f = {payload};
+        const missing = [];
         for (const [k, v] of Object.entries(f)) {{
             const el = document.querySelector(`[name="${{k}}"]`);
-            if (!el) continue;
+            if (!el) {{ missing.push(k); continue; }}
             if (el.type === 'checkbox') {{ el.checked = true; }}
             else {{ el.value = v; }}
             el.dispatchEvent(new Event('input', {{bubbles: true}}));
             el.dispatchEvent(new Event('change', {{bubbles: true}}));
         }}
         const t = document.querySelector('[name="cf-turnstile-response"]');
-        if (t) {{ t.value = {json.dumps(token)}; }}
+        if (t) {{
+            t.value = {json.dumps(token)};
+            t.dispatchEvent(new Event('input', {{bubbles: true}}));
+            t.dispatchEvent(new Event('change', {{bubbles: true}}));
+        }}
         const legal = document.querySelector('[name="legal_acceptance"]');
         if (legal && !legal.checked) {{ legal.checked = true; }}
-        return true;
-    """)
-    await asyncio.sleep(0.5)
+        const b = document.querySelector('form button[type=submit]')
+            || [...document.querySelectorAll('form button')]
+                 .find(x => /register|sign ?up|create|log ?in|continue/i.test(x.innerText||''));
+        if (b && b.disabled) {{ b.disabled = false; }}
+        return JSON.stringify({{missing: missing, button: b ? (b.innerText||b.type||'').trim().slice(0,30) : null,
+            token_len: t ? t.value.length : -1}});
+    """))
+    log(f"{label} 填表 {info}")
+    await asyncio.sleep(1)
+    before = await tab.current_url()
     clicked = js_value(await tab.execute_script("""
         const b = document.querySelector('form button[type=submit], form button');
         if (b) { b.click(); return true; }
@@ -117,18 +135,23 @@ async def submit_form(tab, fields, token, label):
     """))
     if not clicked:
         bad(f"{label} 找不到提交按钮")
-        return False
-    await asyncio.sleep(6)
-    url = await tab.current_url()
-    log(f"{label} 结束页 {url[:70]}")
-    return url
+        return ""
+    for _ in range(15):
+        await asyncio.sleep(1)
+        url = await tab.current_url()
+        if url.split("?")[0] != before.split("?")[0]:
+            log(f"{label} 跳转到 {url[:70]}")
+            return url
+    txt = await page_text(tab)
+    bad(f"{label} 未跳转（{before[:60]}）页面：{txt[:240]}")
+    return ""
 
 
 async def signup():
     from pydoll.browser import Chrome
     from pydoll.browser.options import ChromiumOptions
 
-    addr, pw, mtok = mailbox()
+    addr, pw = mailbox()
 
     opts = ChromiumOptions()
     opts.headless = False
@@ -138,34 +161,50 @@ async def signup():
     if os.path.exists(CHROME):
         opts.binary_location = CHROME
 
+    nick = "pl" + "".join(random.choices(string.ascii_lowercase, k=5))
     cookie = ""
     async with Chrome(options=opts) as browser:
         tab = await browser.start()
 
         step("注册")
-        async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=90):
-            await tab.go_to("https://accounts.noprofit.space/register", timeout=120)
-        await asyncio.sleep(2)
-        tok = await turnstile_token(tab)
-        if not tok:
-            bad("注册页 Turnstile 没出 token")
+        done = ""
+        for attempt in (1, 2):
+            async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=90):
+                await tab.go_to("https://accounts.noprofit.space/register", timeout=120)
+            await asyncio.sleep(2)
+            tok = await turnstile_token(tab)
+            if not tok:
+                bad(f"注册页 Turnstile 没出 token（第 {attempt} 次）")
+                continue
+            log(f"Turnstile token {len(tok)} 字符")
+            done = await submit_form(tab, {
+                "name": nick, "email": addr, "password": pw,
+                "password_confirmation": pw, "legal_acceptance": "1"},
+                tok, f"注册[{attempt}]")
+            if done:
+                break
+        if not done:
+            bad("注册没成功")
             return ""
-        log(f"Turnstile token {len(tok)} 字符")
-        await submit_form(tab, {"name": "pl" + "".join(random.choices(string.ascii_lowercase, k=5)),
-                                "email": addr, "password": pw,
-                                "password_confirmation": pw,
-                                "legal_acceptance": "1"}, tok, "注册")
 
         step("登录")
-        async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=90):
-            await tab.go_to("https://accounts.noprofit.space/login", timeout=120)
-        await asyncio.sleep(2)
-        tok = await turnstile_token(tab)
-        if not tok:
-            bad("登录页 Turnstile 没出 token")
+        done = ""
+        for attempt in (1, 2):
+            async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=90):
+                await tab.go_to("https://accounts.noprofit.space/login", timeout=120)
+            await asyncio.sleep(2)
+            tok = await turnstile_token(tab)
+            if not tok:
+                bad(f"登录页 Turnstile 没出 token（第 {attempt} 次）")
+                continue
+            done = await submit_form(tab, {"login": addr, "password": pw,
+                                           "legal_acceptance": "1"},
+                                     tok, f"登录[{attempt}]")
+            if done:
+                break
+        if not done:
+            bad("登录没成功")
             return ""
-        await submit_form(tab, {"login": addr, "password": pw,
-                                "legal_acceptance": "1"}, tok, "登录")
 
         step("SSO 进面板")
         clicked = js_value(await tab.execute_script("""
@@ -200,8 +239,8 @@ def claim_http(url, px):
     key = (re.search(r'id="my_key" value="([^"]+)"', r.text) or [None, ""])[1]
     nx = re.search(r'class="nx-go"[^>]*href="([^"]+)"', r.text)
     click_m = re.search(r'var click_url = "([^"]+)"', r.text)
-    inline = re.search(r'href="(https://panel\.plugged\.host/account/tokens\?claim=[^"]+)"', r.text)
-
+    inline = re.search(
+        r'href="(https://panel\.plugged\.host/account/tokens\?claim=[^"]+)"', r.text)
     hdrs = {"Referer": url, "Origin": "https://adfoc.us"}
 
     def beacon(body, path):
@@ -211,6 +250,15 @@ def claim_http(url, px):
                    allow_redirects=False)
         except Exception:
             pass
+
+    first = {"k": key, "r": 100, "y": "a", "e": 0,
+             "n": {"b": 175, "p": 430, "d": 650, "l": 1200},
+             "rf": 1520, "t0": 1200, "c": 1600,
+             "u": {"k": 1, "s": 1, "y": 0, "w": 728, "h": 90, "c": -1},
+             "fl": -1, "ft": 1, "lb": 0, "v": 1, "hm": 0, "hn": 0, "mt": 0,
+             "ti": 6, "cn": 9, "jq": 0, "js": -1, "ss": -1, "ac": 0, "pv": 0,
+             "sc": [1400, 1000, 1400, 860, 100], "lg": "en-US",
+             "tz": "Asia/Shanghai", "ch": UA_CH, "bt": 0, "g": 1, "a": 1, "ct": 0}
 
     if nx:
         link = nx.group(1).replace("&amp;", "&")
@@ -224,15 +272,7 @@ def claim_http(url, px):
         except Exception:
             pass
         time.sleep(1.5)
-        beacon({"k": key, "r": 100, "y": "a", "e": 0,
-                "n": {"b": 175, "p": 430, "d": 650, "l": 1200},
-                "rf": 1520, "t0": 1200, "c": 1600,
-                "u": {"k": 1, "s": 1, "y": 0, "w": 728, "h": 90, "c": -1},
-                "fl": -1, "ft": 1, "lb": 0, "v": 1, "hm": 0, "hn": 0, "mt": 0,
-                "ti": 6, "cn": 9, "jq": 0, "js": -1, "ss": -1, "ac": 0, "pv": 0,
-                "sc": [1400, 1000, 1400, 860, 100], "lg": "en-US",
-                "tz": "Asia/Shanghai", "ch": UA_CH, "bt": 0, "g": 1, "a": 1, "ct": 0},
-               "/serve/nx/state")
+        beacon(first, "/serve/nx/state")
         dwell = random.uniform(12, 17)
         time.sleep(dwell)
         ms = int(1200 + dwell * 1000)
@@ -243,15 +283,8 @@ def claim_http(url, px):
         target = click_m.group(1).replace("&amp;", "&")
         if not target.startswith("http"):
             target = "https://adfoc.us" + target
-        beacon({"k": key, "r": 100, "y": "a", "e": 0,
-                "n": {"b": 175, "p": 430, "d": 650, "l": 1200},
-                "rf": 1520, "t0": 1200, "c": 1600,
-                "u": {"k": 1, "s": 1, "y": 0, "w": 728, "h": 90, "c": -1},
-                "fl": -1, "ft": 1, "lb": 0, "v": 1, "hm": 0, "hn": 0, "mt": 0,
-                "ti": 6, "cn": 6, "jq": 1, "js": -1, "ss": -1, "ac": 0, "pv": 0,
-                "sc": [1400, 1000, 1400, 860, 100], "lg": "en-US",
-                "tz": "Asia/Shanghai", "ch": UA_CH, "bt": 0, "g": 1, "a": 1, "ct": 0},
-               "/serve/state")
+        first["cn"], first["jq"] = 6, 1
+        beacon(first, "/serve/state")
         dwell = random.uniform(12, 17)
         time.sleep(dwell)
         ms = int(1200 + dwell * 1000)
@@ -266,7 +299,8 @@ def claim_http(url, px):
 
     try:
         r3 = s.get(target, allow_redirects=False, headers={
-            "Referer": url, "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Referer": url,
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
             "Sec-Fetch-Mode": "navigate", "Sec-Fetch-Dest": "document",
             "Sec-Fetch-Site": "same-origin", "Sec-Fetch-User": "?1",
             "Upgrade-Insecure-Requests": "1"})
@@ -280,19 +314,37 @@ def claim_http(url, px):
     return m.group(1), tpl
 
 
+MODE = os.environ.get("MODE", "token").strip().lower()
+
+
 def main():
+    if MODE == "signup":
+        step("注册新号")
+        cookie = asyncio.run(signup())
+        if not cookie:
+            bad("注册失败")
+            return 1
+        with open("/tmp/newsession.txt", "w") as f:
+            f.write(f"calagopus_session={cookie}")
+        os.chmod("/tmp/newsession.txt", 0o600)
+        ok(f"新号可用，会话已落盘（{len(cookie)} 字符）")
+        return 0
+
     if not PROXY:
         bad("PROXY_URL 未设置")
         return 1
 
-    step("阶段 A 新号")
-    cookie = asyncio.run(signup())
-    if not cookie:
-        bad("新号没拿到面板会话")
-        return 1
-    ok(f"面板会话已建立（{len(cookie)} 字符）")
-
-    os.environ["PLUGGED_COOKIES"] = f"calagopus_session={cookie}"
+    if os.environ.get("PLUGGED_COOKIES"):
+        ok("使用已注册的账号跑 token")
+        cookie = ""
+    else:
+        step("阶段 A 新号")
+        cookie = asyncio.run(signup())
+        if not cookie:
+            bad("新号没拿到面板会话")
+            return 1
+        ok(f"面板会话已建立（{len(cookie)} 字符）")
+        os.environ["PLUGGED_COOKIES"] = f"calagopus_session={cookie}"
     api = P.Panel(PROXY)
     bal0, earned0, provs = P.parse_tokens(api.tokens())
     for p in provs:
