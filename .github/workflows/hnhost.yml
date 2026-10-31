@@ -84,7 +84,7 @@ jobs:
           # 设 HNHOST_TOKEN_PLAINTEXT=1 时 TG 通知附带完整 token（仅临时核对用）
           HNHOST_TOKEN_PLAINTEXT:       ${{ vars.HNHOST_TOKEN_PLAINTEXT }}
           PYTHONUNBUFFERED:             1
-        run: python scripts/hnhost/main.py
+        run: python scripts/hnhost/hnhost.py
 
       - name: 💾 回写会话缓存
         if: always()
