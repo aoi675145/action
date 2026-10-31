@@ -7,8 +7,6 @@ on:
         description: '结束后领签到/任务，余额够就买 Plus（取消勾选 = 只刷币）'
         type: boolean
         default: true
-  schedule:
-    - cron: '52 0 * * *'
 
 permissions:
   actions: write
@@ -83,6 +81,8 @@ jobs:
         env:
           PLUGGED_COOKIES: ${{ secrets.PLUGGED_COOKIES }}
           PLUGGED_EXCHANGE: ${{ inputs.exchange }}
+          # cron-job.org 是唯一触发源（每天 08:00 北京时间）；脚本跑完会按长等待/次日 08:00 写回
+          CRON_JOB_API: ${{ secrets.CRONJOB_API_AOI }}
           PROXY_URL: ${{ env.PROXY_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
