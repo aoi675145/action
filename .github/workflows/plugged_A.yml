@@ -7,6 +7,11 @@ on:
         description: '结束后领签到/任务，余额够就买 Plus（取消勾选 = 只刷币）'
         type: boolean
         default: true
+      provider:
+        description: '只刷指定渠道（留空=全部；例 adfocus）'
+        type: string
+        required: false
+        default: ''
 
 permissions:
   actions: write
@@ -81,6 +86,7 @@ jobs:
         env:
           PLUGGED_COOKIES: ${{ secrets.PLUGGED_COOKIES_A }}
           PLUGGED_EXCHANGE: ${{ inputs.exchange }}
+          PLUGGED_ONLY: ${{ inputs.provider }}
           PROXY_URL: ${{ env.PROXY_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
