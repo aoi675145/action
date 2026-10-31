@@ -358,13 +358,37 @@ async def signup():
 
 
 # ─────────────────────── stage B: pure-HTTP concurrent claims ──────────────────
+def proxy_candidates(px):
+    """setup_proxy.sh publishes socks5 on 1080 and an HTTP inbound on 1081;
+    curl_cffi's socks support is build-dependent, so try both."""
+    if not px:
+        return [None]
+    out = [px]
+    m = re.match(r"^socks5h?://([^:/]+):(\d+)/?$", px)
+    if m:
+        out.append(f"http://{m.group(1)}:{int(m.group(2)) + 1}")
+    return out
+
+
 def claim_http(url, px):
     """Clear one adfoc.us offer over HTTPS. Returns (claim, detail)."""
+    last = ""
+    for cand in proxy_candidates(px):
+        claim, detail = _claim_once(url, cand)
+        if claim:
+            return claim, detail
+        last = detail
+        if not detail.startswith("tls:"):
+            break
+    return "", last
+
+
+def _claim_once(url, px):
     s = cffi.Session(impersonate=IMPERSONATE, proxy=px or None, timeout=30)
     try:
         r = s.get(url)
     except Exception as exc:
-        return "", f"tls:{type(exc).__name__}"
+        return "", f"tls:{type(exc).__name__}:{str(exc)[:40]}"
     if r.status_code != 200 or len(r.content) < 2000:
         return "", f"http{r.status_code}/{len(r.content)}B"
 
@@ -504,6 +528,9 @@ def main():
             cleared = list(pool.map(lambda u: claim_http(u, PROXY), urls))
         claims = [(u, c, d) for u, (c, d) in zip(urls, cleared) if c]
         log(f"清链接 {len(claims)}/{len(urls)}（{time.monotonic() - t0:.1f}s）")
+        for u, (c, d) in zip(urls, cleared):
+            if not c:
+                log(f"  ⚠️ 未拿到 claim：{d}")
 
         landed = 0
         for url, claim, detail in claims:
@@ -526,7 +553,7 @@ def main():
     for p in provs:
         if p["name"] in ("adfocus", "linkvertise"):
             log(f"{p['name']} {p['granted']}/{p['cap']} 下一枚 {p['next_reward']}")
-    log(f"总耗时 {(time.monotonic() - T0) / 60:.1f} 分钟")
+    log(f"总耗时 {(time.time() - T0) / 60:.1f} 分钟")
     return 0 if total_ok >= BATCH else 1
 
 
