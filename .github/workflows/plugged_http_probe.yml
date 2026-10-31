@@ -1,0 +1,95 @@
+name: Plugged HTTP Concurrency Probe
+
+# Throwaway-account probe: register a fresh account, then clear adfocus over
+# plain HTTPS in N batches of BATCH claims (default 5 + 5 = the whole daily cap).
+# Temporary workflow - delete once the numbers are recorded.
+
+on:
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: '每批并发数'
+        type: string
+        default: '5'
+      rounds:
+        description: '批次数'
+        type: string
+        default: '2'
+
+permissions:
+  actions: write
+
+concurrency:
+  group: plugged-http-probe
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    timeout-minutes: 60
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 拉取本仓（探针脚本）
+        uses: actions/checkout@v4
+
+      - name: 📥 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-scripts
+          sparse-checkout: |
+            scripts/plugged/plugged.py
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 🐍 设置 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 安装依赖
+        run: |
+          python -m pip install -q --upgrade pip
+          pip install -q requests curl_cffi cryptography pydoll-python
+          sudo apt-get update -qq && sudo apt-get install -y -qq xvfb >/dev/null
+          for b in /usr/bin/google-chrome /usr/bin/chromium /usr/bin/chromium-browser; do
+            if [ -x "$b" ]; then echo "CHROME_BIN=$b" >> "$GITHUB_ENV"; break; fi
+          done
+          source "$GITHUB_ENV" && echo "浏览器 $CHROME_BIN"
+
+      - name: 🛡️ 设置代理 (sing-box)
+        env:
+          NODE_LINK: ${{ secrets.PLUGGED_PROXY_NODE }}
+        run: |
+          if [ -z "$NODE_LINK" ]; then
+            echo "❌ 未配置 PLUGGED_PROXY_NODE"
+            exit 1
+          fi
+          chmod +x private-scripts/scripts/setup_proxy.sh
+          NODE_LINK="$NODE_LINK" bash private-scripts/scripts/setup_proxy.sh
+          source "$GITHUB_ENV"
+          if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then
+            echo "❌ 代理脚本未返回有效的 PROXY_SERVER"
+            exit 1
+          fi
+          echo "PROXY_URL=$PROXY_SERVER" >> "$GITHUB_ENV"
+          IP=$(curl -fsS --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org)
+          MASKED=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$IP")
+          echo "✅ 代理出口 $MASKED"
+
+      - name: 🧪 新号注册 + 纯 HTTP 并发刷币
+        env:
+          BATCH: ${{ inputs.batch }}
+          ROUNDS: ${{ inputs.rounds }}
+          PROXY_URL: ${{ env.PROXY_URL }}
+          PLUGGED_SRC: private-scripts/scripts/plugged/plugged.py
+        run: |
+          TMPDIR=/tmp xvfb-run -a --server-args="-screen 0 1400x1000x24" \
+            python3 -u probe_http.py
+
+      - name: 🧹 清理 sing-box
+        if: always()
+        run: |
+          pkill -f sing-box 2>/dev/null || true
+          rm -f sing-box sing-box-config.json sing-box.log sing-box-*.tar.gz
