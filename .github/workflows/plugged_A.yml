@@ -87,6 +87,7 @@ jobs:
           PLUGGED_COOKIES: ${{ secrets.PLUGGED_COOKIES_A }}
           PLUGGED_EXCHANGE: ${{ inputs.exchange }}
           PLUGGED_ONLY: ${{ inputs.provider }}
+          PLUGGED_DUMP_HTML: ${{ vars.PLUGGED_DUMP_HTML }}
           PROXY_URL: ${{ env.PROXY_URL }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
