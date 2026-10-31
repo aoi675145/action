@@ -154,35 +154,32 @@ def css_text(html):
     return re.sub(r"\s+", " ", txt).strip()
 
 
-def form_state(tab, fields):
-    """Fill the Laravel form in the page (values + turnstile) and collect the
-    hidden inputs, so the POST can be replayed over plain HTTP."""
-    payload = json.dumps(fields)
-    raw = js_value(await_js(tab, f"""
-        const f = {payload};
-        const missing = [];
-        for (const [k, v] of Object.entries(f)) {{
-            const el = document.querySelector(`[name="${{k}}"]`);
-            if (!el) {{ missing.push(k); continue; }}
-            if (el.type === 'checkbox') {{ el.checked = true; }}
-            else {{ el.value = v; }}
+async def read_value(tab, selector):
+    return js_value(await tab.execute_script(
+        f"return (document.querySelector({json.dumps(selector)})||{{}}).value||''")) or ""
+
+
+async def fill_field(tab, selector, value, checkbox=False):
+    prop = "checked" if checkbox else "value"
+    val = "true" if checkbox else json.dumps(value)
+    await tab.execute_script(f"""
+        const el = document.querySelector({json.dumps(selector)});
+        if (el) {{
+            el.{prop} = {val};
             el.dispatchEvent(new Event('input', {{bubbles: true}}));
             el.dispatchEvent(new Event('change', {{bubbles: true}}));
         }}
-        const hidden = {{}};
-        document.querySelectorAll('form input[type=hidden]').forEach(e => {{
-            if (e.name) hidden[e.name] = e.value;
-        }});
-        const legal = document.querySelector('[name="legal_acceptance"]');
-        if (legal && !legal.checked) {{ legal.checked = true; }}
-        return JSON.stringify({{missing: missing, hidden: hidden,
-            token: (document.querySelector('[name="cf-turnstile-response"]')||{{}}).value || ''}});
-    """))
-    return json.loads(raw or "{}")
+        return !!el;
+    """)
 
 
-async def await_js(tab, script):
-    return await tab.execute_script(script)
+async def fill_fields(tab, fields):
+    missing = []
+    for selector, value in fields:
+        got = await fill_field(tab, selector, value)
+        if not got:
+            missing.append(selector)
+    return missing
 
 
 def post_form(url, data, cookies):
@@ -225,18 +222,19 @@ async def signup():
             async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=90):
                 await tab.go_to("https://accounts.noprofit.space/register", timeout=120)
             await asyncio.sleep(2)
-            state = form_state(tab, {
-                "name": nick, "email": addr, "password": pw,
-                "password_confirmation": pw, "legal_acceptance": "1"})
+            missing = await fill_fields(tab, [
+                ('input[name="name"]', nick), ('input[name="email"]', addr),
+                ('input[name="password"]', pw),
+                ('input[name="password_confirmation"]', pw),
+                ('input[name="legal_acceptance"]', "", True)])
             await asyncio.sleep(0.5)
             cookies = await tab.get_cookies()
-            hidden = state.get("hidden") or {}
-            token = (hidden.get("cf-turnstile-response") or state.get("token") or "")
-            log(f"注册[{attempt}] 字段缺 {state.get('missing')}｜隐藏 "
-                f"{sorted(hidden)}｜token {len(token)}")
+            csrf = await read_value(tab, 'input[name="_token"]')
+            token = await read_value(tab, 'input[name="cf-turnstile-response"]')
+            log(f"注册[{attempt}] 缺字段 {missing}｜csrf {len(csrf)}｜token {len(token)}")
             if not token:
                 continue
-            data = {"_token": hidden.get("_token", ""), "name": nick, "email": addr,
+            data = {"_token": csrf, "name": nick, "email": addr,
                     "password": pw, "password_confirmation": pw,
                     "legal_acceptance": "1", "cf-turnstile-response": token}
             r, s = post_form("https://accounts.noprofit.space/register", data, cookies)
@@ -259,16 +257,17 @@ async def signup():
             async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=90):
                 await tab.go_to("https://accounts.noprofit.space/login", timeout=120)
             await asyncio.sleep(2)
-            state = form_state(tab, {"login": addr, "password": pw,
-                                     "legal_acceptance": "1"})
+            await fill_fields(tab, [
+                ('input[name="login"]', addr), ('input[name="password"]', pw),
+                ('input[name="legal_acceptance"]', "", True)])
             await asyncio.sleep(0.5)
-            hidden = state.get("hidden") or {}
-            token = (hidden.get("cf-turnstile-response") or state.get("token") or "")
-            log(f"登录[{attempt}] token {len(token)}")
+            csrf = await read_value(tab, 'input[name="_token"]')
+            token = await read_value(tab, 'input[name="cf-turnstile-response"]')
+            log(f"登录[{attempt}] csrf {len(csrf)}｜token {len(token)}")
             if not token:
                 continue
             r, s2 = post_form("https://accounts.noprofit.space/login", {
-                "_token": hidden.get("_token", ""), "login": addr, "password": pw,
+                "_token": csrf, "login": addr, "password": pw,
                 "legal_acceptance": "1", "cf-turnstile-response": token}, cookies)
             log(f"登录[{attempt}] POST {r.status_code} 跳 "
                 f"{r.headers.get('location','')[:60]}")
