@@ -147,11 +147,65 @@ async def submit_form(tab, fields, token, label):
     return ""
 
 
+def css_text(html):
+    txt = re.sub(r"<script.*?</script>", " ", html, flags=re.S)
+    txt = re.sub(r"<style.*?</style>", " ", txt, flags=re.S)
+    txt = re.sub(r"<[^>]+>", " ", txt)
+    return re.sub(r"\s+", " ", txt).strip()
+
+
+def form_state(tab, fields):
+    """Fill the Laravel form in the page (values + turnstile) and collect the
+    hidden inputs, so the POST can be replayed over plain HTTP."""
+    payload = json.dumps(fields)
+    raw = js_value(await_js(tab, f"""
+        const f = {payload};
+        const missing = [];
+        for (const [k, v] of Object.entries(f)) {{
+            const el = document.querySelector(`[name="${{k}}"]`);
+            if (!el) {{ missing.push(k); continue; }}
+            if (el.type === 'checkbox') {{ el.checked = true; }}
+            else {{ el.value = v; }}
+            el.dispatchEvent(new Event('input', {{bubbles: true}}));
+            el.dispatchEvent(new Event('change', {{bubbles: true}}));
+        }}
+        const hidden = {{}};
+        document.querySelectorAll('form input[type=hidden]').forEach(e => {{
+            if (e.name) hidden[e.name] = e.value;
+        }});
+        const legal = document.querySelector('[name="legal_acceptance"]');
+        if (legal && !legal.checked) {{ legal.checked = true; }}
+        return JSON.stringify({{missing: missing, hidden: hidden,
+            token: (document.querySelector('[name="cf-turnstile-response"]')||{{}}).value || ''}});
+    """))
+    return json.loads(raw or "{}")
+
+
+async def await_js(tab, script):
+    return await tab.execute_script(script)
+
+
+def post_form(url, data, cookies):
+    s = requests.Session()
+    s.trust_env = False
+    for c in cookies:
+        s.cookies.set(c["name"], c["value"], domain=c.get("domain") or None,
+                      path=c.get("path") or "/")
+    r = s.post(url, data=data, allow_redirects=False, timeout=45,
+               headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+                                      "AppleWebKit/537.36 (KHTML, like Gecko) "
+                                      "Chrome/131.0.0.0 Safari/537.36",
+                        "Origin": "https://accounts.noprofit.space",
+                        "Referer": url})
+    return r, s
+
+
 async def signup():
     from pydoll.browser import Chrome
     from pydoll.browser.options import ChromiumOptions
 
     addr, pw = mailbox()
+    nick = "pl" + "".join(random.choices(string.ascii_lowercase, k=5))
 
     opts = ChromiumOptions()
     opts.headless = False
@@ -161,66 +215,90 @@ async def signup():
     if os.path.exists(CHROME):
         opts.binary_location = CHROME
 
-    nick = "pl" + "".join(random.choices(string.ascii_lowercase, k=5))
     cookie = ""
     async with Chrome(options=opts) as browser:
         tab = await browser.start()
 
         step("注册")
-        done = ""
+        acc = None
         for attempt in (1, 2):
             async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=90):
                 await tab.go_to("https://accounts.noprofit.space/register", timeout=120)
             await asyncio.sleep(2)
-            tok = await turnstile_token(tab)
-            if not tok:
-                bad(f"注册页 Turnstile 没出 token（第 {attempt} 次）")
-                continue
-            log(f"Turnstile token {len(tok)} 字符")
-            done = await submit_form(tab, {
+            state = form_state(tab, {
                 "name": nick, "email": addr, "password": pw,
-                "password_confirmation": pw, "legal_acceptance": "1"},
-                tok, f"注册[{attempt}]")
-            if done:
+                "password_confirmation": pw, "legal_acceptance": "1"})
+            await asyncio.sleep(0.5)
+            cookies = await tab.get_cookies()
+            hidden = state.get("hidden") or {}
+            token = (hidden.get("cf-turnstile-response") or state.get("token") or "")
+            log(f"注册[{attempt}] 字段缺 {state.get('missing')}｜隐藏 "
+                f"{sorted(hidden)}｜token {len(token)}")
+            if not token:
+                continue
+            data = {"_token": hidden.get("_token", ""), "name": nick, "email": addr,
+                    "password": pw, "password_confirmation": pw,
+                    "legal_acceptance": "1", "cf-turnstile-response": token}
+            r, s = post_form("https://accounts.noprofit.space/register", data, cookies)
+            log(f"注册[{attempt}] POST {r.status_code} 跳 "
+                f"{r.headers.get('location','')[:60]}")
+            if r.status_code in (301, 302, 303):
+                acc = s
                 break
-        if not done:
+            body = css_text(r.text)
+            hit = re.search(r"(The [a-z ]+ (?:field|must)[^.]{0,120}\.|"
+                            r"Security check failed[^.]{0,80}\.|already been taken[^.]{0,60}\.)",
+                            body, re.I)
+            bad(f"注册被拒：{hit.group(1)[:180] if hit else body[:180]}")
+        if acc is None:
             bad("注册没成功")
             return ""
 
         step("登录")
-        done = ""
         for attempt in (1, 2):
             async with tab.expect_cloudflare_turnstile(time_to_wait_captcha=90):
                 await tab.go_to("https://accounts.noprofit.space/login", timeout=120)
             await asyncio.sleep(2)
-            tok = await turnstile_token(tab)
-            if not tok:
-                bad(f"登录页 Turnstile 没出 token（第 {attempt} 次）")
+            state = form_state(tab, {"login": addr, "password": pw,
+                                     "legal_acceptance": "1"})
+            await asyncio.sleep(0.5)
+            hidden = state.get("hidden") or {}
+            token = (hidden.get("cf-turnstile-response") or state.get("token") or "")
+            log(f"登录[{attempt}] token {len(token)}")
+            if not token:
                 continue
-            done = await submit_form(tab, {"login": addr, "password": pw,
-                                           "legal_acceptance": "1"},
-                                     tok, f"登录[{attempt}]")
-            if done:
+            r, s2 = post_form("https://accounts.noprofit.space/login", {
+                "_token": hidden.get("_token", ""), "login": addr, "password": pw,
+                "legal_acceptance": "1", "cf-turnstile-response": token}, cookies)
+            log(f"登录[{attempt}] POST {r.status_code} 跳 "
+                f"{r.headers.get('location','')[:60]}")
+            if r.status_code in (301, 302, 303):
+                acc = s2
                 break
-        if not done:
-            bad("登录没成功")
-            return ""
+            body = css_text(r.text)
+            hit = re.search(r"(These credentials[^.]{0,80}\.|Security check failed[^.]{0,80}\.)",
+                            body, re.I)
+            bad(f"登录被拒：{hit.group(1)[:180] if hit else body[:180]}")
 
         step("SSO 进面板")
-        clicked = js_value(await tab.execute_script("""
-            const els = [...document.querySelectorAll('a,button,div,span')];
-            const hit = els.find(e => /plugged\\.host/i.test(e.innerText || ''));
-            if (hit) { hit.click(); return true; }
-            return false;
+        await tab.go_to("https://accounts.noprofit.space/dashboard", timeout=120)
+        await asyncio.sleep(3)
+        sso = js_value(await tab.execute_script("""
+            const a = [...document.querySelectorAll('a')]
+                .find(e => /plugged\\.host/i.test(e.innerText || '') && e.href);
+            return a ? a.href : '';
         """))
-        log(f"点击 plugged 入口 {clicked}")
-        for _ in range(30):
-            await asyncio.sleep(2)
+        log(f"SSO 链接 {'有' if sso else '没有'}")
+        if sso:
+            r = acc.get(sso, allow_redirects=True, timeout=45)
+            log(f"SSO 结束 {r.status_code} {r.url[:60]}")
+            for c in acc.cookies:
+                if c.name == "calagopus_session" and c.value:
+                    cookie = c.value
+        if not cookie:
             for c in await tab.get_cookies():
                 if c.get("name") == "calagopus_session" and c.get("value"):
                     cookie = c["value"]
-            if cookie:
-                break
         log(f"面板页 {str(await tab.current_url())[:70]}")
     return cookie
 
