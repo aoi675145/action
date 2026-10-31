@@ -29,6 +29,7 @@ T0 = time.time()
 CHROME = os.environ.get("CHROME_BIN", "/usr/bin/google-chrome")
 BATCH = int(os.environ.get("BATCH", "5"))
 ROUNDS = int(os.environ.get("ROUNDS", "2"))
+CONC = int(os.environ.get("CONC", "0")) or 0
 PROXY = os.environ.get("PROXY_URL", "")
 IMPERSONATE = "chrome131"
 UA_CH = {"b": "Chromium/131|Google Chrome/131|Not_A Brand/24", "p": "Windows", "m": 0}
@@ -524,7 +525,9 @@ def main():
             break
 
         t0 = time.monotonic()
-        with ThreadPoolExecutor(max_workers=len(urls)) as pool:
+        workers = min(CONC, len(urls)) if CONC else len(urls)
+        log(f"并发上限 {workers}")
+        with ThreadPoolExecutor(max_workers=workers) as pool:
             cleared = list(pool.map(lambda u: claim_http(u, PROXY), urls))
         claims = [(u, c, d) for u, (c, d) in zip(urls, cleared) if c]
         log(f"清链接 {len(claims)}/{len(urls)}（{time.monotonic() - t0:.1f}s）")
