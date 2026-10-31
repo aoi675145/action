@@ -29,8 +29,9 @@ jobs:
         env:
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
+          ts() { TZ=Asia/Shanghai date +%H:%M:%S; }
           if [ -z "${PROXY_URL}" ]; then
-            echo "[proxy] PROXY_URL 未配置，代理为必填"
+            echo "$(ts) │ ❌ PROXY_URL 未配置（代理为必填）"
             exit 1
           fi
 
@@ -157,14 +158,13 @@ jobs:
 
           nohup xray run -c xray-config.json > xray.log 2>&1 &
           sleep 2
-          xray version
-          sed -n '1,20p' xray.log || true
           if curl -fsS --max-time 15 --proxy "http://127.0.0.1:8080" https://api.ipify.org >/tmp/slime_proxy_ip; then
-            echo "[proxy] 代理可用"
+            MASKED=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$(cat /tmp/slime_proxy_ip)")
+            echo "$(ts) │ ✅ 代理可用（出口 $MASKED）"
             echo "PROXY_SOCKS5=http://127.0.0.1:8080" >> "$GITHUB_ENV"
           else
-            echo "[proxy] 代理不可用，停止运行"
-            cat xray.log
+            echo "$(ts) │ ❌ 代理不可用，停止运行"
+            sed -n '1,15p' xray.log
             exit 1
           fi
 
@@ -197,19 +197,20 @@ jobs:
           TG_BOT: ${{ secrets.TG_BOT }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
-          if [ -z "$TG_BOT" ]; then echo "未配置 TG_BOT，跳过"; exit 0; fi
+          ts() { TZ=Asia/Shanghai date +%H:%M:%S; }
+          if [ -z "$TG_BOT" ]; then echo "$(ts) │ · 未配置 TG_BOT，跳过失败通知"; exit 0; fi
           CHAT_ID="${TG_BOT%%,*}"
           BOT_TOKEN="${TG_BOT#*,}"
-          if [ -z "$CHAT_ID" ] || [ -z "$BOT_TOKEN" ]; then echo "TG_BOT 格式应为 chat_id,bot_token"; exit 0; fi
+          if [ -z "$CHAT_ID" ] || [ -z "$BOT_TOKEN" ]; then echo "$(ts) │ ⚠️ TG_BOT 格式应为 chat_id,bot_token"; exit 0; fi
           TEXT="❌ Slime 任务失败
           🕐 $(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
           🔗 $RUN_URL"
           if curl -s --max-time 15 -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
                -d chat_id="$CHAT_ID" -d disable_web_page_preview=true --data-urlencode text="$TEXT" \
                | grep -q '"ok":true'; then
-            echo "已推送失败通知"
+            echo "$(ts) │ ✅ 已推送失败通知"
           else
-            echo "失败通知推送失败（不影响任务结论）"
+            echo "$(ts) │ ⚠️ 失败通知推送失败（不影响任务结论）"
           fi
 
       - name: 🧹 清理运行记录
