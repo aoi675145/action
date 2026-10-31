@@ -22,6 +22,10 @@ on:
         description: '批次数'
         type: string
         default: '2'
+      conc:
+        description: '并发上限（0 = 全部并行）'
+        type: string
+        default: '0'
 
 permissions:
   actions: write
@@ -90,6 +94,7 @@ jobs:
           MODE: ${{ inputs.mode }}
           BATCH: ${{ inputs.batch }}
           ROUNDS: ${{ inputs.rounds }}
+          CONC: ${{ inputs.conc }}
           PROXY_URL: ${{ env.PROXY_URL }}
           PLUGGED_SRC: private-scripts/scripts/plugged/plugged.py
           PLUGGED_COOKIES: ${{ inputs.mode == 'token' && secrets.PLUGGED_COOKIES_NEW || '' }}
