@@ -124,10 +124,13 @@ jobs:
           RUN_DAY=$(date -u -d "$RUN_DATE" +"%-d")
           RUN_MONTH=$(date -u -d "$RUN_DATE" +"%-m")
 
-          # 固定北京时间 09:15 = UTC 01:15
-          NEW_CRON="15 1 $RUN_DAY $RUN_MONTH *"
+          # 每个工作流固定自己的时段，避免两个号同一分钟一起跑
+          CRON_MIN=15
+          CRON_UTC_HOUR=2
+          BH_HOUR=$(( (CRON_UTC_HOUR + 8) % 24 ))
+          NEW_CRON="$CRON_MIN $CRON_UTC_HOUR $RUN_DAY $RUN_MONTH *"
 
-          echo "::notice::⏰ 下次运行: $RUN_DATE 09:15 北京时间"
+          echo "::notice::⏰ 下次运行: $RUN_DATE $(printf '%02d' $BH_HOUR):$CRON_MIN 北京时间"
           echo "::notice::📟 新 Cron: $NEW_CRON"
 
           git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git workflow_repo
