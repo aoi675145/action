@@ -15,6 +15,7 @@ jobs:
   auto_renew_ryft:
     runs-on: ubuntu-22.04
 
+    timeout-minutes: 25
     steps:
       - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
@@ -32,15 +33,38 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 📦 安装系统与 Python 依赖
+      - name: 📦 修复 apt 源
         run: |
-          sudo apt-get update -qq
+          # runner 自带的 azure 镜像走 http，避开 apt https 方法里会卡死的 TLS select 路径；
+          # archive / security 做备用源。22.04 和 24.04 一律写成旧版 sources.list（apt 两边都认），
+          # 顺手清掉 ubuntu.sources 与 apt-mirrors.txt，否则 22.04 会报 "no longer has a Release file"。
+          . /etc/os-release
+          CODENAME="${VERSION_CODENAME:-noble}"
+          sudo rm -f /etc/apt/apt-mirrors.txt
+          sudo tee /etc/apt/sources.list > /dev/null <<EOF
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME} main restricted universe multiverse
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME}-updates main restricted universe multiverse
+          deb http://security.ubuntu.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
+          EOF
+          sudo rm -f /etc/apt/sources.list.d/*.sources
+          # apt 默认是"单次 read"超时，慢源会一直滴漏不触发，这里配小并加重试
+          sudo tee /etc/apt/apt.conf.d/99-timeouts > /dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "15";
+          Acquire::https::Timeout "15";
+          Acquire::http::Pipeline-Depth "0";
+          EOF
+
+      - name: 📦 安装系统与 Python 依赖
+        timeout-minutes: 10
+        run: |
+          timeout 120 sudo apt-get update -o Acquire::Retries=3 -qq
           # google-chrome-stable runner 自带，显式安装兜底；jq 是 setup_proxy.sh 的依赖；xdotool 兜底点击 Turnstile
-          sudo apt-get install -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool || {
+          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool || {
             sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
-            sudo apt-get install -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool
+            timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool
           }
-          pip install -q seleniumbase "requests[socks]" pyautogui
+          pip install -q seleniumbase "requests[socks]" pyautogui --retries 5 --timeout 60
           # uc_driver 由 SeleniumBase UC 模式自动匹配下载，无需固定版本；缺失依赖 ryft.py 也会自装
 
       - name: 🌐 设置代理 (sing-box)
