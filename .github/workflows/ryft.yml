@@ -61,7 +61,7 @@ jobs:
           timeout 120 sudo apt-get update -o Acquire::Retries=3 -qq
           # google-chrome-stable runner 自带，显式安装兜底；jq 是 setup_proxy.sh 的依赖；xdotool 兜底点击 Turnstile
           timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool || {
-            sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
+            timeout 120 sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
             timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool
           }
           pip install -q seleniumbase "requests[socks]" pyautogui --retries 5 --timeout 60
