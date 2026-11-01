@@ -1,0 +1,18 @@
+name: proxy probe (temp)
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          path: scripts_repo
+          token: ${{ secrets.REPO_TOKEN }}
+      - name: empty node -> direct mode
+        run: |
+          NODE_LINK="" bash scripts_repo/scripts/setup_proxy.sh
+          echo "IS_PROXY=$IS_PROXY"
+          test "${IS_PROXY}" = "false" && echo PROXY_EMPTY_OK
