@@ -65,6 +65,7 @@ jobs:
           seleniumbase install chromium
 
       - name: 🌐 设置代理 (sing-box)
+        timeout-minutes: 10
         env:
           Ori_PROXY: ${{ secrets.Ori_PROXY }}
         run: |
