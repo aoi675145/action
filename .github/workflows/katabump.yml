@@ -62,7 +62,7 @@ jobs:
             echo "Xvfb already installed, skipping apt install."
           else
             timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends xvfb || {
-              sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
+              timeout 120 sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
               timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends xvfb
             }
           fi
