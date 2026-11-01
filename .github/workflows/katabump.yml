@@ -14,6 +14,7 @@ jobs:
   auto_renew_katabump:
     runs-on: ubuntu-22.04
     
+    timeout-minutes: 25
     steps:
       - name: 📥 拉取私库脚本
         uses: actions/checkout@v4
@@ -29,17 +30,40 @@ jobs:
           cache: 'pip'
           cache-dependency-path: scripts/katabump/requirements.txt
 
+      - name: 📦 修复 apt 源
+        run: |
+          # runner 自带的 azure 镜像走 http，避开 apt https 方法里会卡死的 TLS select 路径；
+          # archive / security 做备用源。22.04 和 24.04 一律写成旧版 sources.list（apt 两边都认），
+          # 顺手清掉 ubuntu.sources 与 apt-mirrors.txt，否则 22.04 会报 "no longer has a Release file"。
+          . /etc/os-release
+          CODENAME="${VERSION_CODENAME:-noble}"
+          sudo rm -f /etc/apt/apt-mirrors.txt
+          sudo tee /etc/apt/sources.list > /dev/null <<EOF
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME} main restricted universe multiverse
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME}-updates main restricted universe multiverse
+          deb http://security.ubuntu.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
+          EOF
+          sudo rm -f /etc/apt/sources.list.d/*.sources
+          # apt 默认是"单次 read"超时，慢源会一直滴漏不触发，这里配小并加重试
+          sudo tee /etc/apt/apt.conf.d/99-timeouts > /dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "15";
+          Acquire::https::Timeout "15";
+          Acquire::http::Pipeline-Depth "0";
+          EOF
+
       - name: 📦 安装依赖
+        timeout-minutes: 10
         run: |
           # 进入私库中对应的目录安装依赖
           cd scripts/katabump
-          pip install -r requirements.txt
+          pip install -r requirements.txt --retries 5 --timeout 60
           if command -v Xvfb >/dev/null 2>&1; then
             echo "Xvfb already installed, skipping apt install."
           else
-            sudo apt-get install -y --no-install-recommends xvfb || {
+            timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends xvfb || {
               sudo apt-get update -o Acquire::Retries=1 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
-              sudo apt-get install -y --no-install-recommends xvfb
+              timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends xvfb
             }
           fi
           
