@@ -25,7 +25,30 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: 📦 修复 apt 源
+        run: |
+          # runner 自带的 azure 镜像走 http，避开 apt https 方法里会卡死的 TLS select 路径；
+          # archive / security 做备用源。22.04 和 24.04 一律写成旧版 sources.list（apt 两边都认），
+          # 顺手清掉 ubuntu.sources 与 apt-mirrors.txt，否则 22.04 会报 "no longer has a Release file"。
+          . /etc/os-release
+          CODENAME="${VERSION_CODENAME:-noble}"
+          sudo rm -f /etc/apt/apt-mirrors.txt
+          sudo tee /etc/apt/sources.list > /dev/null <<EOF
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME} main restricted universe multiverse
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME}-updates main restricted universe multiverse
+          deb http://security.ubuntu.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
+          EOF
+          sudo rm -f /etc/apt/sources.list.d/*.sources
+          # apt 默认是"单次 read"超时，慢源会一直滴漏不触发，这里配小并加重试
+          sudo tee /etc/apt/apt.conf.d/99-timeouts > /dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "15";
+          Acquire::https::Timeout "15";
+          Acquire::http::Pipeline-Depth "0";
+          EOF
+
       - name: 📦 安装依赖
+        timeout-minutes: 10
         run: |
           # 全部加重试/超时：站点维护期间 runner 拉包也偶发卡死，不能让一步挂满 60 分钟
           pip install --timeout 20 --retries 3 httpx seleniumbase pyautogui
@@ -36,13 +59,13 @@ jobs:
           sudo pkill -f unattended-upgrade 2>/dev/null || true
 
           # xserver.ne.jp 是日文站，只需日文字体：vlgothic 2.3MB（noto-cjk 是 58MB 四语合集）
-          sudo apt-get install -y --no-install-recommends \
+          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends \
             -o DPkg::Lock::Timeout=120 \
             -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 -o Acquire::Retries=3 \
             xvfb xdotool fonts-vlgothic
           wget -q --timeout=30 --tries=3 -O /tmp/google-chrome-stable_current_amd64.deb \
             https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-          sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || sudo apt-get install -f -y -qq
+          sudo dpkg -i /tmp/google-chrome-stable_current_amd64.deb || timeout 300 sudo apt-get install -o Acquire::Retries=3 -f -y -qq
           python -m seleniumbase get uc_driver || true
 
       - name: 🌐 配置代理节点 (sing-box)
