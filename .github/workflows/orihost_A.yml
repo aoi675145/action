@@ -2,7 +2,7 @@ name: OriHost 续期 (A)
 on:
   workflow_dispatch:
   schedule:
-    - cron: '15 1 18 11 *'   # 自动更新下次运行时间
+    - cron: '15 2 18 11 *'   # 自动更新下次运行时间
 
 permissions:
   contents: write
