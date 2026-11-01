@@ -46,7 +46,8 @@ jobs:
           Acquire::https::Timeout "15";
           Acquire::http::Pipeline-Depth "0";
           EOF
-
+          # 修完源必须刷新索引：否则后面的 apt-get install 会报 Unable to locate package
+          timeout 120 sudo apt-get update -qq || timeout 240 sudo apt-get update -qq
       - name: 📦 安装依赖
         timeout-minutes: 10
         run: |
