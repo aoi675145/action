@@ -37,10 +37,33 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: 📦 修复 apt 源
+        run: |
+          # runner 自带的 azure 镜像走 http，避开 apt https 方法里会卡死的 TLS select 路径；
+          # archive / security 做备用源。22.04 和 24.04 一律写成旧版 sources.list（apt 两边都认），
+          # 顺手清掉 ubuntu.sources 与 apt-mirrors.txt，否则 22.04 会报 "no longer has a Release file"。
+          . /etc/os-release
+          CODENAME="${VERSION_CODENAME:-noble}"
+          sudo rm -f /etc/apt/apt-mirrors.txt
+          sudo tee /etc/apt/sources.list > /dev/null <<EOF
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME} main restricted universe multiverse
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME}-updates main restricted universe multiverse
+          deb http://security.ubuntu.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
+          EOF
+          sudo rm -f /etc/apt/sources.list.d/*.sources
+          # apt 默认是"单次 read"超时，慢源会一直滴漏不触发，这里配小并加重试
+          sudo tee /etc/apt/apt.conf.d/99-timeouts > /dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "15";
+          Acquire::https::Timeout "15";
+          Acquire::http::Pipeline-Depth "0";
+          EOF
+
       - name: 📦 安装系统依赖
+        timeout-minutes: 10
         run: |
           sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get install -y xvfb
+          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y xvfb
 
       - name: 📦 安装 Python 依赖
         run: pip install pydoll-python requests
