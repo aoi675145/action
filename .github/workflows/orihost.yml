@@ -69,8 +69,6 @@ jobs:
         env:
           Ori_PROXY: ${{ secrets.Ori_PROXY }}
         run: |
-          # 代理逻辑统一走私库的公用脚本（节点解析 + sing-box 启动 + 连通性探测 + 脱敏诊断）
-          # 脚本会往 GITHUB_ENV 写 PROXY_SERVER=socks5://127.0.0.1:1080（未配置节点时写 IS_PROXY=false，直连）
           NODE_LINK="$Ori_PROXY" bash scripts_repo/scripts/setup_proxy.sh
 
       - name: 🚫 屏蔽广告域名
