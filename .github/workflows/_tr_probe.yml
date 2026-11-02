@@ -7,13 +7,29 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
+      - uses: actions/checkout@v4
+        with:
+          path: self
       - uses: actions/setup-python@v5
         with:
           python-version: '3.10'
+      - name: proxy
+        env:
+          TRANGER_PROXY: ${{ secrets.TRANGER_PROXY }}
+        run: NODE_LINK="$TRANGER_PROXY" bash private-repo/scripts/setup_proxy.sh
       - name: probe
         env:
           TRANGER_AUTH: ${{ secrets.TRANGER_AUTH }}
           TRANGER_REFRESH_TOKEN: ${{ secrets.TRANGER_REFRESH_TOKEN }}
+          IS_PROXY: ${{ env.IS_PROXY }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
         run: |
-          pip install -q requests
-          python3 _tr_probe.py
+          pip install -q 'requests[socks]'
+          python3 self/_tr_probe.py
