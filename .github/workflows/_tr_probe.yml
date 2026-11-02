@@ -1,0 +1,19 @@
+name: tranger probe (temp)
+on:
+  workflow_dispatch:
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+      - name: probe
+        env:
+          TRANGER_AUTH: ${{ secrets.TRANGER_AUTH }}
+          TRANGER_REFRESH_TOKEN: ${{ secrets.TRANGER_REFRESH_TOKEN }}
+        run: |
+          pip install -q requests
+          python3 _tr_probe.py
