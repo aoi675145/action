@@ -50,7 +50,7 @@ jobs:
             echo "[ERROR] 代理未就绪（setup_proxy.sh 未输出 PROXY_SERVER）"
             exit 1
           fi
-          xvfb-run -a --server-args="-screen 0 1280x920x24" python3 scripts/hokas/main.py
+          xvfb-run -a --server-args="-screen 0 1280x920x24" python3 scripts/hokas/hokas.py
 
       - name: ⏰ 修改 cron
         if: always()
