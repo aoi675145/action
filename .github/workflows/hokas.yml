@@ -1,0 +1,112 @@
+name: HOKAS 续期
+
+on:
+  workflow_dispatch:
+  schedule:
+    # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC = 到期前 5 小时）
+    - cron: '0 8 4 11 *'
+
+permissions:
+  actions: write
+
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: 📥 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 🐍 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          pip install --quiet "requests[socks]" pydoll-python
+
+      - name: 🛡️ 设置代理 (sing-box)
+        env:
+          NODE_LINK: ${{ secrets.HOKAS_PROXY_NODE }}
+        run: bash scripts/setup_proxy.sh
+
+      - name: 🚀 运行续期脚本
+        id: run_script
+        env:
+          HOKAS_ACCOUNT: ${{ secrets.HOKAS_ACCOUNT }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+        run: |
+          if [ -z "$PROXY_SERVER" ]; then
+            echo "[ERROR] 代理未就绪（setup_proxy.sh 未输出 PROXY_SERVER）"
+            exit 1
+          fi
+          xvfb-run -a --server-args="-screen 0 1280x920x24" python3 scripts/hokas/main.py
+
+      - name: ⏰ 修改 cron
+        if: always()
+        run: |
+          if [ ! -f next_run.txt ]; then
+            echo "[WARN] next_run.txt 不存在，跳过 cron 更新"
+            exit 0
+          fi
+          next_cron=$(tr -d '\n\r' < next_run.txt)
+          echo "[INFO] 下次 cron: $next_cron"
+          git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
+          python3 - <<'PYEOF'
+          import re, sys
+          from pathlib import Path
+
+          cron = Path("next_run.txt").read_text(encoding="utf-8").strip()
+          if not re.fullmatch(r"\d{1,2} \d{1,2} \d{1,2} \d{1,2} \*", cron):
+              sys.exit(f"[ERROR] next_run.txt 内容异常: {cron!r}")
+          path = Path("cron_repo/.github/workflows/hokas.yml")
+          src = path.read_text(encoding="utf-8")
+          new, n = re.subn(r"- cron: .*", f"- cron: '{cron}'", src, count=1)
+          if n != 1:
+              sys.exit("[ERROR] 未找到 cron 行，未做修改")
+          path.write_text(new, encoding="utf-8")
+          print(f"[INFO] ✅ cron 已更新: {cron}")
+          PYEOF
+          cd cron_repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .github/workflows/hokas.yml
+          read -r _MM _HH _DD _MO _ <<< "$next_cron"
+          _TS=$(date -u -d "$(date -u +%Y)-$_MO-$_DD $_HH:$_MM" +%s 2>/dev/null || echo 0)
+          if [ "$_TS" -lt "$(date -u +%s)" ]; then _TS=$(date -u -d "$(( $(date -u +%Y) + 1 ))-$_MO-$_DD $_HH:$_MM" +%s); fi
+          NEXT_LABEL=$(date -u -d "@$_TS" '+%Y-%m-%d %H:%M UTC')
+          git diff --cached --quiet || (git commit -m "🔄 下次运行: $NEXT_LABEL" -m "Cron: $next_cron" && git push)
+
+      - name: 🧹 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
+
+      - name: ❌ 失败通知（前置步骤）
+        if: failure() && steps.run_script.conclusion != 'failure'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+            echo "[SKIP] 未配置 TG_BOT_TOKEN / TG_CHAT_ID"
+            exit 0
+          fi
+          MSG="❌ ${GITHUB_WORKFLOW} 失败（脚本未运行）%0A任务: ${GITHUB_JOB}%0A仓库: ${GITHUB_REPOSITORY}%0A运行页: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT_ID}" --data-urlencode "text=${MSG}" || true
