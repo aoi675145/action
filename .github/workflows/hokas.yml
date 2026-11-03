@@ -13,10 +13,8 @@ on:
     - cron: '35 20 3 11 *'
 
 env:
-  # 临时开关：定时触发也强制续期。2026-11-04 04:35（北京）那次要跑通完整链路，
-  # 而 schedule 事件传不了 workflow_dispatch 的 inputs，只能用这个变量兜底。
-  # 跑通后把这里改回空字符串，避免以后每 6 小时都把剩余时间往上顶。
-  SCHEDULE_FORCE: '1'
+  # 定时触发不强制续期；需要跑完整链路时手动 Run workflow 并勾 force。
+  SCHEDULE_FORCE: ''
 
 permissions:
   actions: write
