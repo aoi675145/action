@@ -9,7 +9,7 @@ on:
         default: false
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC = 到期前 5 小时）
-    - cron: '44 15 3 11 *'
+    - cron: '51 15 3 11 *'
 
 permissions:
   actions: write
