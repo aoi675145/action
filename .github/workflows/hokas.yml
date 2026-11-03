@@ -66,7 +66,6 @@ jobs:
             exit 0
           fi
           next_cron=$(tr -d '\n\r' < next_run.txt)
-          echo "[INFO] 下次 cron: $next_cron"
           git clone https://x-access-token:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git cron_repo
           python3 - <<'PYEOF'
           import re, sys
@@ -91,6 +90,8 @@ jobs:
           _TS=$(date -u -d "$(date -u +%Y)-$_MO-$_DD $_HH:$_MM" +%s 2>/dev/null || echo 0)
           if [ "$_TS" -lt "$(date -u +%s)" ]; then _TS=$(date -u -d "$(( $(date -u +%Y) + 1 ))-$_MO-$_DD $_HH:$_MM" +%s); fi
           NEXT_LABEL=$(date -u -d "@$_TS" '+%Y-%m-%d %H:%M UTC')
+          NEXT_BJ=$(date -u -d "@$((_TS+28800))" '+%Y-%m-%d %H:%M')
+          echo "[INFO] 下次运行: $NEXT_BJ 北京时间 / $NEXT_LABEL"
           git diff --cached --quiet || (git commit -m "🔄 下次运行: $NEXT_LABEL" -m "Cron: $next_cron" && git push)
 
       - name: 🧹 清理运行记录
