@@ -12,6 +12,12 @@ on:
     # 本次手动排期：2026-11-04 04:35 北京 / 2026-11-03 20:35 UTC（24h 选项解锁 20:32 后 3 分钟）
     - cron: '35 20 3 11 *'
 
+env:
+  # 临时开关：定时触发也强制续期。2026-11-04 04:35（北京）那次要跑通完整链路，
+  # 而 schedule 事件传不了 workflow_dispatch 的 inputs，只能用这个变量兜底。
+  # 跑通后把这里改回空字符串，避免以后每 6 小时都把剩余时间往上顶。
+  SCHEDULE_FORCE: '1'
+
 permissions:
   actions: write
 
@@ -51,7 +57,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
-          FORCE_RENEW: ${{ inputs.force }}
+          FORCE_RENEW: ${{ inputs.force || env.SCHEDULE_FORCE }}
         run: |
           if [ -z "$PROXY_SERVER" ]; then
             echo "[ERROR] 代理未就绪（setup_proxy.sh 未输出 PROXY_SERVER）"
