@@ -56,6 +56,8 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
           FORCE_RENEW: ${{ inputs.force || env.SCHEDULE_FORCE }}
+          # 失败时把截图/诊断提交到私库 scripts/hokas/debug/<时间戳>/
+          DEBUG_UPLOAD_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           if [ -z "$PROXY_SERVER" ]; then
             echo "[ERROR] 代理未就绪（setup_proxy.sh 未输出 PROXY_SERVER）"
