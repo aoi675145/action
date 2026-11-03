@@ -2,6 +2,11 @@ name: HOKAS 续期
 
 on:
   workflow_dispatch:
+    inputs:
+      force:
+        description: '强制续期（忽略剩余 5 小时阈值，跑完整链路）'
+        type: boolean
+        default: false
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC = 到期前 5 小时）
     - cron: '36 18 4 11 *'
@@ -45,6 +50,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
+          FORCE_RENEW: ${{ inputs.force }}
         run: |
           if [ -z "$PROXY_SERVER" ]; then
             echo "[ERROR] 代理未就绪（setup_proxy.sh 未输出 PROXY_SERVER）"
