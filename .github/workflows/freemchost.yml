@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   schedule:
     # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC = 到期前 46 小时）
-    - cron: '1 23 27 10 *'
+    - cron: '55 16 3 11 *'
 
 permissions:
   actions: write
@@ -27,143 +27,12 @@ jobs:
           python-version: '3.11'
 
       - name: 📦 安装依赖
-        run: pip install --quiet requests
+        run: pip install --quiet "requests[socks]"
 
-      - name: 🌐 安装并启动代理
+      - name: 🛡️ 设置代理 (sing-box)
         env:
-          FREEMCHOST_PROXY_NODE: ${{ secrets.FREEMCHOST_PROXY_NODE }}
-        run: |
-          if [ -z "$FREEMCHOST_PROXY_NODE" ]; then
-            echo "[ERROR] 未配置代理变量 FREEMCHOST_PROXY_NODE"
-            exit 1
-          fi
-
-          wget -q https://github.com/akina005/akina/releases/download/proxy/Xray-linux-64.zip
-          mkdir -p xray-bin
-          unzip -oq Xray-linux-64.zip -d xray-bin
-          chmod +x xray-bin/xray
-          sudo mv xray-bin/xray /usr/local/bin/xray
-
-          python3 << 'PYEOF'
-          import os, sys, json, base64
-          from urllib.parse import parse_qs, unquote
-
-          def mask(s): return f"{s[:2]}***{s[-2:]}" if len(s) > 4 else "****"
-
-          url = os.environ.get("FREEMCHOST_PROXY_NODE", "").strip()
-          if not url:
-            print("[ERROR] FREEMCHOST_PROXY_NODE 为空")
-            sys.exit(1)
-
-          if url.startswith("vless://"): protocol, content = "vless", url[8:]
-          elif url.startswith("vmess://"): protocol, content = "vmess", url[8:]
-          elif url.startswith("trojan://"): protocol, content = "trojan", url[9:]
-          elif url.startswith("ss://"): protocol, content = "ss", url[5:]
-          elif url.startswith("socks5://") or url.startswith("socks://"):
-            print("[INFO] SOCKS5 直用")
-            with open("/tmp/freemchost_proxy", "w") as f:
-              f.write(url.split("#")[0])
-            sys.exit(0)
-          else:
-            print(f"[ERROR] 不支持的协议: {url.split('://')[0]}")
-            sys.exit(1)
-
-          if "#" in content: content = content.rsplit("#", 1)[0]
-
-          config = {
-            "log": {"loglevel": "warning"},
-            "inbounds": [
-              {"port": 1080, "listen": "127.0.0.1", "protocol": "socks", "settings": {"udp": True}},
-              {"port": 1081, "listen": "127.0.0.1", "protocol": "http"}
-            ],
-            "outbounds": []
-          }
-
-          if protocol == "vless":
-            uuid, rest = content.split("@", 1)
-            host_port, params_str = rest.split("?", 1) if "?" in rest else (rest, "")
-            address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
-            params = parse_qs(params_str)
-            security = params.get("security", ["none"])[0]
-            network = params.get("type", ["tcp"])[0]
-            sni = params.get("sni", [address])[0]
-            fp = params.get("fp", ["chrome"])[0]
-            flow = params.get("flow", [""])[0]
-            pbk = params.get("pbk", [""])[0]
-            host = params.get("host", [sni])[0]
-            path = unquote(params.get("path", ["/"])[0])
-            print(f"[INFO] VLESS -> {mask(address)}:{port} ({security}/{network})")
-            outbound = {"protocol": "vless", "settings": {"vnext": [{"address": address, "port": int(port), "users": [{"id": uuid, "encryption": "none"}]}]}, "streamSettings": {"network": network, "security": security}}
-            if flow: outbound["settings"]["vnext"][0]["users"][0]["flow"] = flow
-            if security == "reality": outbound["streamSettings"]["realitySettings"] = {"serverName": sni, "fingerprint": fp, "publicKey": pbk}
-            elif security == "tls": outbound["streamSettings"]["tlsSettings"] = {"serverName": sni, "fingerprint": fp, "allowInsecure": False}
-            if network == "ws": outbound["streamSettings"]["wsSettings"] = {"path": path, "headers": {"Host": host}}
-            elif network == "grpc": outbound["streamSettings"]["grpcSettings"] = {"serviceName": params.get("serviceName", [""])[0]}
-            config["outbounds"].append(outbound)
-
-          elif protocol == "vmess":
-            try:
-              padding = 4 - len(content) % 4
-              if padding != 4: content += "=" * padding
-              vm = json.loads(base64.b64decode(content).decode("utf-8"))
-            except Exception as e:
-              print(f"[ERROR] VMess 解析失败: {e}"); sys.exit(1)
-            address, port, uuid = vm.get("add", ""), int(vm.get("port", 443)), vm.get("id", "")
-            network, tls = vm.get("net", "tcp"), vm.get("tls", "")
-            sni, host, path, fp = vm.get("sni", "") or vm.get("host", address), vm.get("host", address), vm.get("path", "/"), vm.get("fp", "chrome")
-            print(f"[INFO] VMess -> {mask(address)}:{port} ({network}/{tls})")
-            outbound = {"protocol": "vmess", "settings": {"vnext": [{"address": address, "port": port, "users": [{"id": uuid, "alterId": int(vm.get("aid", 0)), "security": "auto"}]}]}, "streamSettings": {"network": network, "security": "tls" if tls == "tls" else "none"}}
-            if tls == "tls": outbound["streamSettings"]["tlsSettings"] = {"serverName": sni, "fingerprint": fp, "allowInsecure": False}
-            if network == "ws": outbound["streamSettings"]["wsSettings"] = {"path": path, "headers": {"Host": host}}
-            config["outbounds"].append(outbound)
-
-          elif protocol == "trojan":
-            password, rest = content.split("@", 1)
-            host_port, params_str = rest.split("?", 1) if "?" in rest else (rest, "")
-            address, port = host_port.rsplit(":", 1) if ":" in host_port else (host_port, "443")
-            params = parse_qs(params_str)
-            sni, network, host, path, fp = params.get("sni", [address])[0], params.get("type", ["tcp"])[0], params.get("host", [address])[0], unquote(params.get("path", ["/"])[0]), params.get("fp", ["chrome"])[0]
-            print(f"[INFO] Trojan -> {mask(address)}:{port} ({network})")
-            outbound = {"protocol": "trojan", "settings": {"servers": [{"address": address, "port": int(port), "password": password}]}, "streamSettings": {"network": network, "security": "tls", "tlsSettings": {"serverName": sni, "fingerprint": fp, "allowInsecure": False}}}
-            if network == "ws": outbound["streamSettings"]["wsSettings"] = {"path": path, "headers": {"Host": host}}
-            config["outbounds"].append(outbound)
-
-          elif protocol == "ss":
-            try:
-              if "@" in content:
-                encoded, server_part = content.split("@", 1)
-                method, password = base64.b64decode(encoded + "==").decode("utf-8").split(":", 1)
-                address, port = server_part.split(":", 1)
-              else:
-                decoded = base64.b64decode(content + "==").decode("utf-8")
-                if "@" in decoded:
-                  method, password = decoded.split("@", 0)[0].split(":", 1)
-                  address, port = decoded.split("@", 0)[1].split(":", 1)
-                else: raise ValueError
-            except: print("[ERROR] Shadowsocks 解析失败"); sys.exit(1)
-            print(f"[INFO] Shadowsocks -> {mask(address)}:{port}")
-            config["outbounds"].append({"protocol": "shadowsocks", "settings": {"servers": [{"address": address, "port": int(port), "method": method, "password": password}]}})
-
-          with open("xray_config.json", "w") as f: json.dump(config, f, indent=2)
-          print("[INFO] 代理配置已生成")
-          PYEOF
-
-          xray run -c xray_config.json > xray.log 2>&1 &
-          sleep 5
-
-          echo "[INFO] 测试代理连接..."
-          for i in 1 2 3 4 5; do
-            if curl -x socks5://127.0.0.1:1080 -s --max-time 15 https://api.ipify.org > /dev/null 2>&1; then
-              echo "[INFO] 代理连接成功"
-              echo "http://127.0.0.1:1081" > /tmp/freemchost_proxy
-              exit 0
-            fi
-            sleep 3
-          done
-
-          echo "[ERROR] 代理连接失败"
-          cat xray.log
-          exit 1
+          NODE_LINK: ${{ secrets.FREEMCHOST_PROXY_NODE }}
+        run: bash scripts/setup_proxy.sh
 
       - name: 🚀 运行续期脚本
         id: run_script
@@ -171,12 +40,14 @@ jobs:
           FREEMCHOST: ${{ secrets.FREEMCHOST }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          FREEMCHOST_SERVERS_ID: ${{ secrets.FREEMCHOST_SERVERS_ID }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
         run: |
-          if [ -f /tmp/freemchost_proxy ]; then
-            export FREEMCHOST_PROXY_NODE=$(cat /tmp/freemchost_proxy)
-            echo "[INFO] 使用代理: 已启用"
+          if [ -z "$PROXY_SERVER" ]; then
+            echo "[ERROR] 代理未就绪（setup_proxy.sh 未输出 PROXY_SERVER）"
+            exit 1
           fi
+          export FREEMCHOST_PROXY_NODE="$PROXY_SERVER"
+          echo "[INFO] 使用代理: 已启用"
           python3 scripts/freemchost/main.py
 
       - name: ⏰ 修改 cron
