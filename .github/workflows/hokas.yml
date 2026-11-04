@@ -4,13 +4,12 @@ on:
   workflow_dispatch:
     inputs:
       force:
-        description: '强制续期（忽略剩余 5 小时阈值，跑完整链路）'
+        description: '强制续期（跳过剩余时间判断，跑完整链路）'
         type: boolean
         default: false
   schedule:
-    # 自动更新：每次运行后脚本写入 next_run.txt，本行被改为下次续期时间（UTC = 到期前 5 小时）
-    # 本次手动排期：2026-11-04 04:35 北京 / 2026-11-03 20:35 UTC（24h 选项解锁 20:32 后 3 分钟）
-    - cron: '9 7 5 11 *'
+    # 自动维护：脚本每次运行后写入 next_run.txt，本行会被改成下一次的触发时间（UTC）
+    - cron: '9 4 5 11 *'
 
 env:
   # 定时触发不强制续期；需要跑完整链路时手动 Run workflow 并勾 force。
@@ -56,8 +55,6 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
           FORCE_RENEW: ${{ inputs.force || env.SCHEDULE_FORCE }}
-          # 失败时把截图/诊断提交到私库 scripts/hokas/debug/<时间戳>/
-          DEBUG_UPLOAD_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
           if [ -z "$PROXY_SERVER" ]; then
             echo "[ERROR] 代理未就绪（setup_proxy.sh 未输出 PROXY_SERVER）"
@@ -87,7 +84,7 @@ jobs:
           if n != 1:
               sys.exit("[ERROR] 未找到 cron 行，未做修改")
           path.write_text(new, encoding="utf-8")
-          print(f"[INFO] ✅ cron 已更新: {cron}")
+          print("[INFO] ✅ 调度已更新")
           PYEOF
           cd cron_repo
           git config user.name "github-actions[bot]"
@@ -96,10 +93,9 @@ jobs:
           read -r _MM _HH _DD _MO _ <<< "$next_cron"
           _TS=$(date -u -d "$(date -u +%Y)-$_MO-$_DD $_HH:$_MM" +%s 2>/dev/null || echo 0)
           if [ "$_TS" -lt "$(date -u +%s)" ]; then _TS=$(date -u -d "$(( $(date -u +%Y) + 1 ))-$_MO-$_DD $_HH:$_MM" +%s); fi
-          NEXT_LABEL=$(date -u -d "@$_TS" '+%Y-%m-%d %H:%M UTC')
           NEXT_BJ=$(date -u -d "@$((_TS+28800))" '+%Y-%m-%d %H:%M')
-          echo "[INFO] 下次运行: $NEXT_BJ 北京时间 / $NEXT_LABEL"
-          git diff --cached --quiet || (git commit -m "🔄 下次运行: $NEXT_LABEL" -m "Cron: $next_cron" && git push)
+          echo "[INFO] 🔗 下次：$NEXT_BJ"
+          git diff --cached --quiet || (git commit -m "🔄 下次运行: $NEXT_BJ 北京时间" && git push)
 
       - name: 🧹 清理运行记录
         if: always()
