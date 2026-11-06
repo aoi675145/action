@@ -29,6 +29,16 @@ jobs:
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
+      - name: 📥 拉取工作流仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/action
+          token: ${{ secrets.REPO_TOKEN }}
+          path: action_repo
+          sparse-checkout: |
+            .github/workflows/hostrix.yml
+          sparse-checkout-cone-mode: false
+
       - name: 🐍 安装 Python
         uses: actions/setup-python@v5
         with:
@@ -48,9 +58,8 @@ jobs:
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
+          HOSTRIX: ${{ secrets.HOSTRIX }}
           HOSTRIX_SERVER_ID: ${{ vars.HOSTRIX_SERVER_ID }}
-          HOSTRIX_USER: ${{ secrets.HOSTRIX_USER }}
-          HOSTRIX_PASSWORD: ${{ secrets.HOSTRIX_PASSWORD }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           IS_PROXY: ${{ env.IS_PROXY }}
@@ -72,6 +81,24 @@ jobs:
           curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
             -d chat_id="${TG_CHAT_ID}" \
             --data-urlencode "text=${MSG}"
+
+      - name: ⏰ 修改 cron
+        if: always()
+        run: |
+          NEXT_FILE=private-repo/scripts/hostrix/next_run.txt
+          if [ ! -f "$NEXT_FILE" ]; then
+            echo "next_run.txt 不存在，跳过 cron 更新"
+            exit 0
+          fi
+          next_cron=$(tr -d '\n\r' < "$NEXT_FILE")
+          echo "cron: $next_cron"
+          git -C action_repo fetch origin
+          git -C action_repo reset --hard origin/main
+          sed -i "s/- cron: \".*\"/- cron: \"$next_cron\"/" action_repo/.github/workflows/hostrix.yml
+          git -C action_repo config user.name "github-actions[bot]"
+          git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C action_repo add .github/workflows/hostrix.yml
+          git -C action_repo diff --cached --quiet || (git -C action_repo commit -m "auto: cron $next_cron" && git -C action_repo push --quiet && echo "✅ Cron 已更新")
 
       - name: 🍪 回写会话与状态到私库
         if: always()
