@@ -114,7 +114,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           changed=0
-          for f in scripts/torchlite/cookies.txt scripts/torchlite/state.json; do
+          for f in scripts/torchlite/cookies.txt; do
             if [ -f "$f" ] && ! git diff --quiet -- "$f"; then
               git add "$f"
               changed=1
@@ -123,7 +123,7 @@ jobs:
           if [ "$changed" = "1" ]; then
             git commit -m "chore(torchlite): 自动回写会话与状态"
             git push
-            echo "🍪 cookies.txt / state.json 已更新并推送"
+            echo "🍪 cookies.txt 已更新并推送"
           else
             echo "🍪 无变化，跳过提交"
           fi
