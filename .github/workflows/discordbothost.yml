@@ -67,7 +67,6 @@ jobs:
           PYTHONIOENCODING: utf-8
           DISCORDBOTHOST_COOKIES: ${{ secrets.DISCORDBOTHOST_COOKIES }}
           DISCORDBOTHOST_TOKEN: ${{ secrets.DISCORDBOTHOST_TOKEN }}
-          DISCORDBOTHOST_BOT_ID: ${{ vars.DISCORDBOTHOST_BOT_ID }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           IS_PROXY: ${{ env.IS_PROXY }}
