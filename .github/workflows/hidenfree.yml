@@ -54,8 +54,13 @@ jobs:
       - name: ⚙ 设置代理 (sing-box)
         env:
           # 专用 secret 没建之前回落到已有的 HIDEN_PROXY_NODE
-          HIDENFREE_PROXY_NODE: ${{ secrets.HIDENFREE_PROXY_NODE || secrets.HIDEN_PROXY_NODE }}
-        run: NODE_LINK="$HIDENFREE_PROXY_NODE" bash private-repo/scripts/setup_proxy.sh
+          HIDENFREE_PROXY: ${{ secrets.HIDENFREE_PROXY || secrets.HIDEN_PROXY_NODE }}
+        run: |
+          if [ -z "$HIDENFREE_PROXY" ]; then
+            echo "::error::HIDENFREE_PROXY 未配置（必填，本脚本必须走代理）"
+            exit 1
+          fi
+          NODE_LINK="$HIDENFREE_PROXY" bash private-repo/scripts/setup_proxy.sh
 
       - name: 🚀 运行续期脚本
         id: run_renew
