@@ -53,8 +53,7 @@ jobs:
 
       - name: ⚙ 设置代理 (sing-box)
         env:
-          # 专用 secret 没建之前回落到已有的 HIDEN_PROXY_NODE
-          HIDENFREE_PROXY: ${{ secrets.HIDENFREE_PROXY || secrets.HIDEN_PROXY_NODE }}
+          HIDENFREE_PROXY: ${{ secrets.HIDENFREE_PROXY }}
         run: |
           if [ -z "$HIDENFREE_PROXY" ]; then
             echo "::error::HIDENFREE_PROXY 未配置（必填，本脚本必须走代理）"
