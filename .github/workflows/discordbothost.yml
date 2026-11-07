@@ -1,0 +1,149 @@
+name: discordbothost 续期
+
+on:
+  schedule:
+    - cron: "17 8 13 11 *"  # 自动：第一次引导（到期 2026-11-13 22:31 北京前后），跑完由脚本改写
+  workflow_dispatch:
+
+concurrency:
+  group: discordbothost-renew
+  cancel-in-progress: false
+
+jobs:
+  renew:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: write
+
+    steps:
+      - name: 📥 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/discordbothost/**
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 📥 拉取工作流仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/action
+          token: ${{ secrets.REPO_TOKEN }}
+          path: action_repo
+          sparse-checkout: |
+            .github/workflows/discordbothost.yml
+          sparse-checkout-cone-mode: false
+
+      - name: 🐍 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 📦 安装依赖
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          pip install --quiet patchright requests 'requests[socks]'
+          python -m patchright install --with-deps chrome
+
+      - name: 🌐 设置代理 (sing-box)
+        env:
+          DISCORDBOTHOST_PROXY: ${{ secrets.DISCORDBOTHOST_PROXY }}
+        run: |
+          if [ -z "$DISCORDBOTHOST_PROXY" ]; then
+            echo "::error::DISCORDBOTHOST_PROXY 未配置（必填，本脚本必须走大阪节点）"
+            exit 1
+          fi
+          NODE_LINK="$DISCORDBOTHOST_PROXY" bash private-repo/scripts/setup_proxy.sh
+
+      - name: 🚀 运行续期脚本
+        id: run_script
+        env:
+          PYTHONIOENCODING: utf-8
+          DISCORDBOTHOST_COOKIES: ${{ secrets.DISCORDBOTHOST_COOKIES }}
+          DISCORDBOTHOST_TOKEN: ${{ secrets.DISCORDBOTHOST_TOKEN }}
+          DISCORDBOTHOST_BOT_ID: ${{ vars.DISCORDBOTHOST_BOT_ID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          IS_PROXY: ${{ env.IS_PROXY }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+        run: |
+          set -o pipefail
+          xvfb-run -a --server-args="-screen 0 1280x920x24" \
+            python -u private-repo/scripts/discordbothost/discordbothost.py 2>&1 | tee discordbothost.log
+
+      - name: 📨 TG 失败通知
+        if: failure() && steps.run_script.conclusion != 'failure'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          WF_NAME: ${{ github.workflow }}
+          WF_REPO: ${{ github.repository }}
+          WF_RUN_ID: ${{ github.run_id }}
+        run: |
+          MSG="❌ discordbothost 续期失败%0A任务: ${WF_NAME}%0A仓库: ${WF_REPO}%0A运行页: https://github.com/${WF_REPO}/actions/runs/${WF_RUN_ID}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TG_CHAT_ID}" \
+            --data-urlencode "text=${MSG}"
+
+      - name: ⏰ 修改 cron
+        if: always()
+        run: |
+          NEXT_FILE=private-repo/scripts/discordbothost/next_run.txt
+          if [ ! -f "$NEXT_FILE" ]; then
+            echo "next_run.txt 不存在，跳过 cron 更新"
+            exit 0
+          fi
+          next_cron=$(tr -d '\n\r' < "$NEXT_FILE")
+          echo "cron: $next_cron"
+          git -C action_repo fetch origin
+          git -C action_repo reset --hard origin/main
+          sed -i "s/- cron: \".*\"/- cron: \"$next_cron\"/" action_repo/.github/workflows/discordbothost.yml
+          git -C action_repo config user.name "github-actions[bot]"
+          git -C action_repo config user.email "github-actions[bot]@users.noreply.github.com"
+          git -C action_repo add .github/workflows/discordbothost.yml
+          git -C action_repo diff --cached --quiet || (git -C action_repo commit -m "auto: cron $next_cron" && git -C action_repo push --quiet && echo "✅ Cron 已更新")
+
+      - name: 🍪 回写会话与状态到私库
+        if: always()
+        working-directory: private-repo
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          changed=0
+          for f in scripts/discordbothost/session.txt scripts/discordbothost/state.json scripts/discordbothost/next_run.txt; do
+            if [ -f "$f" ] && ! git diff --quiet -- "$f"; then
+              git add "$f"
+              changed=1
+            fi
+          done
+          if [ "$changed" = "1" ]; then
+            git commit -m "chore(discordbothost): 自动回写会话与状态"
+            git push
+            echo "🍪 session.txt / state.json 已更新并推送"
+          else
+            echo "🍪 无变化，跳过提交"
+          fi
+
+      - name: 🧹 清理代理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          pkill -f Xvfb || true
+          pkill -f chrome || true
+          rm -f sing-box sing-box-config.json sing-box.log discordbothost.log *.png
+
+      - name: 🧹 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
