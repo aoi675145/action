@@ -1,0 +1,180 @@
+name: HidenFree 续期
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7 17 11 11 *'   # 自动更新下次运行时间（窗口=到期前24h，排到期前20h）
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  Renew-HidenFree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: ⚙ 设置 Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.11'
+
+      - name: 📦 修复 apt 源
+        run: |
+          . /etc/os-release
+          CODENAME="${VERSION_CODENAME:-noble}"
+          sudo rm -f /etc/apt/apt-mirrors.txt
+          sudo tee /etc/apt/sources.list > /dev/null <<EOF
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME} main restricted universe multiverse
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME}-updates main restricted universe multiverse
+          deb http://security.ubuntu.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
+          EOF
+          sudo rm -f /etc/apt/sources.list.d/*.sources
+          sudo tee /etc/apt/apt.conf.d/99-timeouts > /dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "15";
+          Acquire::https::Timeout "15";
+          Acquire::http::Pipeline-Depth "0";
+          EOF
+
+      - name: 🛠️ 安装系统依赖和 Python 依赖
+        timeout-minutes: 10
+        run: |
+          timeout 120 sudo apt-get update -o Acquire::Retries=3
+          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y xvfb
+          pip install patchright requests 'requests[socks]' --retries 5 --timeout 60
+          python -m patchright install --with-deps chrome
+
+      - name: 📦 Clone 私库
+        env:
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+        run: git clone https://aoi675145:${REPO_TOKEN}@github.com/aoi675145/scripts.git private-repo
+
+      - name: ⚙ 设置代理 (sing-box)
+        env:
+          # 专用 secret 没建之前回落到已有的 HIDEN_PROXY_NODE
+          HIDENFREE_PROXY_NODE: ${{ secrets.HIDENFREE_PROXY_NODE || secrets.HIDEN_PROXY_NODE }}
+        run: NODE_LINK="$HIDENFREE_PROXY_NODE" bash private-repo/scripts/setup_proxy.sh
+
+      - name: 🚀 运行续期脚本
+        id: run_renew
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          IS_PROXY: ${{ env.IS_PROXY }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+        working-directory: private-repo/scripts/hidenfree
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python3 hidenfree.py 2>&1 | tee renew.log
+
+      - name: 📤 兜底推送 cookies.txt
+        if: always()
+        continue-on-error: true
+        run: |
+          cd private-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -n "$(git status --porcelain scripts/hidenfree/cookies.txt)" ]; then
+            git add scripts/hidenfree/cookies.txt
+            git commit -m "🔄 自动更新 HidenFree cookies（workflow 兜底）" || true
+          fi
+          git pull --rebase origin HEAD || true
+          git push origin HEAD
+
+      - name: 📅 提取下次续期时间
+        id: extract_due
+        if: always()
+        working-directory: private-repo/scripts/hidenfree
+        run: |
+          NEXT_ISO=$(grep -oP '下次续期\(标准\): \K\S+' renew.log | tail -1 || echo "")
+          if [ -z "$NEXT_ISO" ]; then
+            echo "skip_update=true" >> $GITHUB_OUTPUT
+            echo "::warning::未能提取续期时间，跳过 Cron 更新"
+            exit 0
+          fi
+          echo "next_iso=$NEXT_ISO" >> $GITHUB_OUTPUT
+          echo "skip_update=false" >> $GITHUB_OUTPUT
+          echo "::notice::📅 下次续期: $NEXT_ISO"
+
+      - name: 🔄 修改下次 Cron 时间
+        if: always() && steps.extract_due.outputs.skip_update != 'true'
+        run: |
+          set -e
+          NEXT_ISO="${{ steps.extract_due.outputs.next_iso }}"
+          DUE_EPOCH=$(date -u -d "$NEXT_ISO" +%s)
+          NOW_EPOCH=$(date -u +%s)
+
+          # 窗口 = 到期前 24h，排到期前 20h 跑
+          TARGET_EPOCH=$((DUE_EPOCH - 20 * 3600))
+          if [ "$TARGET_EPOCH" -le $((NOW_EPOCH + 3600)) ]; then
+            # 已经进窗口 / 刚失败：2 小时后重试
+            TARGET_EPOCH=$((NOW_EPOCH + 2 * 3600))
+            echo "::warning::目标时间已过，改为 2 小时后重试"
+          fi
+
+          NEXT_DATE=$(date -u -d "@$TARGET_EPOCH" +"%Y-%m-%d %H:%M")
+          NEW_CRON="$(date -u -d "@$TARGET_EPOCH" +"%-M %-H %-d %-m") *"
+          echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
+          echo "::notice::📟 新 Cron: $NEW_CRON"
+
+          git clone https://${{ github.actor }}:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git workflow_repo
+          cd workflow_repo
+          WORKFLOW_FILE=".github/workflows/hidenfree.yml"
+          LINE_NUM=$(grep -n "cron: '" "$WORKFLOW_FILE" | head -n1 | cut -d: -f1)
+          if [ -z "$LINE_NUM" ]; then
+            echo "::error::找不到 cron 行"
+            exit 1
+          fi
+          sed -i "${LINE_NUM}c\\    - cron: '$NEW_CRON'   # 自动更新下次运行时间（窗口=到期前24h，排到期前20h）" "$WORKFLOW_FILE"
+          if git diff --quiet "$WORKFLOW_FILE"; then
+            echo "::notice::没有变化需要提交"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "$WORKFLOW_FILE"
+          git commit -m "🔄 自动更新 HidenFree 续期 Cron" \
+                     -m "下次运行: $NEXT_DATE UTC" \
+                     -m "Cron: $NEW_CRON" \
+                     -m "到期时间: $NEXT_ISO"
+          git pull --rebase origin main || true
+          git push origin main || git push --force-with-lease origin main
+          echo "::notice::✅ Cron 更新成功"
+
+      - name: 🧽 清理进程和临时文件
+        if: always()
+        run: |
+          pkill -f sing-box || true
+          pkill -f chrome || true
+          pkill -f Xvfb || true
+          rm -f sing-box sing-box-config.json sing-box.log
+
+      - name: 🧹 清理旧的工作流运行记录
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          REPO="${{ github.repository }}"
+          runs=$(gh run list --repo "$REPO" --workflow="${{ github.workflow }}" --limit=100 --json databaseId --jq '.[].databaseId')
+          count=0
+          for run_id in $runs; do
+            count=$((count + 1))
+            if [ $count -gt 1 ]; then
+              echo "删除运行记录: $run_id"
+              gh run delete --repo "$REPO" "$run_id" || true
+            fi
+          done
+
+      - name: ❌ 失败通知（前置步骤）
+        if: failure() && steps.run_renew.conclusion != 'failure'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+            echo "[SKIP] 未配置 TG_BOT_TOKEN / TG_CHAT_ID"
+            exit 0
+          fi
+          MSG="❌ ${GITHUB_WORKFLOW} 失败（脚本未运行）%0A任务: ${GITHUB_JOB}%0A仓库: ${GITHUB_REPOSITORY}%0A运行页: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT_ID}" --data-urlencode "text=${MSG}" || true
