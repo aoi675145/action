@@ -85,7 +85,9 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x900x24" python puratya.py
+        run: |
+          xvfb-run --auto-servernum --server-args="-screen 0 1280x900x24" python puratya.py
+          mkdir -p DEBUG && [ -f /tmp/pt_page.png ] && cp /tmp/pt_page.png DEBUG/page.png || true
 
       - name: 💾 同步 cookies.txt 回私有仓库
         if: always()
@@ -94,6 +96,9 @@ jobs:
         run: |
           git -C scripts_repo config user.name "github-actions[bot]"
           git -C scripts_repo config user.email "github-actions[bot]@users.noreply.github.com"
+          if [ -d "scripts_repo/scripts/puratya/DEBUG" ]; then
+            git -C scripts_repo add scripts/puratya/DEBUG 2>/dev/null || true
+          fi
           if [ -f "scripts_repo/scripts/puratya/cookies.txt" ]; then
             git -C scripts_repo add scripts/puratya/cookies.txt
           fi
