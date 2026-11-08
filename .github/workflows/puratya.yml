@@ -85,7 +85,7 @@ jobs:
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-        run: python puratya.py
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x900x24" python puratya.py
 
       - name: 💾 同步 cookies.txt 回私有仓库
         if: always()
