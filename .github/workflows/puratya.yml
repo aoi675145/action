@@ -4,7 +4,7 @@ name: Puratya 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '3 6 8 11 *' # 下一个: 2026-11-08 06:03 UTC / 2026-11-08 14:03 北京时间 (失败重试)
+    - cron: '7 6 8 11 *' # 下一个: 2026-11-08 06:07 UTC / 2026-11-08 14:07 北京时间 (失败重试)
 
 concurrency:
   group: puratya-renew
