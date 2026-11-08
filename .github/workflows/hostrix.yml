@@ -2,7 +2,7 @@ name: Hostrix 续期
 
 on:
   schedule:
-    - cron: "48 18 8 11 *"  # 自动：第一次引导，跑完由脚本改写
+    - cron: "27 20 9 11 *"  # 自动：第一次引导，跑完由脚本改写
   workflow_dispatch:
 
 concurrency:
