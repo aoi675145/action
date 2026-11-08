@@ -64,7 +64,7 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           TORCHLITE: ${{ secrets.TORCHLITE }}
-          TORCHLITE_SERVER_ID: ${{ vars.TORCHLITE_SERVER_ID }}
+          TORCHLITE_SERVER_ID: ${{ vars.TORCHLITE_SERVER_ID || '8a897749' }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           IS_PROXY: ${{ env.IS_PROXY }}
