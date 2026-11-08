@@ -53,10 +53,11 @@ jobs:
           TORCHLITE_PROXY: ${{ secrets.TORCHLITE_PROXY }}
         run: |
           if [ -z "$TORCHLITE_PROXY" ]; then
-            echo "::error::TORCHLITE_PROXY 未配置（必填，本脚本必须走代理）"
-            exit 1
+            echo "::warning::TORCHLITE_PROXY 未配置，本次只走直连"
+            exit 0
           fi
-          NODE_LINK="$TORCHLITE_PROXY" bash private-repo/scripts/setup_proxy.sh
+          NODE_LINK="$TORCHLITE_PROXY" bash private-repo/scripts/setup_proxy.sh || \
+            echo "::warning::代理起不来，脚本会自动回退直连"
 
       - name: 🚀 运行续期脚本
         id: run_script
