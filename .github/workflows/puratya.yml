@@ -63,7 +63,7 @@ jobs:
       - name: 📦 安装依赖
         timeout-minutes: 12
         run: |
-          pip install curl_cffi pydoll-python --retries 5 --timeout 60
+          pip install curl_cffi "pydoll-python==3.0.0" --retries 5 --timeout 60
           timeout 120 sudo apt-get update -o Acquire::Retries=3 -y -qq
           timeout 300 sudo apt-get install -o Acquire::Retries=3 -y -qq jq curl xvfb fonts-noto-cjk
 
