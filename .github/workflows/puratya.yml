@@ -86,7 +86,11 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
         run: |
+          set +e
+          google-chrome --version 2>/dev/null || chromium --version 2>/dev/null || echo "chrome 版本未知"
           xvfb-run --auto-servernum --server-args="-screen 0 1280x900x24" python puratya.py
+          rc=$?
+          set -e
           mkdir -p DEBUG
           if [ -f /tmp/pt_page.png ]; then
             cp /tmp/pt_page.png DEBUG/page.png
@@ -94,6 +98,7 @@ jobs:
           else
             echo "::warning::截图 /tmp/pt_page.png 不存在"
           fi
+          exit $rc
 
       - name: 💾 同步 cookies.txt 回私有仓库
         if: always()
