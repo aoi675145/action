@@ -64,7 +64,8 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           TORCHLITE: ${{ secrets.TORCHLITE }}
-          TORCHLITE_SERVER_ID: ${{ vars.TORCHLITE_SERVER_ID || '8a897749' }}
+          # 留空 = 脚本从 /api/client 自动发现服务器 id（多台时可在这里指定）
+          TORCHLITE_SERVER_ID: ${{ vars.TORCHLITE_SERVER_ID }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           IS_PROXY: ${{ env.IS_PROXY }}
