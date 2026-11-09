@@ -63,21 +63,22 @@ jobs:
 
       - name: 🌐 设置代理 (sing-box)
         env:
-          BLACKHOST_PROXY: ${{ secrets.BLACKHOST_PROXY }}
+          BLACKHOST: ${{ secrets.BLACKHOST }}
         run: |
           # 代理必填：面板续期要过 Turnstile，已禁用直连模式
-          if [ -z "$BLACKHOST_PROXY" ]; then
-            echo "::error::BLACKHOST_PROXY 未配置（必填，已禁用直连）"
+          # 单 Secret 格式 BLACKHOST=pat-----节点，第 2 段是节点链接
+          NODE_LINK=$(printf '%s' "$BLACKHOST" | awk -F'-----' '{print $2}')
+          if [ -z "$NODE_LINK" ]; then
+            echo "::error::BLACKHOST 未配置节点段（格式 pat-----节点）"
             exit 1
           fi
-          NODE_LINK="$BLACKHOST_PROXY" bash private-repo/scripts/setup_proxy.sh
+          NODE_LINK="$NODE_LINK" bash private-repo/scripts/setup_proxy.sh
 
       - name: 🚀 执行续期
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
-          BLACKHOST_PAT: ${{ secrets.BLACKHOST_PAT }}
-          BLACKHOST_SERVER_ID: ${{ secrets.BLACKHOST_SERVER_ID }}
+          BLACKHOST: ${{ secrets.BLACKHOST }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
