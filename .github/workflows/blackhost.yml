@@ -1,0 +1,115 @@
+name: BlackHost 续期
+
+on:
+  workflow_dispatch:  # 只走外部触发，不配 cron
+
+permissions:
+  actions: write
+  contents: write
+
+jobs:
+  auto_renew_blackhost:
+    runs-on: ubuntu-22.04
+
+    timeout-minutes: 25
+    steps:
+      - name: 📥 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/blackhost/blackhost.py
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 📦 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 修复 apt 源
+        run: |
+          # runner 自带的 azure 镜像走 http，避开 apt https 方法里会卡死的 TLS select 路径；
+          # archive / security 做备用源。22.04 和 24.04 一律写成旧版 sources.list（apt 两边都认），
+          # 顺手清掉 ubuntu.sources 与 apt-mirrors.txt，否则 22.04 会报 "no longer has a Release file"。
+          . /etc/os-release
+          CODENAME="${VERSION_CODENAME:-jammy}"
+          sudo rm -f /etc/apt/apt-mirrors.txt
+          sudo tee /etc/apt/sources.list > /dev/null <<EOF
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME} main restricted universe multiverse
+          deb http://azure.archive.ubuntu.com/ubuntu/ ${CODENAME}-updates main restricted universe multiverse
+          deb http://security.ubuntu.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
+          EOF
+          sudo rm -f /etc/apt/sources.list.d/*.sources
+          sudo tee /etc/apt/apt.conf.d/99-timeouts > /dev/null <<'EOF'
+          Acquire::Retries "3";
+          Acquire::http::Timeout "15";
+          Acquire::https::Timeout "15";
+          Acquire::http::Pipeline-Depth "0";
+          EOF
+
+      - name: 📦 安装系统与 Python 依赖
+        timeout-minutes: 10
+        run: |
+          timeout 120 sudo apt-get update -o Acquire::Retries=3 -qq
+          # google-chrome-stable runner 自带，显式安装兜底；jq 是 setup_proxy.sh 的依赖；xdotool 兜底点击 Turnstile
+          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool || {
+            timeout 120 sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
+            timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool
+          }
+          pip install -q seleniumbase "requests[socks]" pyautogui --retries 5 --timeout 60
+
+      - name: 🌐 设置代理 (sing-box)
+        env:
+          BLACKHOST_PROXY: ${{ secrets.BLACKHOST_PROXY }}
+        run: |
+          # 代理必填：面板续期要过 Turnstile，已禁用直连模式
+          if [ -z "$BLACKHOST_PROXY" ]; then
+            echo "::error::BLACKHOST_PROXY 未配置（必填，已禁用直连）"
+            exit 1
+          fi
+          NODE_LINK="$BLACKHOST_PROXY" bash private-repo/scripts/setup_proxy.sh
+
+      - name: 🚀 执行续期
+        id: run_script
+        env:
+          PYTHONIOENCODING: utf-8
+          BLACKHOST_PAT: ${{ secrets.BLACKHOST_PAT }}
+          BLACKHOST_SERVER_ID: ${{ secrets.BLACKHOST_SERVER_ID }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROXY_SERVER: ${{ env.PROXY_SERVER }}
+        run: |
+          cd private-repo/scripts/blackhost
+          xvfb-run -a --server-args="-screen 0 1280x800x24" python -u blackhost.py
+
+      - name: 🧹 清理代理进程
+        if: always()
+        run: |
+          pkill -f sing-box || true
+
+      - name: 🧹 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 3
+
+      - name: ❌ 失败通知（前置步骤）
+        if: failure() && steps.run_script.conclusion != 'failure'
+        env:
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -z "$TG_BOT_TOKEN" ] || [ -z "$TG_CHAT_ID" ]; then
+            echo "[SKIP] 未配置 TG_BOT_TOKEN / TG_CHAT_ID"
+            exit 0
+          fi
+          MSG="❌ ${GITHUB_WORKFLOW} 失败（脚本未运行）%0A任务: ${GITHUB_JOB}%0A仓库: ${GITHUB_REPOSITORY}%0A运行页: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT_ID}" --data-urlencode "text=${MSG}" || true
