@@ -77,6 +77,7 @@ jobs:
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
+          BLACKHOST: ${{ secrets.BLACKHOST }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
