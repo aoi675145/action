@@ -54,8 +54,8 @@ jobs:
       - name: 📦 安装依赖
         timeout-minutes: 10
         run: |
-          timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 300 sudo apt-get install -o Acquire::Retries=3 -y xvfb unzip ffmpeg
-          pip install "DrissionPage>=4.1" "pydub>=0.25" "SpeechRecognition>=3.10" "requests[socks]>=2.31.0" --retries 5 --timeout 60
+          timeout 120 sudo apt-get update -o Acquire::Retries=3 && timeout 300 sudo apt-get install -o Acquire::Retries=3 -y xvfb unzip
+          pip install "seleniumbase>=4.25.0" "pyvirtualdisplay>=3.0" "requests[socks]>=2.31.0" --retries 5 --timeout 60
 
 
       - name: 🌐 安装并启动代理
@@ -306,39 +306,13 @@ jobs:
 
       - name: 🚀 执行续期
         id: run_script
-        timeout-minutes: 15
         env:
-          ZAM_WATCHDOG: "720"
           ZAMPTO_ACCOUNT: ${{ secrets.ZAMPTO_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          ZAMPTO_PROXY: ${{ env.PROXY_SERVER }}   # DrissionPage 只认 http 代理
-          ZAM_COOKIE_FILE: scripts/zampto/cookies.txt
-          ZAM_SID: "14183"
-          PYTHONIOENCODING: utf-8
-        run: |
-          # cookie 优先；失效自动回落账号密码登录
-          xvfb-run -a -s "-screen 0 1280x900x24" python scripts/zampto/zampto_renew.py
-
-      - name: 💾 提交 cookie 更新
-        if: always()
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: |
-          if [ ! -f scripts/zampto/cookies.txt ]; then
-            echo "[INFO] 没有 cookies.txt，跳过"
-            exit 0
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add scripts/zampto/cookies.txt
-          if git diff --cached --quiet; then
-            echo "[INFO] cookie 无变化"
-            exit 0
-          fi
-          git commit -m "🍪 Zampto cookie 自动更新"
-          git push "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" HEAD:main \
-            || echo "[WARN] 推送失败（可能无写权限），cookie 更新未落库"
+          ZAMPTO_PROXY_NODE: ${{ env.PROXY_SERVER }}
+        run: python scripts/zampto/zampto.py
+#        > /dev/null 2>&1
 
 #      - name: 上传截图
 #        uses: actions/upload-artifact@v4
