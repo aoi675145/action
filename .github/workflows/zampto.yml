@@ -306,7 +306,9 @@ jobs:
 
       - name: 🚀 执行续期
         id: run_script
+        timeout-minutes: 15
         env:
+          ZAM_WATCHDOG: "720"
           ZAMPTO_ACCOUNT: ${{ secrets.ZAMPTO_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
@@ -315,7 +317,7 @@ jobs:
           ZAM_SID: "14183"
           PYTHONIOENCODING: utf-8
         run: |
-          # cookie 优先；失效自动回落账号密码登录；续期盾是 Google reCAPTCHA（音频解法）
+          # cookie 优先；失效自动回落账号密码登录
           xvfb-run -a -s "-screen 0 1280x900x24" python scripts/zampto/zampto_renew.py
 
       - name: 💾 提交 cookie 更新
