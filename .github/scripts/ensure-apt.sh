@@ -5,9 +5,10 @@
 #   ubuntu-24.04 runner 本来自带 xvfb/xauth/unzip/curl/wget/jq/Google Chrome，
 #   但 workflow 里无条件 apt-get update，碰到镜像源滴漏（单次 read 不超时、整体一直挂着）
 #   就变成 120s + 240s 两把超时，bash -e 直接把 job 判死，后面全 skipped。
-# 背景（2026-11-10 05:0x vps8 / Magma 同时红）：
-#   azure.archive.ubuntu.com:80 与 security.ubuntu.com 整段连不上（Connection failed/timeout），
-#   apt install 只试一次就判死。现在装失败会自动换官方 archive 源重试一轮。
+# 背景（2026-11-10 05:0x vps8 / Magma 同时红，装依赖 5 分 28 秒）：
+#   azure.archive.ubuntu.com:80 与 security.ubuntu.com 整段连不上，archive.ubuntu.com:80 也
+#   Connection failed；同一台 runner 换到 https://archive.ubuntu.com:443 立刻能下。
+#   → 现在先用 https 源；仍失败再换官方 archive 并重试一轮。
 #
 # 用法：
 #   bash ensure-apt.sh --need "Xvfb xdotool" --pkgs "xvfb xdotool"
@@ -21,8 +22,9 @@
 #
 # 规则：
 #   1. 全部满足 → 完全不碰 apt，打印一行 INFO 走人
-#   2. 有缺失才 apt-get update：单次 90s 上限，失败换一条新连接再来 120s
-#   3. update 或 install 失败 → 把 azure/security 源换成官方 archive.ubuntu.com 再试一轮
+#   2. 有缺失：先把 http 源升级成 https（80 端口在 runner 上时好时坏），再 5s 探测一次，
+#      探测不通直接换官方 archive，不白等 update 超时
+#   3. update 失败 / install 失败 → 换官方 https archive 源再试一轮
 #   4. 两轮都不通 → warning 跳过 apt 继续跑，不阻断（依赖后面还能自检）
 #   5. 装完重新自检，仍缺就 ::error:: 逐个点名（比让浏览器步骤报天书有用）
 set -uo pipefail
@@ -30,7 +32,7 @@ set -uo pipefail
 NEED=""
 NEED_PKGS=""
 PKGS=""
-TIME_LIMITS="90 120"
+TIME_LIMITS="${TIME_LIMITS:-45 60}"
 NEED_CMDS=()
 APT_SRC_GLOB="${APT_SRC_GLOB:-/etc/apt/sources.list /etc/apt/sources.list.d}"
 
@@ -41,7 +43,7 @@ while [ $# -gt 0 ]; do
     --need-cmd)  NEED_CMDS+=("${2:-}"); shift 2 ;;
     --pkgs)      PKGS="${2:-}";  shift 2 ;;
     --timeouts)  TIME_LIMITS="${2:-}"; shift 2 ;;
-    -h|--help)   sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help)   sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "::error::ensure-apt.sh 未知参数: $1"; exit 2 ;;
   esac
 done
@@ -74,6 +76,76 @@ check() {
   printf '%s' "${out# }"
 }
 
+# 遍历源文件（$1=回调名）——sources.list 与 sources.list.d/*.list|*.sources 都覆盖
+each_src() {
+  local cb="$1" target f
+  for target in $APT_SRC_GLOB; do
+    [ -e "$target" ] || continue
+    if [ -d "$target" ]; then
+      set -- "$target"/*.list "$target"/*.sources
+    else
+      set -- "$target"
+    fi
+    for f in "$@"; do
+      [ -f "$f" ] || continue
+      "$cb" "$f"
+    done
+  done
+}
+
+_host_one() {
+  [ -n "${FIRST_HOST:-}" ] && return 0
+  FIRST_HOST=$(grep -ohE 'https?://[^/[:space:]]+' "$1" 2>/dev/null | head -1)
+}
+
+src_host() {
+  FIRST_HOST=""
+  each_src _host_one
+  printf '%s' "$FIRST_HOST"
+}
+
+# 5s 探测源是否活着：源整体不可达时直接换源，不白等两轮 update 超时
+src_reachable() {
+  local u code
+  u="$(src_host)"
+  [ -z "$u" ] && return 0
+  code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 5 -I "$u/" 2>/dev/null || true)
+  printf '%s' "$code" | grep -qE '^[1-5][0-9][0-9]$'
+}
+
+_upgrade_one() {
+  grep -q 'http://[^ ]*ubuntu\.com' "$1" 2>/dev/null || return 0
+  sudo sed -i -E 's#http://([a-z0-9.-]*ubuntu\.com)#https://\1#g' "$1" || true
+}
+
+# http → https：2026-11-10 那批 runner 上 80 端口成段超时，443 正常，升级是零代价的
+prefer_https_sources() {
+  each_src _upgrade_one
+}
+
+_fix_one() {
+  grep -qE 'azure\.archive\.ubuntu\.com|security\.ubuntu\.com|http://archive\.ubuntu\.com' "$1" 2>/dev/null || return 0
+  if sudo sed -i -E \
+       -e 's#https?://azure\.archive\.ubuntu\.com/ubuntu/?#https://archive.ubuntu.com/ubuntu/#g' \
+       -e 's#https?://security\.ubuntu\.com/ubuntu/?#https://archive.ubuntu.com/ubuntu/#g' \
+       -e 's#http://archive\.ubuntu\.com/ubuntu/?#https://archive.ubuntu.com/ubuntu/#g' \
+       "$1"; then
+    FIXED=$((FIXED + 1))
+  fi
+}
+
+# 把 azure / security / http archive 统一换成官方 https archive
+rescue_sources() {
+  FIXED=0
+  each_src _fix_one
+  if [ "$FIXED" -gt 0 ]; then
+    echo "::warning::已将 ${FIXED} 个源文件换成 https://archive.ubuntu.com"
+  else
+    echo "::warning::没有找到可替换的源（可能已经是官方 https）"
+  fi
+  return 0
+}
+
 apt_update() {
   local t
   for t in $TIME_LIMITS; do
@@ -93,41 +165,11 @@ apt_update() {
 apt_install() {
   # shellcheck disable=SC2086
   timeout 240 sudo apt-get install -y --no-install-recommends \
-    -o Acquire::Retries=2 \
-    -o Acquire::http::Timeout=15 \
-    -o Acquire::https::Timeout=15 \
+    -o Acquire::Retries=1 \
+    -o Acquire::http::Timeout=10 \
+    -o Acquire::https::Timeout=10 \
     -o DPkg::Lock::Timeout=120 \
     $PKGS
-}
-
-# 把 azure / security 镜像换成官方 archive.ubuntu.com：2026-11-10 05:0x 全组 job 卡在
-# "Could not connect to azure.archive.ubuntu.com:80"，换源后同一台 runner 立刻能下。
-rescue_sources() {
-  local target f n=0
-  for target in $APT_SRC_GLOB; do
-    [ -e "$target" ] || continue
-    if [ -d "$target" ]; then
-      set -- "$target"/*.list "$target"/*.sources
-    else
-      set -- "$target"
-    fi
-    for f in "$@"; do
-      [ -f "$f" ] || continue
-      grep -qE 'azure\.archive\.ubuntu\.com|security\.ubuntu\.com' "$f" 2>/dev/null || continue
-      if sudo sed -i -E \
-           -e 's#https?://azure\.archive\.ubuntu\.com/ubuntu/?#https://archive.ubuntu.com/ubuntu/#g' \
-           -e 's#https?://security\.ubuntu\.com/ubuntu/?#https://archive.ubuntu.com/ubuntu/#g' \
-           "$f"; then
-        n=$((n + 1))
-      fi
-    done
-  done
-  if [ "$n" -gt 0 ]; then
-    echo "::warning::已将 ${n} 个源文件里的 azure/security 镜像换成 https://archive.ubuntu.com"
-  else
-    echo "::warning::没有找到可替换的 azure/security 源"
-  fi
-  return 0
 }
 
 miss="$(check)"
@@ -137,13 +179,20 @@ if [ -z "$miss" ]; then
 fi
 
 echo "::warning::镜像缺少:[${miss}] → 尝试 apt 安装: ${PKGS}"
+
 if [ -z "$(echo ${PKGS:-})" ]; then
   echo "::warning::没有可安装的包名（缺 --pkgs/--need-pkg/--need 都为空），跳过 apt，只做最终自检"
-elif apt_update; then
-  if apt_install; then
+else
+  prefer_https_sources
+  if ! src_reachable; then
+    echo "::warning::首选源 $(src_host) 5s 内无响应，直接换官方 https archive，跳过 update 超时等待"
+    rescue_sources
+  fi
+
+  if apt_update && apt_install; then
     echo "[INFO] apt install 完成: ${PKGS}"
   else
-    echo "::warning::apt install 未成功（多为镜像下载超时），换源后重试一轮"
+    echo "::warning::apt 未成功（多为镜像连接失败/下载超时），换官方 https archive 重试一轮"
     rescue_sources
     apt_update || echo "::warning::换源后 update 仍失败，仍尝试安装"
     if apt_install; then
@@ -151,18 +200,6 @@ elif apt_update; then
     else
       echo "::warning::换源重试仍未成功，继续走自检"
     fi
-  fi
-else
-  echo "::warning::apt 源全程不可达，换官方 archive 源再试一轮"
-  rescue_sources
-  if apt_update; then
-    if apt_install; then
-      echo "[INFO] 换源后 apt install 完成: ${PKGS}"
-    else
-      echo "::warning::换源后 apt install 未完全成功，继续走自检"
-    fi
-  else
-    echo "::warning::换源后 apt 源仍不可达，跳过 apt，直接用镜像自带组件"
   fi
 fi
 
