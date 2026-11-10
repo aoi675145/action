@@ -60,9 +60,9 @@ jobs:
             || echo "::warning::ensure-apt.sh 拉取失败，依赖交给镜像自带"
           if [ -s /tmp/ensure-apt.sh ]; then
             bash /tmp/ensure-apt.sh \
-              --need-pkg "xvfb unzip ffmpeg"
+              --need-pkg "xvfb unzip"
           fi
-          pip install "DrissionPage>=4.1.0" "requests>=2.31.0" "SpeechRecognition>=3.10.0" "pydub>=0.25.1" --retries 5 --timeout 60
+          pip install "DrissionPage>=4.1.0" "requests>=2.31.0" "SpeechRecognition>=3.10.0" "pydub>=0.25.1" "imageio-ffmpeg>=0.5.1" --retries 5 --timeout 60
 
 
       - name: 🌐 安装并启动代理
@@ -324,13 +324,14 @@ jobs:
         run: xvfb-run -a python scripts/zampto/zampto_renew.py
 #        > /dev/null 2>&1
 
-#      - name: 上传截图
-#        uses: actions/upload-artifact@v4
-#        if: always()
-#        with:
-#          name: screenshots-${{ github.run_number }}
-#          path: output/screenshots/
-#          retention-days: 3
+      - name: 📎 上传截图
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: screenshots-${{ github.run_number }}
+          path: output/screenshots/
+          retention-days: 3
+          if-no-files-found: ignore
 
       - name: 🧹 清理旧运行
         uses: Mattraks/delete-workflow-runs@v2
