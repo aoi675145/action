@@ -67,7 +67,9 @@ check() {
     command -v "$b" >/dev/null 2>&1 || out="$out $b"
   done
   for pk in $NEED_PKGS; do
-    dpkg-query -W -f='${Status}' "$pk" 2>/dev/null | grep -q "install ok installed" || out="$out pkg:$pk"
+    # noble 的 t64 迁移把一批库包改名为 <name>t64（libatk-bridge2.0-0→libatk-bridge2.0-0t64 等），
+    # apt 装老名字会解析到 t64 包但 dpkg-query 查老名字永远查不到，这里做 t64 回退再判缺失。
+    dpkg-query -W -f='${Status}' "$pk" 2>/dev/null | grep -q "install ok installed"       || dpkg-query -W -f='${Status}' "${pk}t64" 2>/dev/null | grep -q "install ok installed"       || out="$out pkg:$pk"
   done
   for c in ${NEED_CMDS[@]+"${NEED_CMDS[@]}"}; do
     [ -n "$c" ] || continue
