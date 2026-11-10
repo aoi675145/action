@@ -174,6 +174,9 @@ apt_install() {
 
 miss="$(check)"
 if [ -z "$miss" ]; then
+  # 依赖齐了也把源升到 https：后面第三方 action（fscarmen/warp-on-actions 等）
+  # 自己跑 apt-get update，http(80) 一挂就是 5 分钟白等（2026-11-10 Godlike 312s）。
+  prefer_https_sources
   echo "[INFO] 系统依赖已由镜像满足，跳过 apt（need: ${NEED:-无}${NEED_PKGS:+ / pkg: $NEED_PKGS}）"
   exit 0
 fi
