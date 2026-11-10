@@ -232,8 +232,14 @@ jobs:
           NEEDRESTART_MODE: a
         run: |
           if ! command -v xvfb-run >/dev/null; then
-            timeout 120 sudo -E apt-get update -o Acquire::Retries=3 -qq
-            timeout 300 sudo -E apt-get install -o Acquire::Retries=3 -y -qq -o Dpkg::Use-Pty=0 xvfb xdotool
+          # 系统包按需安装：镜像自带就不碰 apt，源不可达也不会把 job 拖死（脚本见 .github/scripts/ensure-apt.sh）
+          curl -fsSL --max-time 30 -o /tmp/ensure-apt.sh \
+            https://raw.githubusercontent.com/aoi675145/action/main/.github/scripts/ensure-apt.sh \
+            || echo "::warning::ensure-apt.sh 拉取失败，依赖交给镜像自带"
+          if [ -s /tmp/ensure-apt.sh ]; then
+            bash /tmp/ensure-apt.sh \
+              --need-pkg "xvfb xdotool"
+          fi
           fi
           pip install --quiet seleniumbase requests --retries 5 --timeout 60
       - name: 🔍 Check IP

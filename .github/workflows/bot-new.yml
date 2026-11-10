@@ -50,13 +50,22 @@ jobs:
           Acquire::https::Timeout "15";
           Acquire::http::Pipeline-Depth "0";
           EOF
-          # 修完源必须刷新索引：否则后面的 apt-get install 会报 Unable to locate package
-          timeout 120 sudo apt-get update -qq || timeout 240 sudo apt-get update -qq
+          # 索引刷新失败不阻断：真缺包时后面那步的 ensure-apt 会点名报错，避免源滴漏把 job 拖死
+          timeout 90 sudo apt-get update -qq -o Acquire::Retries=1 -o Acquire::http::Timeout=8 -o Acquire::https::Timeout=8 -o Acquire::ForceIPv4=true \
+            || timeout 120 sudo apt-get update -qq -o Acquire::Retries=1 -o Acquire::http::Timeout=8 -o Acquire::https::Timeout=8 -o Acquire::ForceIPv4=true \
+            || echo "::warning::apt 索引刷新失败（源不可达），继续"
       - name: 📦 安装依赖
         timeout-minutes: 10
         run: |
           pip install seleniumbase Pillow --retries 5 --timeout 60
-          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y xvfb
+          # 系统包按需安装：镜像自带就不碰 apt，源不可达也不会把 job 拖死（脚本见 .github/scripts/ensure-apt.sh）
+          curl -fsSL --max-time 30 -o /tmp/ensure-apt.sh \
+            https://raw.githubusercontent.com/aoi675145/action/main/.github/scripts/ensure-apt.sh \
+            || echo "::warning::ensure-apt.sh 拉取失败，依赖交给镜像自带"
+          if [ -s /tmp/ensure-apt.sh ]; then
+            bash /tmp/ensure-apt.sh \
+              --need-pkg "xvfb"
+          fi
 
 
       - name: 🌐 安装并启动代理

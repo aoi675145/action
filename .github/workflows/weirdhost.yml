@@ -103,8 +103,14 @@ jobs:
         run: |
           # apt 直连 GitHub runner 内置源即可（前面已改写为官方 https 源），
           # 不走 sing-box 代理——代理只给浏览器访问 weirdhost 用
-          timeout 120 sudo apt-get -o Acquire::Retries=3 update -o Acquire::http::Timeout=15
-          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y xvfb xdotool fonts-wqy-microhei jq
+          # 系统包按需安装：镜像自带就不碰 apt，源不可达也不会把 job 拖死（脚本见 .github/scripts/ensure-apt.sh）
+          curl -fsSL --max-time 30 -o /tmp/ensure-apt.sh \
+            https://raw.githubusercontent.com/aoi675145/action/main/.github/scripts/ensure-apt.sh \
+            || echo "::warning::ensure-apt.sh 拉取失败，依赖交给镜像自带"
+          if [ -s /tmp/ensure-apt.sh ]; then
+            bash /tmp/ensure-apt.sh \
+              --need-pkg "xvfb xdotool fonts-wqy-microhei jq"
+          fi
 
       - name: 📦 安装 Python 依赖
         if: steps.check_renew.outputs.need_renew == 'true'

@@ -53,13 +53,14 @@ jobs:
       - name: 📦 安装系统依赖
         timeout-minutes: 10
         run: |
-          timeout 120 sudo apt-get update -o Acquire::Retries=3
-          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y \
-            google-chrome-stable \
-            xvfb \
-            x11-utils \
-            xdotool \
-            scrot
+          # 系统包按需安装：镜像自带就不碰 apt，源不可达也不会把 job 拖死（脚本见 .github/scripts/ensure-apt.sh）
+          curl -fsSL --max-time 30 -o /tmp/ensure-apt.sh \
+            https://raw.githubusercontent.com/aoi675145/action/main/.github/scripts/ensure-apt.sh \
+            || echo "::warning::ensure-apt.sh 拉取失败，依赖交给镜像自带"
+          if [ -s /tmp/ensure-apt.sh ]; then
+            bash /tmp/ensure-apt.sh \
+              --need-pkg "google-chrome-stable xvfb x11-utils xdotool scrot"
+          fi
 
       - name: 📦 安装 Python 依赖和 UC 驱动
         run: |

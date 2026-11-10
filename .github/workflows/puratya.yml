@@ -64,8 +64,14 @@ jobs:
         timeout-minutes: 12
         run: |
           pip install curl_cffi "pydoll-python==3.0.0" --retries 5 --timeout 60
-          timeout 120 sudo apt-get update -o Acquire::Retries=3 -y -qq
-          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y -qq jq curl xvfb fonts-noto-cjk
+          # 系统包按需安装：镜像自带就不碰 apt，源不可达也不会把 job 拖死（脚本见 .github/scripts/ensure-apt.sh）
+          curl -fsSL --max-time 30 -o /tmp/ensure-apt.sh \
+            https://raw.githubusercontent.com/aoi675145/action/main/.github/scripts/ensure-apt.sh \
+            || echo "::warning::ensure-apt.sh 拉取失败，依赖交给镜像自带"
+          if [ -s /tmp/ensure-apt.sh ]; then
+            bash /tmp/ensure-apt.sh \
+              --need-pkg "jq curl xvfb fonts-noto-cjk"
+          fi
 
       - name: 🌐 安装并启动代理
         env:

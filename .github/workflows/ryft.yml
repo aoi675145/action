@@ -58,12 +58,15 @@ jobs:
       - name: 📦 安装系统与 Python 依赖
         timeout-minutes: 10
         run: |
-          timeout 120 sudo apt-get update -o Acquire::Retries=3 -qq
+          # 系统包按需安装：镜像自带就不碰 apt，源不可达也不会把 job 拖死（脚本见 .github/scripts/ensure-apt.sh）
+          curl -fsSL --max-time 30 -o /tmp/ensure-apt.sh \
+            https://raw.githubusercontent.com/aoi675145/action/main/.github/scripts/ensure-apt.sh \
+            || echo "::warning::ensure-apt.sh 拉取失败，依赖交给镜像自带"
+          if [ -s /tmp/ensure-apt.sh ]; then
+            bash /tmp/ensure-apt.sh \
+              --need-pkg "google-chrome-stable xvfb fonts-wqy-microhei jq xdotool"
+          fi
           # google-chrome-stable runner 自带，显式安装兜底；jq 是 setup_proxy.sh 的依赖；xdotool 兜底点击 Turnstile
-          timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool || {
-            timeout 120 sudo apt-get update -o Acquire::Retries=3 -o Acquire::http::Timeout=10 -o Acquire::https::Timeout=10
-            timeout 300 sudo apt-get install -o Acquire::Retries=3 -y --no-install-recommends google-chrome-stable xvfb fonts-wqy-microhei jq xdotool
-          }
           pip install -q seleniumbase "requests[socks]" pyautogui --retries 5 --timeout 60
           # uc_driver 由 SeleniumBase UC 模式自动匹配下载，无需固定版本；缺失依赖 ryft.py 也会自装
 
