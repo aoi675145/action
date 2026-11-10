@@ -42,6 +42,18 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+# --pkgs 忘了传时自动回退：否则 apt-get install 拿到空包名会「成功」地什么都不装，
+# 紧接着自检仍缺 → ::error:: 退出 1（2026-11-10 vps8 就是这样挂的，44 个 workflow 全这个写法）。
+if [ -z "$(echo ${PKGS:-})" ]; then
+  PKGS="$NEED_PKGS"
+  if [ -n "$PKGS" ]; then
+    echo "::warning::未传 --pkgs，按 --need-pkg 清单安装: ${PKGS}"
+  elif [ -n "$NEED" ]; then
+    PKGS="$NEED"
+    echo "::warning::未传 --pkgs，按 --need 二进制名推断包名安装: ${PKGS}（大小写不一定对，建议显式传 --pkgs）"
+  fi
+fi
+
 # 返回当前缺失项（二进制名 / cmd:<表达式>），全部满足则输出空
 check() {
   local b pk c out=""
@@ -66,33 +78,37 @@ fi
 
 echo "::warning::镜像缺少:[${miss}] → 尝试 apt 安装: ${PKGS}"
 apt_ok=0
-for t in $TIME_LIMITS; do
-  if timeout "$t" sudo apt-get update -qq \
-       -o Acquire::Retries=1 \
-       -o Acquire::http::Timeout=8 \
-       -o Acquire::https::Timeout=8 \
-       -o Acquire::ForceIPv4=true; then
-    apt_ok=1
-    echo "[INFO] apt-get update 成功（${t}s 上限内）"
-    break
-  fi
-  echo "::warning::apt-get update 超时/失败（${t}s 上限），换新连接重试"
-done
-
-if [ "$apt_ok" = 1 ]; then
-  # shellcheck disable=SC2086
-  if sudo apt-get install -y --no-install-recommends \
-       -o Acquire::Retries=2 \
-       -o Acquire::http::Timeout=15 \
-       -o Acquire::https::Timeout=15 \
-       -o DPkg::Lock::Timeout=120 \
-       $PKGS; then
-    echo "[INFO] apt install 完成: ${PKGS}"
-  else
-    echo "::warning::apt install 未完全成功，继续走自检"
-  fi
+if [ -z "$(echo ${PKGS:-})" ]; then
+  echo "::warning::没有可安装的包名（缺 --pkgs/--need-pkg/--need 都为空），跳过 apt，只做最终自检"
 else
-  echo "::warning::apt 源全程不可达，跳过 apt，直接用镜像自带组件"
+  for t in $TIME_LIMITS; do
+    if timeout "$t" sudo apt-get update -qq \
+         -o Acquire::Retries=1 \
+         -o Acquire::http::Timeout=8 \
+         -o Acquire::https::Timeout=8 \
+         -o Acquire::ForceIPv4=true; then
+      apt_ok=1
+      echo "[INFO] apt-get update 成功（${t}s 上限内）"
+      break
+    fi
+    echo "::warning::apt-get update 超时/失败（${t}s 上限），换新连接重试"
+  done
+
+  if [ "$apt_ok" = 1 ]; then
+    # shellcheck disable=SC2086
+    if sudo apt-get install -y --no-install-recommends \
+         -o Acquire::Retries=2 \
+         -o Acquire::http::Timeout=15 \
+         -o Acquire::https::Timeout=15 \
+         -o DPkg::Lock::Timeout=120 \
+         $PKGS; then
+      echo "[INFO] apt install 完成: ${PKGS}"
+    else
+      echo "::warning::apt install 未完全成功，继续走自检"
+    fi
+  else
+    echo "::warning::apt 源全程不可达，跳过 apt，直接用镜像自带组件"
+  fi
 fi
 
 miss="$(check)"
