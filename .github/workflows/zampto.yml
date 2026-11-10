@@ -60,9 +60,9 @@ jobs:
             || echo "::warning::ensure-apt.sh 拉取失败，依赖交给镜像自带"
           if [ -s /tmp/ensure-apt.sh ]; then
             bash /tmp/ensure-apt.sh \
-              --need-pkg "xvfb unzip"
+              --need-pkg "xvfb unzip ffmpeg"
           fi
-          pip install "seleniumbase>=4.25.0" "pyvirtualdisplay>=3.0" "requests[socks]>=2.31.0" --retries 5 --timeout 60
+          pip install "DrissionPage>=4.1.0" "requests>=2.31.0" "SpeechRecognition>=3.10.0" "pydub>=0.25.1" --retries 5 --timeout 60
 
 
       - name: 🌐 安装并启动代理
@@ -313,12 +313,15 @@ jobs:
 
       - name: 🚀 执行续期
         id: run_script
+        timeout-minutes: 15
         env:
           ZAMPTO_ACCOUNT: ${{ secrets.ZAMPTO_ACCOUNT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
-          ZAMPTO_PROXY_NODE: ${{ env.PROXY_SERVER }}
-        run: python scripts/zampto/zampto.py
+          ZAMPTO_PROXY: ${{ env.PROXY_SERVER }}
+          ZAM_COOKIE_FILE: scripts/zampto/cookies.txt
+          ZAM_WATCHDOG: '720'
+        run: xvfb-run -a python scripts/zampto/zampto_renew.py
 #        > /dev/null 2>&1
 
 #      - name: 上传截图
