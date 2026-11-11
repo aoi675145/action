@@ -18,6 +18,10 @@ jobs:
         with:
           repository: aoi675145/scripts
           path: scripts_repo
+          sparse-checkout: |
+            scripts/aclclouds/
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
           token: ${{ secrets.REPO_TOKEN }}
 
       - name: 📥 拉取工作流仓库

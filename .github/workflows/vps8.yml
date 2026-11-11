@@ -260,7 +260,8 @@ jobs:
           fi
           rm -rf scripts-cache
           echo "[保存] 克隆私库 aoi675145/scripts ..."
-          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
+          git clone --depth 1 --filter=blob:none --sparse "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-cache
+          git -C scripts-cache sparse-checkout set --no-cone /scripts/vps8/
           mkdir -p scripts-cache/scripts/vps8/screenshots
           if [ "$HAS_SHOT" = "1" ]; then cp -f screenshots/*.png scripts-cache/scripts/vps8/screenshots/; fi
           if [ -s vps8_service_expiry.txt ]; then cp vps8_service_expiry.txt scripts-cache/scripts/vps8/vps8_service_expiry.txt; fi

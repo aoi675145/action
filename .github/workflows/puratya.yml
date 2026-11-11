@@ -25,6 +25,10 @@ jobs:
           repository: aoi675145/scripts
           token: ${{ secrets.REPO_TOKEN }}
           path: scripts_repo
+          sparse-checkout: |
+            scripts/puratya/
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
 
       - name: 📥 拉取工作流仓库
         uses: actions/checkout@v4

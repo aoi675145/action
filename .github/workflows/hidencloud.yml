@@ -60,7 +60,11 @@ jobs:
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
         run: |
-          git clone https://aoi675145:${REPO_TOKEN}@github.com/aoi675145/scripts.git private-repo
+          git clone --depth 1 --filter=blob:none --sparse \
+            "https://aoi675145:${REPO_TOKEN}@github.com/aoi675145/scripts.git" private-repo
+          cd private-repo
+          git sparse-checkout set --no-cone /scripts/hidencloud/ /scripts/setup_proxy.sh
+          cd ..
           
       - name: ⚙ 设置代理 (sing-box)
         env:

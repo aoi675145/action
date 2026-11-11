@@ -124,7 +124,8 @@ jobs:
             exit 0
           fi
           rm -rf scripts-repo
-          git clone --depth 1 "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-repo
+          git clone --depth 1 --filter=blob:none --sparse "https://x-access-token:${REPO_TOKEN}@github.com/aoi675145/scripts.git" scripts-repo
+          git -C scripts-repo sparse-checkout set --no-cone /scripts/vyce/
           cd scripts-repo
           mkdir -p scripts/vyce
           cp ../cookies.txt scripts/vyce/cookies.txt
