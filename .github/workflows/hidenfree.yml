@@ -3,7 +3,7 @@ name: HidenFree 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '20 20 11 11 *'   # 自动更新下次运行时间（窗口=到期前24h，排到期前20h）
+    - cron: '38 20 11 11 *'   # 自动更新下次运行时间（窗口=到期前24h，排到期前20h）
 
 permissions:
   actions: write
