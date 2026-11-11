@@ -337,8 +337,9 @@ jobs:
           OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           LLM_PROXY: ${{ env.PROXY_SERVER }}
-        run: xvfb-run -a python scripts/zampto/zampto_renew.py
-#        > /dev/null 2>&1
+        run: |
+          xvfb-run -a python -u scripts/zampto/zampto_renew.py \
+            2> >(grep -vE "Matplotlib GUI|main thread is not in main loop|Exception ignored in|tkinter|UserWarning: Starting|Unable to revert mtime" >&2)
 
       - name: 📎 上传截图
         uses: actions/upload-artifact@v4
