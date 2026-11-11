@@ -62,8 +62,18 @@ jobs:
             bash /tmp/ensure-apt.sh \
               --need-pkg "xvfb unzip"
           fi
-          pip install "patchright>=1.49.0" "requests[socks]>=2.31.0" "SpeechRecognition>=3.10.0" "pydub>=0.25.1" "imageio-ffmpeg>=0.5.1" --retries 5 --timeout 60
+          pip install "patchright>=1.49.0" "requests[socks]>=2.31.0" "SpeechRecognition>=3.10.0" "pydub>=0.25.1" "imageio-ffmpeg>=0.5.1" \
+            "playwright" "seleniumbase" "opencv-python" "msgpack" "typer" "matplotlib" "google-genai" \
+            "httpx" "loguru" "pydantic-settings" "tenacity" "pytz" "pillow" --retries 5 --timeout 60
           python -m patchright install chromium >/dev/null 2>&1 || echo "::warning::patchright chromium 安装失败，运行时回退系统 Chrome"
+
+          # hCaptcha 解题组件：与 vps8 签到项目同一个仓库、同一个固定版本
+          git clone -q --depth 1 https://github.com/aoi675145/hcaptcha.git hcaptcha-challenger
+          cd hcaptcha-challenger
+          git fetch -q --depth 1 origin d4da375916cde6bb85128eb8fc9859e1f06cacbc \
+            && git checkout -q --detach FETCH_HEAD \
+            || echo "::warning::固定版本获取失败，使用默认版本"
+          cd ..
 
 
       - name: 🌐 安装并启动代理
@@ -322,6 +332,11 @@ jobs:
           ZAMPTO_PROXY: ${{ env.PROXY_SERVER }}
           ZAM_COOKIE_FILE: scripts/zampto/cookies.txt
           ZAM_WATCHDOG: '720'
+          # hCaptcha 解题：变量名与 vps8 完全一致，模型请求走本 job 的代理
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
+          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          LLM_PROXY: ${{ env.PROXY_SERVER }}
         run: xvfb-run -a python scripts/zampto/zampto_renew.py
 #        > /dev/null 2>&1
 
