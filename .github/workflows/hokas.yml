@@ -57,6 +57,7 @@ jobs:
         id: run_script
         env:
           HOKAS_ACCOUNT: ${{ secrets.HOKAS_ACCOUNT }}
+          HOKAS_CLIENT: ${{ secrets.HOKAS_CLIENT }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
