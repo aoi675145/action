@@ -81,7 +81,7 @@ jobs:
           IS_PROXY: ${{ env.IS_PROXY }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
         working-directory: private-repo/scripts/hidencloud
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python3 hidencloud.py 2>&1 | tee renew.log
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python3 hidencloud.py 2>&1 | tee renew.log; exit ${PIPESTATUS[0]}
 
       - name: 📤 兜底推送 cookies.txt
         # 脚本内已自行 commit+push（origin 带 clone 时的 token）；

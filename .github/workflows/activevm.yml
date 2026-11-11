@@ -314,7 +314,7 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ACTIVEVM_PROXY: ${{ env.PROXY_URL }}
-        run: python scripts_repo/scripts/activevm/activevm.py 2>&1 | tee renew.log
+        run: python scripts_repo/scripts/activevm/activevm.py 2>&1 | tee renew.log; exit ${PIPESTATUS[0]}
 
       - name: ⏰ 提取下次签到时间
         id: extract_next

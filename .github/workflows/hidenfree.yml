@@ -81,7 +81,6 @@ jobs:
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
         working-directory: private-repo/scripts/hidenfree
         run: |
-          # 没有 pipefail 的话 `python | tee` 的退出码永远取自 tee，脚本失败也会被判成功
           set -o pipefail
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python3 hidenfree.py 2>&1 | tee renew.log
 
