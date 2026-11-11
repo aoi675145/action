@@ -52,10 +52,19 @@ jobs:
           pip install patchright requests 'requests[socks]' --retries 5 --timeout 60
           python -m patchright install --with-deps chrome
 
-      - name: 📦 Clone 私库
+      - name: 📦 拉取脚本（稀疏检出，不拉整个私库）
         env:
           REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-        run: git clone https://aoi675145:${REPO_TOKEN}@github.com/aoi675145/scripts.git private-repo
+        run: |
+          # 私库 500MB+ 历史，全量 clone 又慢又占盘；只取本任务真正用到的三个路径
+          git clone --depth 1 --filter=blob:none --sparse \
+            "https://aoi675145:${REPO_TOKEN}@github.com/aoi675145/scripts.git" private-repo
+          cd private-repo
+          git sparse-checkout set --no-cone \
+            /scripts/hidenfree/ /scripts/setup_proxy.sh /scripts/tg_title.py
+          echo "--- 已取到 ---"
+          ls -l scripts/setup_proxy.sh scripts/tg_title.py scripts/hidenfree/
+          du -sh .git .
 
       - name: ⚙ 设置代理 (sing-box)
         env:
