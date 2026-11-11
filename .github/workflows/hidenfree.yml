@@ -65,6 +65,7 @@ jobs:
       - name: ⚙ 设置代理 (sing-box)
         env:
           HIDENFREE_PROXY: ${{ secrets.HIDENFREE_PROXY }}
+          DIRECT_DOMAINS: "challenges.cloudflare.com static.cloudflareinsights.com"
         run: |
           if [ -z "$HIDENFREE_PROXY" ]; then
             echo "::error::HIDENFREE_PROXY 未配置（必填，本脚本必须走代理）"
