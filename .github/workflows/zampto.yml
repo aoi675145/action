@@ -24,15 +24,6 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .  # 拉到根目录
 
-      - name: 🍪 恢复登录 cookie 缓存
-        # 登录盾过一次就够：cookie 存在 cache 里，下轮直接进后台
-        uses: actions/cache@v4
-        with:
-          path: scripts/zampto/cookies.txt
-          key: zampto-cookies-${{ github.run_id }}
-          restore-keys: |
-            zampto-cookies-
-
       - name: 🐍 设置 Python
         uses: actions/setup-python@v5
         with:
@@ -354,14 +345,22 @@ jobs:
           xvfb-run -a python -u scripts/zampto/zampto.py \
             2> >(grep -vE "Matplotlib GUI|main thread is not in main loop|Exception ignored in|tkinter|UserWarning: Starting|Unable to revert mtime" >&2)
 
-      - name: 📎 上传截图
-        uses: actions/upload-artifact@v4
+      - name: 💾 回写 cookie 到私库
+        # 登录盾过一次就够：这次的会话写回 scripts 仓库，下轮直接读
         if: always()
-        with:
-          name: screenshots-${{ github.run_number }}
-          path: output/screenshots/
-          retention-days: 3
-          if-no-files-found: ignore
+        run: |
+          F=scripts/zampto/cookies.txt
+          if [ ! -f "$F" ]; then echo "[SKIP] 本次没有生成 cookie 文件"; exit 0; fi
+          git config user.name aoi675145
+          git config user.email aoi675145@users.noreply.github.com
+          git add -f "$F"
+          if git diff --cached --quiet; then echo "[INFO] cookie 无变化，无需提交"; exit 0; fi
+          git commit -q -m "chore(zampto): 更新登录 cookie"
+          for i in 1 2 3; do
+            if git push -q origin HEAD:main; then echo "[INFO] cookie 已回写私库"; exit 0; fi
+            echo "[WARN] 推送失败，${i} 次重试"; sleep 3
+          done
+          echo "::warning::cookie 回写失败，不影响本次续期结果"
 
       - name: 🧹 清理旧运行
         uses: Mattraks/delete-workflow-runs@v2
@@ -383,5 +382,11 @@ jobs:
             exit 0
           fi
           MSG="❌ ${GITHUB_WORKFLOW} 失败（脚本未运行）%0A任务: ${GITHUB_JOB}%0A仓库: ${GITHUB_REPOSITORY}%0A运行页: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          SHOT=$(ls -t output/screenshots/*.png 2>/dev/null | head -1)
+          if [ -n "$SHOT" ]; then
+            curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendPhoto" \
+              -F "chat_id=${TG_CHAT_ID}" -F "photo=@${SHOT}" -F "caption=${MSG}" \
+              -o /dev/null && exit 0
+          fi
           curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TG_CHAT_ID}" --data-urlencode "text=${MSG}" || true
