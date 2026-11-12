@@ -330,6 +330,8 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ZAMPTO_PROXY: ${{ env.PROXY_SERVER }}
+          # zampto.py 读 PROXY_URL / PROXY_SOCKS5（去 scheme 后的 host:port，SB 的 proxy 参数要这个格式）
+          PROXY_URL: ${{ env.PROXY_SERVER }}
           ZAM_COOKIE_FILE: scripts/zampto/cookies.txt
           ZAM_WATCHDOG: '720'
           # hCaptcha 解题：变量名与 vps8 完全一致，模型请求走本 job 的代理
@@ -338,7 +340,9 @@ jobs:
           OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
           LLM_PROXY: ${{ env.PROXY_SERVER }}
         run: |
-          xvfb-run -a python -u scripts/zampto/zampto_renew.py \
+          export PROXY_URL="${PROXY_URL#*://}"
+          echo "[INFO] 入口: scripts/zampto/zampto.py（完整账密登录 + 真按钮 + ActionChains 精确坐标）"
+          xvfb-run -a python -u scripts/zampto/zampto.py \
             2> >(grep -vE "Matplotlib GUI|main thread is not in main loop|Exception ignored in|tkinter|UserWarning: Starting|Unable to revert mtime" >&2)
 
       - name: 📎 上传截图
