@@ -75,7 +75,7 @@ jobs:
       - name: 🚀 运行续期脚本
         id: run_renew
         env:
-          HIDENCLOUD: ${{ secrets.HIDENCLOUD }}
+          DISCORD_TOKEN_K: ${{ secrets.DISCORD_TOKEN_K }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           IS_PROXY: ${{ env.IS_PROXY }}
