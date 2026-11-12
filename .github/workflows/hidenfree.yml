@@ -62,15 +62,17 @@ jobs:
           git sparse-checkout set --no-cone \
             /scripts/hidenfree/ /scripts/setup_proxy.sh /scripts/tg_title.py
 
-      - name: ⚙ 设置代理 (sing-box)
+      - name: ⚙ 设置代理 (sing-box 双出口)
         env:
           HIDENFREE_PROXY: ${{ secrets.HIDENFREE_PROXY }}
+          HIDENFREE_V6_PROXY: ${{ secrets.HIDENFREE_V6_PROXY }}
         run: |
-          if [ -z "$HIDENFREE_PROXY" ]; then
-            echo "::error::HIDENFREE_PROXY 未配置（必填，本脚本必须走代理）"
+          if [ -z "$HIDENFREE_PROXY" ] || [ -z "$HIDENFREE_V6_PROXY" ]; then
+            echo "::error::HIDENFREE_PROXY（主节点）与 HIDENFREE_V6_PROXY（IPv6 节点）都必须配置"
             exit 1
           fi
-          NODE_LINK="$HIDENFREE_PROXY" bash private-repo/scripts/setup_proxy.sh
+          MAIN_NODE="$HIDENFREE_PROXY" V6_NODE="$HIDENFREE_V6_PROXY" \
+            WORKDIR="$PWD" bash private-repo/scripts/hidenfree/setup_split.sh
 
       - name: 🚀 运行续期脚本
         id: run_renew
