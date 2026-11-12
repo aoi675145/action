@@ -3,7 +3,7 @@ name: HidenFree 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '23 2 * * *'   # 每天兜底巡检；脚本跑完会重排到到期前20h（同一时分，每天）
+    - cron: '3 9 * * *'   # 自动更新下次运行时间（窗口=到期前24h，排到期前20h）
 
 permissions:
   actions: write
