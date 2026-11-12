@@ -24,6 +24,15 @@ jobs:
           token: ${{ secrets.REPO_TOKEN }}
           path: .  # 拉到根目录
 
+      - name: 🍪 恢复登录 cookie 缓存
+        # 登录盾过一次就够：cookie 存在 cache 里，下轮直接进后台
+        uses: actions/cache@v4
+        with:
+          path: scripts/zampto/cookies.txt
+          key: zampto-cookies-${{ github.run_id }}
+          restore-keys: |
+            zampto-cookies-
+
       - name: 🐍 设置 Python
         uses: actions/setup-python@v5
         with:
@@ -341,7 +350,7 @@ jobs:
           LLM_PROXY: ${{ env.PROXY_SERVER }}
         run: |
           export PROXY_URL="${PROXY_URL#*://}"
-          echo "[INFO] 入口: scripts/zampto/zampto.py（完整账密登录 + 真按钮 + ActionChains 精确坐标）"
+          echo "[INFO] 入口: scripts/zampto/zampto.py（cookie 优先直登，失效才走完整登录 + 真按钮精确点击）"
           xvfb-run -a python -u scripts/zampto/zampto.py \
             2> >(grep -vE "Matplotlib GUI|main thread is not in main loop|Exception ignored in|tkinter|UserWarning: Starting|Unable to revert mtime" >&2)
 
