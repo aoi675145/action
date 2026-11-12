@@ -3,7 +3,7 @@ name: HidenFree 续期
 on:
   workflow_dispatch:
   schedule:
-    - cron: '3 9 * * *'   # 自动更新下次运行时间（窗口=到期前24h，排到期前20h）
+    - cron: '3 9 16 11 *'   # 自动更新下次运行时间（窗口=到期前24h，排到期前20h）
 
 permissions:
   actions: write
@@ -132,9 +132,9 @@ jobs:
           fi
 
           NEXT_DATE=$(date -u -d "@$TARGET_EPOCH" +"%Y-%m-%d %H:%M")
-          NEW_CRON="$(date -u -d "@$TARGET_EPOCH" +"%-M %-H") * * *"
+          NEW_CRON="$(date -u -d "@$TARGET_EPOCH" +"%-M %-H %-d %-m") *"
           echo "::notice::⏰ 下次运行: $NEXT_DATE UTC"
-          echo "::notice::📟 新 Cron: $NEW_CRON（每天同一时分，别写成年月日）"
+          echo "::notice::📟 新 Cron: $NEW_CRON"
 
           git clone https://${{ github.actor }}:${{ secrets.REPO_TOKEN }}@github.com/${{ github.repository }}.git workflow_repo
           cd workflow_repo
