@@ -49,8 +49,8 @@ jobs:
             bash /tmp/ensure-apt.sh \
               --need-pkg "xvfb"
           fi
-          pip install patchright requests 'requests[socks]' --retries 5 --timeout 60
-          python -m patchright install --with-deps chrome
+          pip install playwright requests 'requests[socks]' --retries 5 --timeout 60
+          python -m playwright install --with-deps chrome
 
       - name: 📦 拉取脚本
         env:
