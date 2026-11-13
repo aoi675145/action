@@ -2,7 +2,7 @@ name: discordbothost 续期
 
 on:
   schedule:
-    - cron: "12 16 13 11 *"  # 自动：第一次引导（到期 2026-11-13 22:31 北京后 ~35min），跑完由脚本改写
+    - cron: "10 16 13 11 *"  # 自动：第一次引导（到期 2026-11-13 22:31 北京后 ~35min），跑完由脚本改写
   workflow_dispatch:
 
 concurrency:
