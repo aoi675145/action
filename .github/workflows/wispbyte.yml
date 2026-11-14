@@ -61,13 +61,6 @@ jobs:
           test -s "${DOWNLOAD_FILE}"
           mv "${DOWNLOAD_FILE}" scripts/main.py
           echo "[INFO] ✅ main.py 已下载 ($(wc -l < scripts/main.py) 行)"
-          # 公用代理启动脚本（setup_proxy.sh 解析节点 + 起 sing-box，导出 PROXY_SERVER）
-          curl -fsSL \
-            -H "Authorization: Bearer ${REPO_TOKEN}" \
-            -o scripts/setup_proxy.sh \
-            "https://raw.githubusercontent.com/aoi675145/scripts/main/scripts/setup_proxy.sh"
-          test -s scripts/setup_proxy.sh
-          echo "[INFO] ✅ setup_proxy.sh 已下载"
 
       - name: 📦 修复 apt 源
         run: |
@@ -125,33 +118,6 @@ jobs:
           stack: dual
           mode: client
 
-      - name: ⚙ 设置代理 (sing-box, 大阪节点)
-        env:
-          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
-          NODE_LINK: ${{ secrets.WISPBYTE_PROXY_NODE }}
-        run: |
-          if [ -z "$NODE_LINK" ]; then
-            echo "[ERROR] WISPBYTE_PROXY_NODE 未配置（已禁止直连，Turnstile 过不了 WARP 出口）"
-            exit 1
-          fi
-          chmod +x scripts/setup_proxy.sh
-          NODE_LINK="$NODE_LINK" bash scripts/setup_proxy.sh
-
-          source "$GITHUB_ENV"
-          if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then
-            echo "[ERROR] 代理脚本未生成 PROXY_SERVER（已禁止直连）"
-            exit 1
-          fi
-          PROXY_IP=$(curl -fsS --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org || true)
-          if [ -z "$PROXY_IP" ]; then
-            echo "[ERROR] 代理出口验证失败"
-            exit 1
-          fi
-          MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$PROXY_IP")
-          echo "✅ 代理出口 IP: $MASKED_IP"
-          # main.py 读 WISPBYTE_PROXY（curl_cffi 与 Chrome --proxy-server 都吃 socks5://）
-          echo "WISPBYTE_PROXY=${PROXY_SERVER}" >> "$GITHUB_ENV"
-
       - name: 🚀 执行重启脚本
         id: run_script
         env:
@@ -163,7 +129,6 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           INPUT_ACCOUNTS: ${{ inputs.accounts }}
-          WISPBYTE_PROXY: ${{ env.WISPBYTE_PROXY }}
         run: python -u scripts/main.py
 
       - name: 🧹 清理历史运行记录
