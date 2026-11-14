@@ -330,19 +330,14 @@ jobs:
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           ZAMPTO_PROXY: ${{ env.PROXY_SERVER }}
-          # zampto.py 读 PROXY_URL / PROXY_SOCKS5（去 scheme 后的 host:port，SB 的 proxy 参数要这个格式）
-          PROXY_URL: ${{ env.PROXY_SERVER }}
           ZAM_COOKIE_FILE: scripts/zampto/cookies.txt
-          ZAM_WATCHDOG: '720'
-          # hCaptcha 解题：变量名与 vps8 完全一致，模型请求走本 job 的代理
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          OPENAI_BASE_URL: ${{ secrets.OPENAI_BASE_URL }}
-          OPENAI_MODEL: ${{ secrets.OPENAI_MODEL }}
+          # hCaptcha 识别：NoneCap 免 LLM 通道（key 可选，只影响额度统计）
+          NONECAP_KEY: ${{ secrets.NONECAP_KEY }}
+          # NONECAP_ONLY=0 可整体退回旧的视觉模型模式（需要 OPENAI 三件套）
           LLM_PROXY: ${{ env.PROXY_SERVER }}
         run: |
-          export PROXY_URL="${PROXY_URL#*://}"
-          echo "[INFO] 入口: scripts/zampto/zampto.py（cookie 优先直登，失效才走完整登录 + 真按钮精确点击）"
-          xvfb-run -a python -u scripts/zampto/zampto.py \
+          echo "[INFO] 入口: scripts/zampto/zampto_renew.py（cookie 直进，按 captchaProvider 分流 turnstile/recaptcha/hcaptcha）"
+          xvfb-run -a python -u scripts/zampto/zampto_renew.py \
             2> >(grep -vE "Matplotlib GUI|main thread is not in main loop|Exception ignored in|tkinter|UserWarning: Starting|Unable to revert mtime" >&2)
 
       - name: 💾 回写 cookie 到私库
