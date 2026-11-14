@@ -7,6 +7,10 @@ on:
         description: '强制续期（跳过剩余时间判断，跑完整链路）'
         type: boolean
         default: false
+      debug:
+        description: '调试模式（输出链路诊断日志）'
+        type: boolean
+        default: false
   schedule:
     # 自动维护：脚本每次运行后写入 next_run.txt，本行会被改成下一次的触发时间（UTC）
     - cron: '36 0 15 11 *'
@@ -62,6 +66,7 @@ jobs:
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
           FORCE_RENEW: ${{ inputs.force || env.SCHEDULE_FORCE }}
+          HOKAS_DEBUG: ${{ inputs.debug && '1' || '' }}
         run: |
           if [ -z "$PROXY_SERVER" ]; then
             echo "[ERROR] 代理未就绪（setup_proxy.sh 未输出 PROXY_SERVER）"
