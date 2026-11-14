@@ -103,7 +103,7 @@ jobs:
         run: |
           set -o pipefail
           python -m pip install --upgrade pip
-          pip install seleniumbase pyvirtualdisplay requests
+          pip install seleniumbase pyvirtualdisplay requests curl_cffi pydoll-python websockets
           echo "[INFO] 预安装 SeleniumBase UC Driver..."
           if sbase get uc_driver >/tmp/uc-driver-install.log 2>&1; then
             echo "[INFO] ✅ UC Driver 已准备完成"
