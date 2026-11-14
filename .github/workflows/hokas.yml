@@ -9,7 +9,7 @@ on:
         default: false
   schedule:
     # 自动维护：脚本每次运行后写入 next_run.txt，本行会被改成下一次的触发时间（UTC）
-    - cron: '45 9 14 11 *'
+    - cron: '1 10 14 11 *'
 
 env:
   # 定时触发不强制续期；需要跑完整链路时手动 Run workflow 并勾 force。
