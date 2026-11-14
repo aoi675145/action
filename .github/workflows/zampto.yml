@@ -337,7 +337,21 @@ jobs:
           LLM_PROXY: ${{ env.PROXY_SERVER }}
         run: |
           echo "[INFO] 入口: scripts/zampto/zampto_renew.py（cookie 直进，按 captchaProvider 分流 turnstile/recaptcha/hcaptcha）"
+          set +e
           xvfb-run -a python -u scripts/zampto/zampto_renew.py \
+            2> >(grep -vE "Matplotlib GUI|main thread is not in main loop|Exception ignored in|tkinter|UserWarning: Starting|Unable to revert mtime" >&2)
+          RC=$?
+          set -e
+          if [ "$RC" -eq 0 ]; then exit 0; fi
+          if [ "$RC" -ne 2 ]; then
+            echo "[ERROR] zampto_renew 退出码 $RC（非 cookie 失效），不兜底"
+            exit "$RC"
+          fi
+          # rc=2 = cookie 失效（ZAMPTO_PROXY 由前置步保证非空）→ 账号密码兜底走 zampto.py
+          # （UC 浏览器过登录 Turnstile + 密码登录 + 续期，cookie 成功后回写私库供下轮直进）
+          echo "[WARN] cookie 失效，切账号密码兜底（zampto.py）"
+          export PROXY_URL="${ZAMPTO_PROXY#*://}"
+          xvfb-run -a python -u scripts/zampto/zampto.py \
             2> >(grep -vE "Matplotlib GUI|main thread is not in main loop|Exception ignored in|tkinter|UserWarning: Starting|Unable to revert mtime" >&2)
 
       - name: 💾 回写 cookie 到私库
