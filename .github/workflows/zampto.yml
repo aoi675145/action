@@ -347,10 +347,12 @@ jobs:
             echo "[ERROR] zampto_renew 退出码 $RC（非 cookie 失效），不兜底"
             exit "$RC"
           fi
-          # rc=2 = cookie 失效（ZAMPTO_PROXY 由前置步保证非空）→ 账号密码兜底走 zampto.py
-          # （UC 浏览器过登录 Turnstile + 密码登录 + 续期，cookie 成功后回写私库供下轮直进）
-          echo "[WARN] cookie 失效，切账号密码兜底（zampto.py）"
+          # rc=2 = 会话真被踢（/auth/login，不是 /blocked）→ 用账号密码把 cookie 救回来。
+          # 只刷登录态，不复用 zampto.py 的续期链路：那边的解盾是 Turnstile-only，
+          # 站点 2026-11-11 起换成 hCaptcha，进去必然白等 60 秒再把 403/CSRF 谎报成「冷却」。
+          echo "[WARN] 会话失效，走账号密码刷新 cookie（zampto.py 仅登录态，不续期）"
           export PROXY_URL="${ZAMPTO_PROXY#*://}"
+          export ZAM_LOGIN_ONLY=1
           xvfb-run -a python -u scripts/zampto/zampto.py \
             2> >(grep -vE "Matplotlib GUI|main thread is not in main loop|Exception ignored in|tkinter|UserWarning: Starting|Unable to revert mtime" >&2)
 
@@ -366,6 +368,10 @@ jobs:
           if git diff --cached --quiet; then echo "[INFO] cookie 无变化，无需提交"; exit 0; fi
           git commit -q -m "chore(zampto): 更新登录 cookie"
           for i in 1 2 3; do
+            # 主分支可能已被别的 workflow 推过（run 43687472457 就是这么被拒的：
+            # checkout 的 6db8d4bf 之后 main 前进到 247660ff，push 直接 fetch first），
+            # 先 rebase 追上再推，否则每轮刷新的 cookie 全丢。
+            git pull -q --rebase --autostash origin main >/dev/null 2>&1 || true
             if git push -q origin HEAD:main; then echo "[INFO] cookie 已回写私库"; exit 0; fi
             echo "[WARN] 推送失败，${i} 次重试"; sleep 3
           done
