@@ -25,7 +25,6 @@ jobs:
           path: private-repo
           sparse-checkout: |
             scripts/ryft/ryft.py
-            scripts/ryft/discord_login.py
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
@@ -68,7 +67,7 @@ jobs:
               --need-pkg "google-chrome-stable xvfb fonts-wqy-microhei jq xdotool"
           fi
           # google-chrome-stable runner 自带，显式安装兜底；jq 是 setup_proxy.sh 的依赖；xdotool 兜底点击 Turnstile
-          pip install -q seleniumbase "requests[socks]" pyautogui pynacl --retries 5 --timeout 60
+          pip install -q seleniumbase "requests[socks]" pyautogui --retries 5 --timeout 60
           # uc_driver 由 SeleniumBase UC 模式自动匹配下载，无需固定版本；缺失依赖 ryft.py 也会自装
 
       - name: 🌐 设置代理 (sing-box)
@@ -87,12 +86,6 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
-          # 账密兜底：DISCORD=账号-----密码（token 失效时自动账密登录换新 token 并回写 secret）
-          DISCORD: ${{ secrets.DISCORD }}
-          # 两步验证 secret（账号开了 TOTP 才需要，多个账号逗号分隔与 token 对齐）
-          DISCORD_TOTP: ${{ secrets.DISCORD_TOTP }}
-          # 阶段2：token 轮换后回写 DISCORD_TOKEN secret 用（需 contents:write）
-          GH_REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
