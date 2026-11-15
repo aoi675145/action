@@ -67,7 +67,7 @@ jobs:
               --need-pkg "google-chrome-stable xvfb fonts-wqy-microhei jq xdotool"
           fi
           # google-chrome-stable runner 自带，显式安装兜底；jq 是 setup_proxy.sh 的依赖；xdotool 兜底点击 Turnstile
-          pip install -q seleniumbase "requests[socks]" pyautogui --retries 5 --timeout 60
+          pip install -q seleniumbase "requests[socks]" pyautogui pynacl --retries 5 --timeout 60
           # uc_driver 由 SeleniumBase UC 模式自动匹配下载，无需固定版本；缺失依赖 ryft.py 也会自装
 
       - name: 🌐 设置代理 (sing-box)
