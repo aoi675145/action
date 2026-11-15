@@ -86,6 +86,12 @@ jobs:
         env:
           PYTHONIOENCODING: utf-8
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          # 账密兜底：DISCORD=账号-----密码（token 失效时自动账密登录换新 token 并回写 secret）
+          DISCORD: ${{ secrets.DISCORD }}
+          # 两步验证 secret（账号开了 TOTP 才需要，多个账号逗号分隔与 token 对齐）
+          DISCORD_TOTP: ${{ secrets.DISCORD_TOTP }}
+          # 阶段2：token 轮换后回写 DISCORD_TOKEN secret 用（需 contents:write）
+          GH_REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
