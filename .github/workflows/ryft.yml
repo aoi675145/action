@@ -25,6 +25,7 @@ jobs:
           path: private-repo
           sparse-checkout: |
             scripts/ryft/ryft.py
+            scripts/ryft/discord_login.py
             scripts/setup_proxy.sh
           sparse-checkout-cone-mode: false
 
