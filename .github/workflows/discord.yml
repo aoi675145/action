@@ -1,0 +1,88 @@
+name: Discord Token 更新
+
+on:
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 拉取私有仓库
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: .
+
+      - name: 🐍 设置 Python 环境
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: 📦 安装依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq xvfb >/dev/null
+          pip install --quiet 'requests[socks]' pynacl seleniumbase
+
+      - name: 🌐 启动代理（配置了 DISCORD_PROXY_NODE 才走）
+        env:
+          NODE_LINK:    ${{ secrets.DISCORD_PROXY_NODE }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID:   ${{ secrets.TG_CHAT_ID }}
+        run: |
+          if [ -z "$NODE_LINK" ]; then
+            echo "ℹ️ 未配置 DISCORD_PROXY_NODE，直连运行"
+            exit 0
+          fi
+          chmod +x scripts/setup_proxy.sh
+          NODE_LINK="$NODE_LINK" bash scripts/setup_proxy.sh
+          source "$GITHUB_ENV"
+          if [ "${IS_PROXY:-false}" != "true" ] || [ -z "${PROXY_SERVER:-}" ]; then
+            echo "[ERROR] 代理脚本未生成 PROXY_SERVER"
+            exit 1
+          fi
+          PROXY_IP=$(curl -fsS --max-time 20 --proxy "$PROXY_SERVER" https://api.ipify.org 2>/dev/null || true)
+          MASKED_IP=$(python3 -c 'import sys; ip=sys.argv[1].strip(); p=ip.split("."); v=[x for x in ip.split(":") if x]; print(f"{p[0]}.{p[1]}.***.***" if len(p)==4 else (f"{v[0]}:{v[1]}:***" if ":" in ip and len(v)>=2 else "***"))' "$PROXY_IP")
+          echo "✅ 代理出口 IP: $MASKED_IP"
+          echo "DISCORD_PROXY=$PROXY_SERVER" >> "$GITHUB_ENV"
+
+      - name: 🔑 登录并写回 token
+        env:
+          DISCORD_ACCOUNTS:      ${{ secrets.DISCORD_ACCOUNTS }}
+          DISCORD_RAW:           ${{ secrets.DISCORD }}
+          DISCORD_ACCOUNT:       ${{ secrets.DISCORD_ACCOUNT }}
+          DISCORD_PASSWORD:      ${{ secrets.DISCORD_PASSWORD }}
+          DISCORD_TOTP:          ${{ secrets.DISCORD_TOTP }}
+          DISCORD_SECRET_NAMES:  ${{ vars.DISCORD_SECRET_NAMES }}
+          DISCORD_SECRET_REPO:   ${{ vars.DISCORD_SECRET_REPO }}
+          DISCORD_EXTRA_ARGS:    ${{ vars.DISCORD_EXTRA_ARGS }}
+          REPO_TOKEN:            ${{ secrets.REPO_TOKEN }}
+          TG_BOT_TOKEN:          ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID:            ${{ secrets.TG_CHAT_ID }}
+          PYTHONUNBUFFERED:      1
+        run: |
+          ARGS="${DISCORD_EXTRA_ARGS:-}"
+          # 无代理时浏览器通路仍在（真实 Chrome 指纹），有代理则出口更干净
+          if [ -n "${DISCORD_PROXY:-}" ]; then export DISCORD_PROXY="$DISCORD_PROXY"; fi
+          xvfb-run -a python3 scripts/discord.py $ARGS
+
+      - name: 🧹 清理 sing-box
+        if: always()
+        run: |
+          pkill -f sing-box 2>/dev/null || true
+          rm -f sing-box sing-box-config.json sing-box.log sing-box-*.tar.gz
+
+      - name: 🧹 清理运行记录
+        if: always()
+        uses: Mattraks/delete-workflow-runs@v2
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          repository: ${{ github.repository }}
+          delete_workflow_pattern: ${{ github.workflow }}
+          retain_days: 0
+          keep_minimum_runs: 2
