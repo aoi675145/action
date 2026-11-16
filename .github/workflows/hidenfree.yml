@@ -194,6 +194,13 @@ jobs:
             echo "[SKIP] 未配置 TG_BOT_TOKEN / TG_CHAT_ID"
             exit 0
           fi
-          MSG="❌ ${GITHUB_WORKFLOW} 失败（脚本未运行）%0A任务: ${GITHUB_JOB}%0A仓库: ${GITHUB_REPOSITORY}%0A运行页: https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+          TS=$(TZ=Asia/Shanghai date '+%Y-%m-%d %H:%M:%S')
+          # 真换行（--data-urlencode 会二次编码 %0A，所以不写字面量）
+          MSG=$(printf '%s\n' \
+            "${GITHUB_WORKFLOW}" \
+            "⏰ 通知时间：${TS}" \
+            "📊 结果：❌ 脚本未运行" \
+            "❌ 原因：前置步骤 ${GITHUB_JOB} 失败" \
+            "🔗 https://github.com/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}")
           curl -s -X POST "https://api.telegram.org/bot${TG_BOT_TOKEN}/sendMessage" \
             -d "chat_id=${TG_CHAT_ID}" --data-urlencode "text=${MSG}" || true
