@@ -1,4 +1,4 @@
-name: hnhost 签到
+name: Hnhost 签到
 
 on:
   workflow_dispatch:
