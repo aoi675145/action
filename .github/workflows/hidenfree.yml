@@ -122,13 +122,20 @@ jobs:
           NEXT_ISO="${{ steps.extract_due.outputs.next_iso }}"
           DUE_EPOCH=$(date -u -d "$NEXT_ISO" +%s)
           NOW_EPOCH=$(date -u +%s)
+          RESULT=$(grep -oP '本轮结果: \K\S+' private-repo/scripts/hidenfree/renew.log | tail -1 || echo "")
+          echo "::notice::📋 本轮结果: ${RESULT:-未知}"
 
-          # 窗口 = 到期前 24h，排到期前 20h 跑
+          # 窗口 = 到期前 24h，常规排到期前 20h 跑
           TARGET_EPOCH=$((DUE_EPOCH - 20 * 3600))
+          if [ "$RESULT" = "waiting" ]; then
+            # 健康状态（还没进窗口）：排到窗口开启后 5 分钟，不再无谓地 +2h 重试
+            TARGET_EPOCH=$((DUE_EPOCH - 24 * 3600 + 300))
+            echo "::notice::未进窗口，排窗口开启后 5 分钟"
+          fi
           if [ "$TARGET_EPOCH" -le $((NOW_EPOCH + 3600)) ]; then
-            # 已经进窗口 / 刚失败：2 小时后重试
+            # 已经进窗口但本轮没续成（failed / unconfirmed / 站点还不放行）：2 小时后重试
             TARGET_EPOCH=$((NOW_EPOCH + 2 * 3600))
-            echo "::warning::目标时间已过，改为 2 小时后重试"
+            echo "::warning::已进窗口未完成（结果=${RESULT:-未知}），改为 2 小时后重试"
           fi
 
           NEXT_DATE=$(date -u -d "@$TARGET_EPOCH" +"%Y-%m-%d %H:%M")
