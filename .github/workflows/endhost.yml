@@ -142,8 +142,22 @@ jobs:
             echo "$u -> $code"
           done
 
-      - name: 🚀 运行 ENDHOST
+      - name: ⚡ HTTP 引擎（密码登录，无需浏览器）
+        id: http_run
+        if: ${{ github.event.inputs.mode != 'probe' && secrets.ENDHOST_USER != '' }}
+        env:
+          ED_URL: https://endevil.live
+          ED_PROXY: ${{ env.PROXY_SERVER }}
+          ED_USER: ${{ secrets.ENDHOST_USER }}
+          ED_PASS: ${{ secrets.ENDHOST_PASS }}
+          ED_OUT: /tmp/edout
+        run: |
+          set -o pipefail
+          python -u private-repo/scripts/endhost/endhost_http.py --actions renew,start 2>&1 | tee endhost_http.log
+
+      - name: 🚀 运行 ENDHOST（浏览器兜底）
         id: run_script
+        if: steps.http_run.outcome != 'success'
         env:
           PYTHONIOENCODING: utf-8
           ED_URL: https://endevil.live
@@ -175,6 +189,7 @@ jobs:
           path: |
             /tmp/edout/**
             endhost.log
+            endhost_http.log
           if-no-files-found: warn
           retention-days: 3
 
