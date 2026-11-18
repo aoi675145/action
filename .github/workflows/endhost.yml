@@ -109,7 +109,8 @@ jobs:
           if [ -z "$ENDHOST_NODE_V6" ]; then
             echo "::warning::ENDHOST_NODE_V6 未配置，Turnstile 挑战通道可能不通"; exit 0
           fi
-          SB=$(command -v sing-box || ls /tmp/sing-box 2>/dev/null | head -1)
+          SB=$(command -v sing-box || ls ./sing-box ./private-repo/sing-box "$GITHUB_WORKSPACE"/sing-box 2>/dev/null | head -1)
+          [ -x "$SB" ] || { echo "::error::找不到 sing-box 可执行文件"; exit 0; }
           echo "sing-box: $SB"
           python private-repo/scripts/endhost/make_split.py "$ENDHOST_PROXY" "$ENDHOST_NODE_V6" 1080 > /tmp/split.json || exit 0
           "$SB" check -c /tmp/split.json || exit 0
