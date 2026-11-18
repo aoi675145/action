@@ -43,9 +43,10 @@ jobs:
       - name: 📦 安装 Camoufox（Chromium 过不了本站 Turnstile）
         run: |
           pip install --quiet --upgrade pip
-          pip install --quiet camoufox
+          pip install --quiet camoufox==0.5.8
           python -m camoufox fetch
           python -c "import camoufox; print('camoufox ok')"
+          python -m camoufox fetch 2>&1 | tail -2 || true
 
       - name: 🎨 装 Mesa 软件 GL（CI 无显卡，canvas readback 会是空白）
         run: |
