@@ -9,6 +9,12 @@ on:
         default: "probe"
         type: choice
         options: [probe, renew]
+      engine:
+        description: "chrome = 真实 Chrome157 + cf_clearance；camoufox = Firefox 自动过盾"
+        required: false
+        default: "camoufox"
+        type: choice
+        options: [camoufox, chrome]
       headless:
         description: "1 = 无头模式（CI 里有头模式过不了 Turnstile 时对比用）"
         required: false
@@ -53,6 +59,18 @@ jobs:
           python -c "import camoufox; print('camoufox ok')"
           python -m camoufox fetch 2>&1 | tail -2 || true
 
+      - name: 🧩 安装 patchright（chrome 引擎驱动 Chrome157）
+        if: ${{ (github.event.inputs.engine || 'camoufox') == 'chrome' }}
+        run: pip install --quiet patchright
+
+      - name: 🌍 装 Chrome for Testing 157（与 cf_clearance 的 UA 对齐）
+        if: ${{ (github.event.inputs.engine || 'camoufox') == 'chrome' }}
+        run: |
+          npx --yes @puppeteer/browsers install chrome@157.0.8103.78 --path /opt/cft
+          CH=$(find /opt/cft -name chrome -type f | head -1)
+          chmod +x "$CH"; echo "ED_CHROME_PATH=$CH" >> $GITHUB_ENV
+          "$CH" --version || true
+
       - name: 🎨 装 Mesa 软件 GL（CI 无显卡，canvas readback 会是空白）
         run: |
           sudo apt-get update -qq
@@ -84,7 +102,9 @@ jobs:
           PYTHONIOENCODING: utf-8
           ED_URL: https://endevil.live
           ED_PROXY: ${{ env.PROXY_SERVER }}
+          ED_ENGINE: ${{ github.event.inputs.engine || 'camoufox' }}
           ED_DEVICE_FP: ${{ secrets.ENDHOST_FP }}
+          ED_CF_CLEARANCE: ${{ secrets.ENDHOST_CF_CLEARANCE }}
           ED_GH_COOKIES: ${{ secrets.ENDHOST_GH_COOKIES }}
           ED_OUT: /tmp/edout
           MODE: ${{ github.event.inputs.mode || 'renew' }}
