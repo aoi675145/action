@@ -71,8 +71,8 @@ jobs:
             echo "::error::ENDHOST_PROXY 未配置——本机直连会被 Cloudflare 拦 403"
             exit 1
           fi
+          # setup_proxy.sh 自己会写 PROXY_SERVER（socks 127.0.0.1:1080 / http 1081），别再覆盖
           NODE_LINK="$ENDHOST_PROXY" bash private-repo/scripts/setup_proxy.sh
-          echo "PROXY_SERVER=socks5://127.0.0.1:10808" >> $GITHUB_ENV
 
       - name: 🚀 运行 ENDHOST
         env:
