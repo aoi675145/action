@@ -15,6 +15,12 @@ on:
         default: "camoufox"
         type: choice
         options: [camoufox, chrome, chromestable, plain]
+      node:
+        description: "jp = 大阪节点（分流 v6 走挑战域）；us = 双栈节点整站走（含 IPv6）"
+        required: false
+        default: "jp"
+        type: choice
+        options: [jp, us]
       headless:
         description: "1 = 无头模式（CI 里有头模式过不了 Turnstile 时对比用）"
         required: false
@@ -92,7 +98,10 @@ jobs:
       - name: 🌐 设置代理 (sing-box)
         env:
           ENDHOST_PROXY: ${{ secrets.ENDHOST_PROXY }}
+          ENDHOST_NODE_V6: ${{ secrets.ENDHOST_NODE_V6 }}
+          NODE: ${{ github.event.inputs.node || 'jp' }}
         run: |
+          if [ "$NODE" = "us" ]; then ENDHOST_PROXY="$ENDHOST_NODE_V6"; fi
           if [ -z "$ENDHOST_PROXY" ]; then
             echo "::warning::ENDHOST_PROXY 未配置，Cloudflare 会拦数据中心出口"
             exit 0
@@ -104,8 +113,10 @@ jobs:
         env:
           ENDHOST_PROXY: ${{ secrets.ENDHOST_PROXY }}
           ENDHOST_NODE_V6: ${{ secrets.ENDHOST_NODE_V6 }}
+          NODE: ${{ github.event.inputs.node || 'jp' }}
         run: |
           set +e
+          if [ "$NODE" = "us" ]; then echo "整站走双栈节点，跳过分流"; exit 0; fi
           if [ -z "$ENDHOST_NODE_V6" ]; then
             echo "::warning::ENDHOST_NODE_V6 未配置，Turnstile 挑战通道可能不通"; exit 0
           fi
@@ -145,6 +156,8 @@ jobs:
           ED_OUT: /tmp/edout
           MODE: ${{ github.event.inputs.mode || 'renew' }}
           ED_HEADLESS: ${{ github.event.inputs.headless || '0' }}
+          ED_LOCALE: ${{ (github.event.inputs.node || 'jp') == 'us' && 'en-US' || '' }}
+          ED_TZ: ${{ (github.event.inputs.node || 'jp') == 'us' && 'America/Los_Angeles' || '' }}
           TMPDIR: /tmp
         run: |
           set -o pipefail
