@@ -14,7 +14,7 @@ on:
         required: false
         default: "camoufox"
         type: choice
-        options: [camoufox, chrome, chromestable]
+        options: [camoufox, chrome, chromestable, plain]
       headless:
         description: "1 = 无头模式（CI 里有头模式过不了 Turnstile 时对比用）"
         required: false
