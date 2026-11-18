@@ -14,7 +14,7 @@ on:
         required: false
         default: "camoufox"
         type: choice
-        options: [camoufox, chrome]
+        options: [camoufox, chrome, chromestable]
       headless:
         description: "1 = 无头模式（CI 里有头模式过不了 Turnstile 时对比用）"
         required: false
@@ -59,8 +59,8 @@ jobs:
           python -c "import camoufox; print('camoufox ok')"
           python -m camoufox fetch 2>&1 | tail -2 || true
 
-      - name: 🧩 安装 patchright（chrome 引擎驱动 Chrome157）
-        if: ${{ (github.event.inputs.engine || 'camoufox') == 'chrome' }}
+      - name: 🧩 安装 patchright
+        if: ${{ contains(fromJSON('["chrome","chromestable"]'), github.event.inputs.engine || 'camoufox') }}
         run: pip install --quiet patchright
 
       - name: 🌍 装 Chrome for Testing 157（与 cf_clearance 的 UA 对齐）
@@ -70,6 +70,14 @@ jobs:
           CH=$(find /opt/cft -name chrome -type f | head -1)
           chmod +x "$CH"; echo "ED_CHROME_PATH=$CH" >> $GITHUB_ENV
           "$CH" --version || true
+
+      - name: 🌍 装官方 google-chrome-stable（真浏览器构建，CfT 会被 CF 识别为自动化）
+        if: ${{ (github.event.inputs.engine || 'camoufox') == 'chromestable' }}
+        run: |
+          wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
+          sudo apt-get install -y -qq /tmp/chrome.deb
+          echo "ED_CHROME_PATH=/usr/bin/google-chrome" >> $GITHUB_ENV
+          /usr/bin/google-chrome --version
 
       - name: 🎨 装 Mesa 软件 GL（CI 无显卡，canvas readback 会是空白）
         run: |
@@ -103,6 +111,7 @@ jobs:
           ED_URL: https://endevil.live
           ED_PROXY: ${{ env.PROXY_SERVER }}
           ED_ENGINE: ${{ github.event.inputs.engine || 'camoufox' }}
+          ED_UA: ${{ (github.event.inputs.engine || 'camoufox') == 'chromestable' && 'auto' || '' }}
           ED_DEVICE_FP: ${{ secrets.ENDHOST_FP }}
           ED_CF_CLEARANCE: ${{ secrets.ENDHOST_CF_CLEARANCE }}
           ED_GH_COOKIES: ${{ secrets.ENDHOST_GH_COOKIES }}
