@@ -63,6 +63,9 @@ jobs:
           ENDHOST_USER: ${{ secrets.ENDHOST_USER }}
           ENDHOST_PASS: ${{ secrets.ENDHOST_PASS }}
           ENDHOST_PROXY: ${{ env.PROXY_SERVER }}
+          ENDHOST_CF_CLEARANCE: ${{ secrets.ENDHOST_CF_CLEARANCE }}
+          ENDHOST_FP: ${{ secrets.ENDHOST_FP }}
+          ENDHOST_GH_COOKIES: ${{ secrets.ENDHOST_GH_COOKIES }}
           MODE: ${{ github.event.inputs.mode }}
           TMPDIR: /tmp
         run: |
