@@ -1,11 +1,10 @@
 name: ENDHOST 续期
 
-# 只接受外部触发：本工作流不带 schedule，什么时候跑由外部调度器 / 手动决定
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe = 只登录不续期（验证 cookie）；renew = 登录 + 续期 + 开机"
+        description: "probe = 只登录不续期；renew = 登录 + 续期 + 开机"
         required: false
         default: "renew"
         type: choice
@@ -44,34 +43,32 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: 📦 安装依赖（pydoll 取票 + requests[socks] 走 HTTP）
+      - name: 📦 安装依赖
         run: |
           pip install --quiet --upgrade pip
           pip install --quiet "requests[socks]" pydoll-python
           python -c "import requests, pydoll; print('deps ok')"
 
-      - name: 🌍 装 google-chrome-stable（真浏览器构建；CfT 会被 CF 认成自动化）
+      - name: 🌍 安装 Chrome
         run: |
           wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo apt-get install -y -qq /tmp/chrome.deb
           echo "CHROME_BIN=/usr/bin/google-chrome" >> $GITHUB_ENV
           /usr/bin/google-chrome --version
 
-      - name: 🎨 装 Mesa 软件 GL（CI 无显卡，canvas readback 会是空白）
+      - name: 🎨 安装 Mesa GL
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq libgl1-mesa-dri libglx-mesa0 libegl1 mesa-utils xvfb || true
-          glxinfo -B 2>/dev/null | head -5 || echo "glxinfo unavailable"
 
-      - name: 🌐 设置代理 (sing-box)
+      - name: 🌐 设置代理
         env:
           ENDHOST_PROXY: ${{ secrets.ENDHOST_PROXY }}
         run: |
           if [ -z "$ENDHOST_PROXY" ]; then
-            echo "::error::ENDHOST_PROXY 未配置——本机直连会被 Cloudflare 拦 403"
+            echo "::error::ENDHOST_PROXY 未配置"
             exit 1
           fi
-          # setup_proxy.sh 自己会写 PROXY_SERVER（socks 127.0.0.1:1080 / http 1081），别再覆盖
           NODE_LINK="$ENDHOST_PROXY" bash private-repo/scripts/setup_proxy.sh
 
       - name: 🚀 运行 ENDHOST
@@ -107,6 +104,6 @@ jobs:
           if-no-files-found: warn
           retention-days: 3
 
-      - name: 🧹 清理代理进程
+      - name: 🧹 清理代理
         if: always()
         run: pkill -f sing-box || true
