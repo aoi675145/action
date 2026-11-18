@@ -1,33 +1,20 @@
 name: ENDHOST 续期
 
+# 只接受外部触发：本工作流不带 schedule，什么时候跑由外部调度器 / 手动决定
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: "probe = 只登录并抓接口；renew = 执行续期"
+        description: "probe = 只登录不续期（验证 cookie）；renew = 登录 + 续期 + 开机"
         required: false
-        default: "probe"
+        default: "renew"
         type: choice
         options: [probe, renew]
-      engine:
-        description: "chrome = 真实 Chrome157 + cf_clearance；camoufox = Firefox 自动过盾"
+      actions:
+        description: "动作，逗号分隔：renew,start"
         required: false
-        default: "camoufox"
-        type: choice
-        options: [camoufox, chrome, chromestable, plain]
-      node:
-        description: "jp = 大阪节点（分流 v6 走挑战域）；us = 双栈节点整站走（含 IPv6）"
-        required: false
-        default: "jp"
-        type: choice
-        options: [jp, us]
-      headless:
-        description: "1 = 无头模式（CI 里有头模式过不了 Turnstile 时对比用）"
-        required: false
-        default: "0"
+        default: "renew,start"
         type: string
-  schedule:
-    - cron: "23 3 * * 1"
 
 concurrency:
   group: endhost-renew
@@ -36,7 +23,7 @@ concurrency:
 jobs:
   run:
     runs-on: ubuntu-22.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     permissions:
       contents: read
 
@@ -57,131 +44,59 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: 📦 安装 Camoufox（Chromium 过不了本站 Turnstile）
+      - name: 📦 安装依赖（pydoll 取票 + requests[socks] 走 HTTP）
         run: |
           pip install --quiet --upgrade pip
-          pip install --quiet camoufox==0.5.8
-          python -m camoufox fetch
-          python -c "import camoufox; print('camoufox ok')"
-          python -m camoufox fetch 2>&1 | tail -2 || true
+          pip install --quiet "requests[socks]" pydoll-python
+          python -c "import requests, pydoll; print('deps ok')"
 
-      - name: 🧩 安装 patchright
-        if: ${{ contains(fromJSON('["chrome","chromestable"]'), github.event.inputs.engine || 'camoufox') }}
-        run: pip install --quiet patchright
-
-      - name: 🧩 安装 playwright（plain 引擎：不做 stealth 注入）
-        if: ${{ (github.event.inputs.engine || 'camoufox') == 'plain' }}
-        run: pip install --quiet playwright
-
-      - name: 🌍 装 Chrome for Testing 157（与 cf_clearance 的 UA 对齐）
-        if: ${{ (github.event.inputs.engine || 'camoufox') == 'chrome' }}
-        run: |
-          npx --yes @puppeteer/browsers install chrome@157.0.8103.78 --path /opt/cft
-          CH=$(find /opt/cft -name chrome -type f | head -1)
-          chmod +x "$CH"; echo "ED_CHROME_PATH=$CH" >> $GITHUB_ENV
-          "$CH" --version || true
-
-      - name: 🌍 装官方 google-chrome-stable（真浏览器构建，CfT 会被 CF 识别为自动化）
-        if: ${{ contains(fromJSON('["chromestable","plain"]'), github.event.inputs.engine || 'camoufox') }}
+      - name: 🌍 装 google-chrome-stable（真浏览器构建；CfT 会被 CF 认成自动化）
         run: |
           wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo apt-get install -y -qq /tmp/chrome.deb
-          echo "ED_CHROME_PATH=/usr/bin/google-chrome" >> $GITHUB_ENV
+          echo "CHROME_BIN=/usr/bin/google-chrome" >> $GITHUB_ENV
           /usr/bin/google-chrome --version
 
       - name: 🎨 装 Mesa 软件 GL（CI 无显卡，canvas readback 会是空白）
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq libgl1-mesa-dri libglx-mesa0 libegl1 mesa-utils || true
+          sudo apt-get install -y -qq libgl1-mesa-dri libglx-mesa0 libegl1 mesa-utils xvfb || true
           glxinfo -B 2>/dev/null | head -5 || echo "glxinfo unavailable"
 
       - name: 🌐 设置代理 (sing-box)
         env:
           ENDHOST_PROXY: ${{ secrets.ENDHOST_PROXY }}
-          ENDHOST_NODE_V6: ${{ secrets.ENDHOST_NODE_V6 }}
-          NODE: ${{ github.event.inputs.node || 'jp' }}
         run: |
-          if [ "$NODE" = "us" ]; then ENDHOST_PROXY="$ENDHOST_NODE_V6"; fi
           if [ -z "$ENDHOST_PROXY" ]; then
-            echo "::warning::ENDHOST_PROXY 未配置，Cloudflare 会拦数据中心出口"
-            exit 0
+            echo "::error::ENDHOST_PROXY 未配置——本机直连会被 Cloudflare 拦 403"
+            exit 1
           fi
-          NODE_LINK="$ENDHOST_PROXY" bash private-repo/scripts/setup_proxy.sh || \
-            echo "::warning::代理起不来，脚本会自动回退直连"
+          NODE_LINK="$ENDHOST_PROXY" bash private-repo/scripts/setup_proxy.sh
+          echo "PROXY_SERVER=socks5://127.0.0.1:10808" >> $GITHUB_ENV
 
-      - name: 🛰 IPv6 分流（challenges.cloudflare.com 是 AAAA-only，v4 出口必然零票）
-        env:
-          ENDHOST_PROXY: ${{ secrets.ENDHOST_PROXY }}
-          ENDHOST_NODE_V6: ${{ secrets.ENDHOST_NODE_V6 }}
-          NODE: ${{ github.event.inputs.node || 'jp' }}
-        run: |
-          set +e
-          if [ "$NODE" = "us" ]; then echo "整站走双栈节点，跳过分流"; exit 0; fi
-          if [ -z "$ENDHOST_NODE_V6" ]; then
-            echo "::warning::ENDHOST_NODE_V6 未配置，Turnstile 挑战通道可能不通"; exit 0
-          fi
-          SB=$(command -v sing-box || ls ./sing-box ./private-repo/sing-box "$GITHUB_WORKSPACE"/sing-box 2>/dev/null | head -1)
-          [ -x "$SB" ] || { echo "::error::找不到 sing-box 可执行文件"; exit 0; }
-          echo "sing-box: $SB"
-          python private-repo/scripts/endhost/make_split.py "$ENDHOST_PROXY" "$ENDHOST_NODE_V6" 1080 > /tmp/split.json || exit 0
-          "$SB" check -c /tmp/split.json || exit 0
-          for pid in $(ps -eo pid,args | grep -F "/tmp/sbmix" | grep -v grep | awk '{print $1}'); do kill $pid; done
-          pkill -x sing-box || true
-          sleep 1
-          nohup "$SB" run -c /tmp/split.json > /tmp/split.log 2>&1 &
-          sleep 4
-          echo "main exit: $(curl -sS -m 15 --socks5-hostname 127.0.0.1:1080 https://api.ipify.org)"
-          echo "challenge dom: $(curl -sS -m 20 -o /dev/null -w '%{http_code}' --socks5-hostname 127.0.0.1:1080 https://brunhild.challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/i/x)"
-          tail -5 /tmp/split.log
-
-      - name: 🔎 网络诊断（代理能否到达 Turnstile 资源）
-        run: |
-          set +e
-          for u in https://challenges.cloudflare.com/turnstile/v0/api.js https://endevil.live/user/login; do
-            code=$(curl -sS -o /dev/null -m 25 -x socks5h://127.0.0.1:1080 -w "%{http_code} %{time_total}s" "$u" 2>&1)
-            echo "$u -> $code"
-          done
-
-      - name: ⚡ HTTP 引擎（密码登录，无需浏览器）
-        id: http_run
-        if: ${{ github.event.inputs.mode != 'probe' && secrets.ENDHOST_USER != '' }}
-        env:
-          ED_URL: https://endevil.live
-          ED_PROXY: ${{ env.PROXY_SERVER }}
-          ED_USER: ${{ secrets.ENDHOST_USER }}
-          ED_PASS: ${{ secrets.ENDHOST_PASS }}
-          ED_OUT: /tmp/edout
-        run: |
-          set -o pipefail
-          python -u private-repo/scripts/endhost/endhost_http.py --actions renew,start 2>&1 | tee endhost_http.log
-
-      - name: 🚀 运行 ENDHOST（浏览器兜底）
-        id: run_script
-        if: steps.http_run.outcome != 'success'
+      - name: 🚀 运行 ENDHOST
         env:
           PYTHONIOENCODING: utf-8
           ED_URL: https://endevil.live
           ED_PROXY: ${{ env.PROXY_SERVER }}
-          ED_ENGINE: ${{ github.event.inputs.engine || 'camoufox' }}
-          ED_UA: ${{ (github.event.inputs.engine || 'camoufox') == 'chromestable' && 'auto' || '' }}
-          ED_DEVICE_FP: ${{ secrets.ENDHOST_FP }}
-          ED_CF_CLEARANCE: ${{ secrets.ENDHOST_CF_CLEARANCE }}
+          ED_TOKEN_PROXY: ${{ env.PROXY_SERVER }}
           ED_GH_COOKIES: ${{ secrets.ENDHOST_GH_COOKIES }}
+          ED_SITEKEY: ${{ secrets.ENDHOST_SITEKEY }}
+          ED_FP: ${{ secrets.ENDHOST_FP }}
+          ED_ACTIONS: ${{ github.event.inputs.actions || 'renew,start' }}
           ED_OUT: /tmp/edout
-          MODE: ${{ github.event.inputs.mode || 'renew' }}
-          ED_HEADLESS: ${{ github.event.inputs.headless || '0' }}
-          ED_LOCALE: ${{ (github.event.inputs.node || 'jp') == 'us' && 'en-US' || '' }}
-          ED_TZ: ${{ (github.event.inputs.node || 'jp') == 'us' && 'America/Los_Angeles' || '' }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           TMPDIR: /tmp
         run: |
           set -o pipefail
-          FLAG="--probe"
-          if [ "$MODE" = "renew" ]; then FLAG="--renew"; fi
+          FLAG="--renew"
+          if [ "${{ github.event.inputs.mode || 'renew' }}" = "probe" ]; then FLAG="--probe"; fi
           echo "mode=$FLAG proxy=$ED_PROXY"
-          xvfb-run -a --server-args="-screen 0 1366x920x24" \
+          xvfb-run -a --server-args="-screen 0 1280x800x24" \
             python -u private-repo/scripts/endhost/endhost.py "$FLAG" 2>&1 | tee endhost.log
 
-      - name: 📤 上传抓取结果
+      - name: 📤 上传结果
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -189,7 +104,6 @@ jobs:
           path: |
             /tmp/edout/**
             endhost.log
-            endhost_http.log
           if-no-files-found: warn
           retention-days: 3
 
