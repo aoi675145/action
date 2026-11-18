@@ -1,6 +1,11 @@
 name: OriHost 续期 (A)
 on:
   workflow_dispatch:
+    inputs:
+      debug:
+        description: '详细日志（dump 按钮/进程/耗时）'
+        type: boolean
+        default: false
   schedule:
     - cron: '15 2 6 12 *'   # 自动更新下次运行时间
 
@@ -96,6 +101,7 @@ jobs:
           Ori_PROXY: ${{ env.PROXY_SERVER }}
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          DEBUG: ${{ inputs.debug }}
         run: |
           set -o pipefail
           xvfb-run --auto-servernum --server-args="-screen 0 1920x1080x24" python orihost.py 2>&1 | tee renew.log; exit ${PIPESTATUS[0]}
