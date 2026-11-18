@@ -82,6 +82,7 @@ jobs:
           ED_FP: ${{ secrets.ENDHOST_FP }}
           ED_ACTIONS: ${{ github.event.inputs.actions || 'renew,start' }}
           ED_OUT: /tmp/edout
+          ED_CHROME_ARGS: "--use-gl=angle --use-angle=swiftshader --enable-unsafe-swiftshader"
           TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
           TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
           TMPDIR: /tmp
