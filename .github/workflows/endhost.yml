@@ -47,6 +47,12 @@ jobs:
           python -m camoufox fetch
           python -c "import camoufox; print('camoufox ok')"
 
+      - name: 🎨 装 Mesa 软件 GL（CI 无显卡，canvas readback 会是空白）
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq libgl1-mesa-dri libglx-mesa0 libegl1 mesa-utils || true
+          glxinfo -B 2>/dev/null | head -5 || echo "glxinfo unavailable"
+
       - name: 🌐 设置代理 (sing-box)
         env:
           ENDHOST_PROXY: ${{ secrets.ENDHOST_PROXY }}
