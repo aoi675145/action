@@ -9,6 +9,8 @@ on:
         default: "probe"
         type: choice
         options: [probe, renew]
+  schedule:
+    - cron: "23 3 * * 1"
 
 concurrency:
   group: endhost-renew
@@ -38,12 +40,12 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: 📦 安装 patchright + chromium
+      - name: 📦 安装 Camoufox（Chromium 过不了本站 Turnstile）
         run: |
           pip install --quiet --upgrade pip
-          pip install --quiet patchright
-          python -m patchright install chromium || patchright install chromium
-          python -c "import patchright; print('patchright ok')"
+          pip install --quiet camoufox
+          python -m camoufox fetch
+          python -c "import camoufox; print('camoufox ok')"
 
       - name: 🌐 设置代理 (sing-box)
         env:
@@ -60,20 +62,19 @@ jobs:
         id: run_script
         env:
           PYTHONIOENCODING: utf-8
-          ENDHOST_USER: ${{ secrets.ENDHOST_USER }}
-          ENDHOST_PASS: ${{ secrets.ENDHOST_PASS }}
-          ENDHOST_PROXY: ${{ env.PROXY_SERVER }}
-          ENDHOST_CF_CLEARANCE: ${{ secrets.ENDHOST_CF_CLEARANCE }}
-          ENDHOST_FP: ${{ secrets.ENDHOST_FP }}
-          ENDHOST_GH_COOKIES: ${{ secrets.ENDHOST_GH_COOKIES }}
-          MODE: ${{ github.event.inputs.mode }}
+          ED_URL: https://endevil.live
+          ED_PROXY: ${{ env.PROXY_SERVER }}
+          ED_DEVICE_FP: ${{ secrets.ENDHOST_FP }}
+          ED_GH_COOKIES: ${{ secrets.ENDHOST_GH_COOKIES }}
+          ED_OUT: /tmp/edout
+          MODE: ${{ github.event.inputs.mode || 'renew' }}
           TMPDIR: /tmp
         run: |
           set -o pipefail
           FLAG="--probe"
           if [ "$MODE" = "renew" ]; then FLAG="--renew"; fi
-          echo "mode=$FLAG"
-          xvfb-run -a --server-args="-screen 0 1280x920x24" \
+          echo "mode=$FLAG proxy=$ED_PROXY"
+          xvfb-run -a --server-args="-screen 0 1366x920x24" \
             python -u private-repo/scripts/endhost/endhost.py "$FLAG" 2>&1 | tee endhost.log
 
       - name: 📤 上传抓取结果
