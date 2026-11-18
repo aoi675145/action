@@ -1,0 +1,89 @@
+name: ENDHOST 续期
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "probe = 只登录并抓接口；renew = 执行续期"
+        required: false
+        default: "probe"
+        type: choice
+        options: [probe, renew]
+
+concurrency:
+  group: endhost-renew
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+
+    steps:
+      - name: 📥 拉取私库脚本
+        uses: actions/checkout@v4
+        with:
+          repository: aoi675145/scripts
+          token: ${{ secrets.REPO_TOKEN }}
+          path: private-repo
+          sparse-checkout: |
+            scripts/endhost/**
+            scripts/setup_proxy.sh
+          sparse-checkout-cone-mode: false
+
+      - name: 🐍 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 📦 安装 patchright + chromium
+        run: |
+          pip install --quiet --upgrade pip
+          pip install --quiet patchright
+          python -m patchright install chromium || patchright install chromium
+          python -c "import patchright; print('patchright ok')"
+
+      - name: 🌐 设置代理 (sing-box)
+        env:
+          ENDHOST_PROXY: ${{ secrets.ENDHOST_PROXY }}
+        run: |
+          if [ -z "$ENDHOST_PROXY" ]; then
+            echo "::warning::ENDHOST_PROXY 未配置，Cloudflare 会拦数据中心出口"
+            exit 0
+          fi
+          NODE_LINK="$ENDHOST_PROXY" bash private-repo/scripts/setup_proxy.sh || \
+            echo "::warning::代理起不来，脚本会自动回退直连"
+
+      - name: 🚀 运行 ENDHOST
+        id: run_script
+        env:
+          PYTHONIOENCODING: utf-8
+          ENDHOST_USER: ${{ secrets.ENDHOST_USER }}
+          ENDHOST_PASS: ${{ secrets.ENDHOST_PASS }}
+          ENDHOST_PROXY: ${{ env.PROXY_SERVER }}
+          MODE: ${{ github.event.inputs.mode }}
+          TMPDIR: /tmp
+        run: |
+          set -o pipefail
+          FLAG="--probe"
+          if [ "$MODE" = "renew" ]; then FLAG="--renew"; fi
+          echo "mode=$FLAG"
+          xvfb-run -a --server-args="-screen 0 1280x920x24" \
+            python -u private-repo/scripts/endhost/endhost.py "$FLAG" 2>&1 | tee endhost.log
+
+      - name: 📤 上传抓取结果
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: endhost-dump
+          path: |
+            /tmp/edout/**
+            endhost.log
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: 🧹 清理代理进程
+        if: always()
+        run: pkill -f sing-box || true
