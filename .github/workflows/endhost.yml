@@ -63,6 +63,10 @@ jobs:
         if: ${{ contains(fromJSON('["chrome","chromestable"]'), github.event.inputs.engine || 'camoufox') }}
         run: pip install --quiet patchright
 
+      - name: 🧩 安装 playwright（plain 引擎：不做 stealth 注入）
+        if: ${{ (github.event.inputs.engine || 'camoufox') == 'plain' }}
+        run: pip install --quiet playwright
+
       - name: 🌍 装 Chrome for Testing 157（与 cf_clearance 的 UA 对齐）
         if: ${{ (github.event.inputs.engine || 'camoufox') == 'chrome' }}
         run: |
@@ -72,7 +76,7 @@ jobs:
           "$CH" --version || true
 
       - name: 🌍 装官方 google-chrome-stable（真浏览器构建，CfT 会被 CF 识别为自动化）
-        if: ${{ (github.event.inputs.engine || 'camoufox') == 'chromestable' }}
+        if: ${{ contains(fromJSON('["chromestable","plain"]'), github.event.inputs.engine || 'camoufox') }}
         run: |
           wget -q -O /tmp/chrome.deb https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
           sudo apt-get install -y -qq /tmp/chrome.deb
@@ -95,6 +99,28 @@ jobs:
           fi
           NODE_LINK="$ENDHOST_PROXY" bash private-repo/scripts/setup_proxy.sh || \
             echo "::warning::代理起不来，脚本会自动回退直连"
+
+      - name: 🛰 IPv6 分流（challenges.cloudflare.com 是 AAAA-only，v4 出口必然零票）
+        env:
+          ENDHOST_PROXY: ${{ secrets.ENDHOST_PROXY }}
+          ENDHOST_NODE_V6: ${{ secrets.ENDHOST_NODE_V6 }}
+        run: |
+          set +e
+          if [ -z "$ENDHOST_NODE_V6" ]; then
+            echo "::warning::ENDHOST_NODE_V6 未配置，Turnstile 挑战通道可能不通"; exit 0
+          fi
+          SB=$(command -v sing-box || ls /tmp/sing-box 2>/dev/null | head -1)
+          echo "sing-box: $SB"
+          python private-repo/scripts/endhost/make_split.py "$ENDHOST_PROXY" "$ENDHOST_NODE_V6" 1080 > /tmp/split.json || exit 0
+          "$SB" check -c /tmp/split.json || exit 0
+          for pid in $(ps -eo pid,args | grep -F "/tmp/sbmix" | grep -v grep | awk '{print $1}'); do kill $pid; done
+          pkill -x sing-box || true
+          sleep 1
+          nohup "$SB" run -c /tmp/split.json > /tmp/split.log 2>&1 &
+          sleep 4
+          echo "main exit: $(curl -sS -m 15 --socks5-hostname 127.0.0.1:1080 https://api.ipify.org)"
+          echo "challenge dom: $(curl -sS -m 20 -o /dev/null -w '%{http_code}' --socks5-hostname 127.0.0.1:1080 https://brunhild.challenges.cloudflare.com/cdn-cgi/challenge-platform/h/g/i/x)"
+          tail -5 /tmp/split.log
 
       - name: 🔎 网络诊断（代理能否到达 Turnstile 资源）
         run: |
