@@ -125,6 +125,31 @@ prefer_https_sources() {
   each_src _upgrade_one
 }
 
+# apt 全局重试：patchright --with-deps 这类第三方脚本自己跑 apt，拿不到我们的参数，
+# 只能靠 apt.conf.d 兜底。2026-11-19 HidenCloud 就是 update 阶段全正常，装包阶段
+# azure 前端对每个 .deb 都回不可达、单次失败即判死。
+tune_apt() {
+  sudo tee /etc/apt/apt.conf.d/99-retries > /dev/null <<'EOF'
+Acquire::Retries "5";
+Acquire::ForceIPv4 "true";
+Acquire::http::Timeout "10";
+Acquire::https::Timeout "10";
+EOF
+}
+
+# azure 前端会「索引能取、pool 里的 .deb 全不可达」，src_reachable 的根路径探测
+# 看不出来。依赖已满足时也必须探 pool，否则后面的 --with-deps 会拿这份死源装包。
+pool_reachable() {
+  local u code
+  u="$(src_host)"
+  case "$u" in
+    *azure.archive.ubuntu.com*)
+      code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 6 -I "$u/ubuntu/pool/" 2>/dev/null || true)
+      [ "$code" = "200" ] ;;
+    *) return 0 ;;
+  esac
+}
+
 _fix_one() {
   grep -qE 'azure\.archive\.ubuntu\.com|security\.ubuntu\.com|http://archive\.ubuntu\.com' "$1" 2>/dev/null || return 0
   if sudo sed -i -E \
@@ -178,12 +203,20 @@ miss="$(check)"
 if [ -z "$miss" ]; then
   # 依赖齐了也把源升到 https：后面第三方 action（fscarmen/warp-on-actions 等）
   # 自己跑 apt-get update，http(80) 一挂就是 5 分钟白等（2026-11-10 Godlike 312s）。
+  tune_apt
   prefer_https_sources
+  # azure 的 pool 偶发不可达（索引正常、.deb 全挂）。授权跳过 apt 之前必须确认
+  # 这份源还能下包，否则 patchright --with-deps 会拿死源装包并炸掉整步。
+  if ! pool_reachable; then
+    echo "::warning::$(src_host) 的 pool 路径不可达，依赖虽齐但切官方 https archive，避免 --with-deps 踩死源"
+    rescue_sources
+  fi
   echo "[INFO] 系统依赖已由镜像满足，跳过 apt（need: ${NEED:-无}${NEED_PKGS:+ / pkg: $NEED_PKGS}）"
   exit 0
 fi
 
 echo "::warning::镜像缺少:[${miss}] → 尝试 apt 安装: ${PKGS}"
+tune_apt
 
 if [ -z "$(echo ${PKGS:-})" ]; then
   echo "::warning::没有可安装的包名（缺 --pkgs/--need-pkg/--need 都为空），跳过 apt，只做最终自检"
