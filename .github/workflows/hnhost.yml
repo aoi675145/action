@@ -2,6 +2,11 @@ name: Hnhost 签到
 
 on:
   workflow_dispatch:
+    inputs:
+      debug:
+        description: '输出详细调试日志（排障用，日常不要勾）'
+        type: boolean
+        default: false
   schedule:
     - cron: '37 0 * * *'
 
@@ -83,6 +88,8 @@ jobs:
           HNHOST_SCOPE:                 ${{ vars.HNHOST_SCOPE }}
           # 设 HNHOST_TOKEN_PLAINTEXT=1 时 TG 通知附带完整 token（仅临时核对用）
           HNHOST_TOKEN_PLAINTEXT:       ${{ vars.HNHOST_TOKEN_PLAINTEXT }}
+          # 手动触发时勾选 debug（或仓库 Variable HNHOST_DEBUG=1）才输出详细排障日志
+          HNHOST_DEBUG:                 ${{ inputs.debug || vars.HNHOST_DEBUG || 'false' }}
           PYTHONUNBUFFERED:             1
         run: python scripts/hnhost/hnhost.py
 
