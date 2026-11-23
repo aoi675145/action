@@ -30,29 +30,6 @@ jobs:
           cache: 'pip'
           cache-dependency-path: scripts/katabump/requirements.txt
 
-      - name: 📦 修复 apt 源
-        run: |
-          # 源一律钉官方 https：80 端口在部分 runner 上整段超时，443 正常。
-          # 这里不跑 apt-get update —— 索引刷新交给下一步 ensure-apt.sh（自带 5s 探活 + 归档兜底 + 时间预算）。
-          . /etc/os-release
-          CODENAME="${VERSION_CODENAME:-noble}"
-          sudo rm -f /etc/apt/apt-mirrors.txt
-          sudo tee /etc/apt/sources.list > /dev/null <<EOF
-          deb https://archive.ubuntu.com/ubuntu/ ${CODENAME} main restricted universe multiverse
-          deb https://archive.ubuntu.com/ubuntu/ ${CODENAME}-updates main restricted universe multiverse
-          deb https://security.ubuntu.com/ubuntu/ ${CODENAME}-security main restricted universe multiverse
-          EOF
-          sudo rm -f /etc/apt/sources.list.d/*.sources
-          sudo tee /etc/apt/apt.conf.d/99-timeouts > /dev/null <<'EOF'
-          Acquire::Retries "3";
-          Acquire::http::Timeout "10";
-          Acquire::https::Timeout "10";
-          Acquire::ForceIPv4 "true";
-          Acquire::http::Pipeline-Depth "0";
-          EOF
-          if ! curl -s -o /dev/null -I --max-time 5 https://archive.ubuntu.com/ubuntu/; then
-            echo "::warning::archive.ubuntu.com 5s 内不可达，依赖安装走镜像自带/后续兜底"
-          fi
       - name: 📦 安装依赖
         timeout-minutes: 10
         run: |
