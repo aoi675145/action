@@ -50,6 +50,7 @@ jobs:
           PYTHONIOENCODING: utf-8
           TRANGER_AUTH: ${{ secrets.TRANGER_AUTH }}
           TRANGER_REFRESH_TOKEN: ${{ secrets.TRANGER_REFRESH_TOKEN }}
+          REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
           TG_BOT: ${{ secrets.TG_BOT }}
           IS_PROXY: ${{ env.IS_PROXY }}
           PROXY_SERVER: ${{ env.PROXY_SERVER }}
